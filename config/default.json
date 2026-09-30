@@ -1,0 +1,32 @@
+{
+  "comfyui_url": "http://127.0.0.1:8188",
+  "model_service_url": "http://127.0.0.1:11234/v1",
+  "http_timeout_seconds": 180,
+  "poll_interval_seconds": 2,
+  "resolutions": {
+    "wide": [1216, 832],
+    "full": [832, 1216],
+    "medium": [1024, 1024],
+    "closeup": [1024, 1024]
+  },
+  "checkpoint": "waiIllustriousSDXL_v170.safetensors",
+  "style_loras": [
+    {"name": "Iwao178.safetensors", "strength_model": 0.5, "strength_clip": 0.5},
+    {"name": "akaimelon.safetensors", "strength_model": 0.5, "strength_clip": 0.5}
+  ],
+  "positive_prefix": "masterpiece, best quality, safe, sfw",
+  "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
+  "sampler": {
+    "steps": 28,
+    "cfg": 5.5,
+    "sampler_name": "dpmpp_2m",
+    "scheduler": "karras",
+    "denoise": 1.0
+  },
+  "budget": {
+    "max_repairs_per_shot": 3,
+    "max_images_per_job": 40,
+    "max_job_minutes": 45,
+    "stop_after_no_improvement_rounds": 2
+  }
+}
