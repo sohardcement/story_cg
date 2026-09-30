@@ -1,11 +1,22 @@
 """Read and validate the job's generation configuration."""
 
+import copy
+import hashlib
 import json
 from pathlib import Path
 
 
 def load_config(path: str | Path) -> dict:
-    config = json.loads(Path(path).read_text(encoding="utf-8"))
+    path = Path(path)
+    config = json.loads(path.read_text(encoding="utf-8"))
+    if config.get("style_file"):
+        style_path = path.parent / config["style_file"]
+        raw = style_path.read_bytes()
+        style = json.loads(raw)
+        for key in ("checkpoint", "style_loras", "sampler", "resolutions", "positive_prefix", "negative_prompt"):
+            config[key] = copy.deepcopy(style[key])
+        config["style_snapshot"] = {"path": str(style_path),
+                                    "sha256": hashlib.sha256(raw).hexdigest(), "content": style}
     if config["http_timeout_seconds"] < 180:
         raise ValueError("http_timeout_seconds must be at least 180")
     for framing in ("wide", "full", "medium", "closeup"):

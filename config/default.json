@@ -25,13 +25,13 @@
   "style_loras": [
     {
       "name": "Iwao178.safetensors",
-      "strength_model": 0.5,
-      "strength_clip": 0.5
+      "strength_model": 0.4,
+      "strength_clip": 0.4
     },
     {
       "name": "akaimelon.safetensors",
-      "strength_model": 0.5,
-      "strength_clip": 0.5
+      "strength_model": 0.3,
+      "strength_clip": 0.3
     }
   ],
   "positive_prefix": "masterpiece, best quality, safe, sfw",
@@ -39,8 +39,8 @@
   "sampler": {
     "steps": 28,
     "cfg": 5.5,
-    "sampler_name": "dpmpp_2m",
-    "scheduler": "karras",
+    "sampler_name": "euler_ancestral",
+    "scheduler": "normal",
     "denoise": 1.0
   },
   "budget": {
@@ -98,5 +98,6 @@
       "full_body",
       "wide_shot"
     ]
-  }
+  },
+  "style_file": "style.json"
 }

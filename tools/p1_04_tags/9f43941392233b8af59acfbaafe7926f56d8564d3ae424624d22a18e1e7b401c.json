@@ -1,0 +1,18 @@
+{
+  "url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=full_body&limit=10",
+  "response": [
+    {
+      "id": 608813,
+      "name": "full_body",
+      "post_count": 1297212,
+      "category": 0,
+      "created_at": "2013-02-27T22:25:59.262-05:00",
+      "updated_at": "2019-08-24T02:46:06.928-04:00",
+      "is_deprecated": false,
+      "words": [
+        "full",
+        "body"
+      ]
+    }
+  ]
+}

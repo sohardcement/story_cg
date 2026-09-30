@@ -58,9 +58,14 @@ def _write_manifest(job_dir: Path, state: dict) -> None:
             images.append({
                 "shot_id": attempt["shot_id"], "attempt_number": attempt["attempt_number"],
                 "prompt_id": attempt["prompt_id"], "filename_prefix": attempt["filename_prefix"],
+                "seed": attempt["seed"],
+                "positive_prompt": attempt["workflow"]["4"]["inputs"]["text"],
+                "negative_prompt": attempt["workflow"]["5"]["inputs"]["text"],
                 **attempt["image"],
             })
-    save_json_atomic(job_dir / "manifest.json", {"job_id": state["job_id"], "images": images})
+    save_json_atomic(job_dir / "manifest.json", {"job_id": state["job_id"], "images": images,
+                                                   "style": state["config"].get("style_snapshot"),
+                                                   "config": state["config"], "usage": state.get("stats", {})})
 
 
 def _download_completed(job_dir: Path, state: dict, attempt: dict, client, history: dict) -> None:
@@ -190,7 +195,11 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
     attempt_number = 1 + max((a["attempt_number"] for a in state["attempts"]
                               if a["shot_id"] == shot_id), default=0)
     prefix = make_prefix(state["job_id"], shot_id, attempt_number)
-    seed = secrets.randbits(63)
+    seed = state["config"].get("generation_seed")
+    if seed is None:
+        seed = secrets.randbits(63)
+    if not isinstance(seed, int) or not 0 <= seed < 2**64:
+        raise ValueError("generation_seed must be an unsigned 64-bit integer")
     workflow_config = dict(state["config"])
     if negative_prompt is not None:
         workflow_config["negative_prompt"] = negative_prompt
