@@ -18,13 +18,17 @@ from storycg.runner import run_gen_one
 from storycg.state import load_state, save_json_atomic
 
 
-def new_job(job_dir: str | Path, character: str, story: str, shots: int = 4) -> dict:
+def new_job(job_dir: str | Path, character: str, story: str, shots: int = 4, *, generation_options: dict | None = None, generation_config: dict | None = None) -> dict:
     job_dir = Path(job_dir)
     if not 4 <= shots <= 6:
         raise ValueError("story jobs require 4 to 6 shots")
     expected = {"character": character.strip(), "story": story.strip(), "shot_count": shots}
     if not expected["character"] or not expected["story"]:
         raise ValueError("character and story are required")
+    if generation_options:
+        expected["generation_options"] = generation_options
+    if generation_config is not None:
+        expected["generation_config"] = generation_config
     path = job_dir / "job.json"
     if path.exists():
         current = json.loads(path.read_text(encoding="utf-8"))
@@ -97,6 +101,9 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
     log_path = job_dir / "plan_log.json"
     log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"calls": []}
     images = []
+    layouts = [{"shot_id": a["shot_id"], "prompt_id": a["prompt_id"], "seed": a["seed"],
+                "reference": a.get("reference"), "workflow": a["workflow"], **a["image"]}
+               for a in state["attempts"] if a["shot_id"].startswith("layout") and a["status"] == "completed"]
     for entry in board["shots"]:
         shot_id = f'shot{entry["number"]:02d}'
         matching = [attempt for attempt in state["attempts"]
@@ -112,7 +119,8 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
                        "positive_prompt": workflow["4"]["inputs"]["text"],
                        "negative_prompt": workflow["5"]["inputs"]["text"],
                        "seed": attempt["seed"], "sampler": workflow["7"]["inputs"],
-                       "resolution": workflow["6"]["inputs"], "reference": attempt.get("reference"), **attempt["image"]})
+                       "resolution": workflow["6"]["inputs"], "reference": attempt.get("reference"),
+                       "created_at": attempt["created_at"], "completed_at": attempt["completed_at"], **attempt["image"]})
     elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(job["created_at"])).total_seconds()
     prior_path = job_dir / "manifest.json"
     prior = json.loads(prior_path.read_text(encoding="utf-8")) if prior_path.exists() else {}
@@ -120,6 +128,8 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
                 "story": job["story"], "identity_file": "identity.json",
                 "storyboard_file": "storyboard.json", "models": _model_manifest(config, client),
                 "style": config.get("style_snapshot"),
+                "identity_control": config.get("identity_control"), "layout_mode": config.get("layout_mode", "none"),
+                "layout_images": layouts, "reference_models": config.get("reference_models"),
                 "reference_relationship": {"portrait": json.loads((job_dir / "portrait.json").read_text()) if (job_dir / "portrait.json").exists() else None},
                 "review_records": prior.get("review_records", []),
                 "images": images, "usage": {"generated_images": state.get("stats", {}).get("generated_images", 0),
@@ -200,28 +210,41 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         config = load_state(job_dir)["config"]
     else:
         config = copy.deepcopy(config)
-        config["budget"]["max_images_per_job"] = min(8, config["budget"]["max_images_per_job"])
+        config["budget"]["max_images_per_job"] = min(max(8, 2 * len(board["shots"])), config["budget"]["max_images_per_job"])
         config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
-    if not config.get("generation_reference"):
-        control = config.get('identity_control', {})
-        if control.get('mechanism') != 'ipadapter':
-            raise ValueError('identity reference mechanism awaits supervisor selection; use pilot tools for comparison')
-        if (job_dir / "state.json").exists():
-            raise ValueError("existing story snapshot has no generation reference; use a new task")
-        uploaded = client.upload_image(job_dir / portrait['face']['path'])
-        image_name = "/".join(filter(None, [uploaded.get('subfolder'), uploaded['name']]))
-        config['generation_reference'] = {'mechanism': 'ipadapter', 'strength': control['ipadapter_strength'],
-            'uploaded_image': image_name, 'path': portrait['face']['path'],
-            'sha256': portrait['face']['sha256'], 'source_task': portrait['source_task'],
-            'portrait_sha256': portrait['image']['sha256']}
+    from storycg.controls import apply_options, portrait_reference, upload_reference
+    from storycg.reference import edit_instruction
+    job = json.loads((job_dir / 'job.json').read_text())
+    config = apply_options(config, job.get('generation_options'))
+    config.pop('generation_reference', None)
+    config['auto_retry_failed'] = False
+    control = config['identity_control']
+    face_ref = (portrait_reference(job_dir, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'])
+                if control['mechanism'] == 'ipadapter' else None)
+    full_ref = (portrait_reference(job_dir, portrait, 'image', client, 'qwen_edit', 1.0)
+                if config['layout_mode'] == 'qwen' else None)
     state = None
     for entry in board["shots"]:
         parts = assemble_prompt(identity, entry, props=board["props"], config=config)
         shot_config = copy.deepcopy(config)
         shot_config["negative_prompt"] = ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
-        state = run_gen_one(job_dir, f'shot{entry["number"]:02d}', parts["positive_tags"],
-                            parts["framing"], config, client, negative_prompt=shot_config["negative_prompt"],
-                            repair_diagnosis=(repair_diagnoses or {}).get(str(entry["number"])))
+        shot_id = f'shot{entry["number"]:02d}'
+        relation = face_ref
+        if full_ref:
+            layout_id = f'layout{entry["number"]:02d}'
+            state = run_gen_one(job_dir, layout_id, edit_instruction(entry, board['props']),
+                                parts['framing'], config, client, generation_reference=full_ref)
+            layout = next(a for a in reversed(state['attempts']) if a['shot_id'] == layout_id)
+            if layout['status'] != 'completed':
+                break
+            relation = {'mechanism': 'img2img', 'strength': config.get('layout_denoise', 0.55),
+                        **layout['image'], 'prompt_id': layout['prompt_id'], 'source_task': str(job_dir.resolve()),
+                        'uploaded_image': upload_reference(job_dir, job_dir/layout['image']['path'], client, expected_sha256=layout['image']['sha256']),
+                        'upstream_reference': full_ref, 'identity_reference': face_ref}
+        state = run_gen_one(job_dir, shot_id, parts['positive_tags'],
+                            parts['framing'], config, client, negative_prompt=shot_config['negative_prompt'],
+                            generation_reference=relation,
+                            repair_diagnosis=(repair_diagnoses or {}).get(str(entry['number'])))
         latest = next(a for a in reversed(state["attempts"])
                       if a["shot_id"] == f'shot{entry["number"]:02d}')
         if latest["status"] != "completed":

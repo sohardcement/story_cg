@@ -59,6 +59,16 @@ def build_workflow(config: dict, positive_tags: str, framing: str, seed: int, fi
             workflow["7"]["inputs"].update(latent_image=["12",0],denoise=reference["strength"])
         else:
             raise ValueError("unknown reference mechanism")
+    identity_reference = (reference or {}).get("identity_reference")
+    if identity_reference:
+        workflow["20"] = {"class_type": "LoadImage", "inputs": {"image": identity_reference["uploaded_image"]}}
+        workflow["21"] = {"class_type": "IPAdapterModelLoader", "inputs": {"ipadapter_file": config["reference_models"]["ipadapter"]}}
+        workflow["22"] = {"class_type": "CLIPVisionLoader", "inputs": {"clip_name": config["reference_models"]["clip_vision"]}}
+        workflow["23"] = {"class_type": "IPAdapterAdvanced", "inputs": {
+            "model": ["3", 0], "ipadapter": ["21", 0], "image": ["20", 0],
+            "clip_vision": ["22", 0], "weight": identity_reference["strength"], "weight_type": "linear",
+            "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"}}
+        workflow["7"]["inputs"]["model"] = ["23", 0]
     return workflow
 
 
