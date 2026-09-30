@@ -119,6 +119,7 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
     manifest = {"job_id": job["job_id"], "character_input": job["character"],
                 "story": job["story"], "identity_file": "identity.json",
                 "storyboard_file": "storyboard.json", "models": _model_manifest(config, client),
+                "style": config.get("style_snapshot"),
                 "reference_relationship": "none; tag-only generation, identity tier pending_P6",
                 "review_records": prior.get("review_records", []),
                 "images": images, "usage": {"generated_images": state.get("stats", {}).get("generated_images", 0),

@@ -11,7 +11,8 @@
 - **P1 阶段门槛：通过**（监工判定）。叙事可读性问题转入 P1-04 与 P5。
 - P1-03 通过（返工 1 次）：三层审核器初版，盲审请求经监工读日志与代码确认不含剧情/分镜/角色名。
 - P1-04 部分通过：镜头 tag 化、道具登记、景别映射、场景负面词已实现并见效（对照 `review/P1-02-vs-P1-04.jpg`）；但只看图仍读不出剧情，道具数量/持有关系靠纯文本无法可靠绑定。
-- 下一步：P2-01（画风网格）。
+- **P2 阶段门槛：通过**（监工判定）。选定 WAI v170 + Iwao178 0.4 + akaimelon 0.3，euler_ancestral / normal / 28 步 / CFG 5.5，写入 `config/style.json`。理由：更高权重会让瞳色偏离原设并产生多余肢体残片（证据 `verify/p2-Bfaces.jpg`）。
+- 下一步：P3-01（定妆图 + IPAdapter / Qwen Edit 试点）。
 
 ## 占位项的取值（TASK.md 中未填写的【】）
 
@@ -88,6 +89,8 @@
 ## 决策记录
 
 - D1 占位项取值见上表。
+- D3 画风：Iwao178 0.4 / akaimelon 0.3（P2-01，身份优先取最低档）。
+- D4 Codex 派工加 `-c memories.use_memories=false`，避免 Codex 全局记忆中的旧 story-cg 项目内容渗入（TASK.md §2）。
 - D2 Codex 调用：`codex exec -C <workdir> --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -`；返工 `codex exec resume <id> -c sandbox_mode="workspace-write" -c sandbox_workspace_write.network_access=true --json -`。
 
 ## 工单列表
@@ -95,6 +98,7 @@
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P2-01 画风网格 | 通过 | 0 | 01a0f2e5-502f-7a61-8ec4-260891c14059 | `review/P2-grid-A.jpg`、`review/P2-grid-B.jpg`、`verify/p2-Bfaces.jpg` |
 | P1-04 镜头 tag 化+道具登记+景别映射 | 部分通过（叙事未达成） | 0 | 01a0f2c1-6126-7300-968b-7e7f9699ed4e | `review/P1-02-vs-P1-04.jpg`、`review/芙莉莲-拿错伞-P1-04.jpg` |
 | P1-03 三层审核器初版 | 通过 | 1 | 01a0f2a7-d180-78a3-b8f6-6343c002c0ca | `runs/p1_02_frieren_20260930/review.json`、`review_log.jsonl`、`review_artifacts/face_pair_*.png` |
 | P1-02 身份锁定+分镜+4镜+拼图 | 通过（叙事未通过，见下） | 0 | 01a0f24c-d0ce-7d61-8cc1-b5cb3168394e | `review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg`、`runs/p1_02_frieren_20260930/` |
@@ -109,6 +113,7 @@
 | P1-02 | 4 | 0（LLM 5） | 5 |
 | P1-03 | 0 | 14 | 5 |
 | P1-04 | 8 | 14（LLM 6） | 13 |
+| P2-01 | 20 | 0 | 33 |
 
 ## 审核器与监工判断不一致记录
 

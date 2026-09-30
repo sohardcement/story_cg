@@ -1,0 +1,63 @@
+{
+  "checkpoint": "waiIllustriousSDXL_v170.safetensors",
+  "style_loras": [
+    {
+      "name": "Iwao178.safetensors",
+      "strength_model": 0.4,
+      "strength_clip": 0.4
+    },
+    {
+      "name": "akaimelon.safetensors",
+      "strength_model": 0.3,
+      "strength_clip": 0.3
+    }
+  ],
+  "sampler": {
+    "steps": 28,
+    "cfg": 5.5,
+    "sampler_name": "euler_ancestral",
+    "scheduler": "normal",
+    "denoise": 1.0
+  },
+  "resolutions": {
+    "wide": [
+      1216,
+      832
+    ],
+    "full": [
+      832,
+      1216
+    ],
+    "medium": [
+      1024,
+      1024
+    ],
+    "closeup": [
+      1024,
+      1024
+    ]
+  },
+  "positive_prefix": "masterpiece, best quality, general, safe, sfw",
+  "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
+  "selection_status": "executor recommendation; supervisor visual decision pending",
+  "model_hashes": {
+    "waiIllustriousSDXL_v170.safetensors": {
+      "sha256": "unavailable",
+      "reason": "Remote Windows model files are not locally mounted; ComfyUI metadata API does not provide whole-file SHA256.",
+      "sshs_model_hash": "unavailable",
+      "sshs_model_hash_reason": "field absent from remote metadata"
+    },
+    "Iwao178.safetensors": {
+      "sha256": "unavailable",
+      "reason": "Remote Windows model files are not locally mounted; ComfyUI metadata API does not provide whole-file SHA256.",
+      "sshs_model_hash": "unavailable",
+      "sshs_model_hash_reason": "field absent from remote metadata"
+    },
+    "akaimelon.safetensors": {
+      "sha256": "unavailable",
+      "reason": "Remote Windows model files are not locally mounted; ComfyUI metadata API does not provide whole-file SHA256.",
+      "sshs_model_hash": "700403771cb0fe241a23330a023cb7c3b9a4de9dc00cade2e6188dc7b2c8e209",
+      "sshs_model_hash_reason": "reported by safetensors metadata"
+    }
+  }
+}
