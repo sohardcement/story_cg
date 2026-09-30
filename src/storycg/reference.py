@@ -73,7 +73,8 @@ def portrait_prompt(identity, config, additions=()):
 
 def audit_portrait(root, image, identity, config, vlm, attempt):
     from storycg.review import (messages, grading_schema, BBOX_SCHEMA, crop_face,
-                               identity_checklist, result_statuses, conclude)
+                               identity_checklist, result_statuses, conclude, VISIBILITY_PROMPT,
+                               enforce_visibility, annotate_reliability, load_reliability)
     root=Path(root)
     bbox=vlm.call(f'portrait_bbox_{attempt}',messages(
         'Locate the single protagonist face with ears, forehead and chin. Return normalized '
@@ -94,13 +95,15 @@ def audit_portrait(root, image, identity, config, vlm, attempt):
         'composition':config['portrait']['tags']}.items()})
     paths=[image]+([root/face['path']] if face else [])
     audit=vlm.call(f'portrait_audit_{attempt}',messages(
-        'Audit this character setting portrait against ONLY the sourced checklist. '
+        VISIBILITY_PROMPT + 'Audit this character setting portrait against ONLY the sourced checklist. '
         'Image 1 is full portrait; image 2 if present is its face crop. '
         'Assess every feature and clothing component, anatomy and hands with concrete visible evidence. '
         'pass=clear match; minor=small discrepancy; fail=major mismatch or unknown. '
-        'Unobservable or ambiguous required features => fail. Empty expectations are unsourced: '
+        'Unobservable required features => not_visible. Empty expectations are unsourced: '
         'do not invent a canonical feature. Checklist: '+json.dumps(checks,ensure_ascii=False),paths),
-        grading_schema(checks),paths)
+        grading_schema(checks, visibility=True),paths)
+    enforce_visibility(audit)
+    annotate_reliability(audit, load_reliability(config))
     statuses=result_statuses(audit)+(['pass'] if face else ['fail'])
     return {'status':'pass' if conclude(statuses)=='通过' else 'fail',
             'conclusion':conclude(statuses),'bbox':bbox,'audit':audit,'checklist':checks,'face':face}

@@ -20,7 +20,7 @@ from storycg.state import save_json_atomic
 TEXT = {'type': 'string', 'minLength': 1}
 GRADE = {'type': 'object', 'additionalProperties': False,
          'required': ['status', 'reason'], 'properties': {
-             'status': {'enum': ['pass', 'minor', 'fail']}, 'reason': TEXT}}
+             'status': {'enum': ['pass', 'minor', 'fail', 'not_visible']}, 'reason': TEXT}}
 SINGLE_KEYS = ['body', 'hands', 'action', 'prop_contact', 'composition', 'style']
 REFERENCE_NOTE = '参考=第1镜，非定妆图'
 
@@ -30,8 +30,12 @@ def object_schema(properties):
             'required': list(properties), 'properties': properties}
 
 
-def grading_schema(keys):
-    return object_schema({key: GRADE for key in keys})
+def grading_schema(keys, *, visibility=False):
+    grade = copy.deepcopy(GRADE)
+    if visibility:
+        grade['required'].append('visible')
+        grade['properties']['visible'] = {'type': 'boolean'}
+    return object_schema({key: grade for key in keys})
 
 
 def conclude(statuses):
@@ -151,6 +155,15 @@ class VisionClient:
             if choice.get('finish_reason') not in (None, 'stop'):
                 raise ValueError('incomplete or refused response')
             data = json.loads(choice['message']['content'])
+            if schema == BBOX_SCHEMA and data.get('found'):
+                bbox, converted = normalize_bbox(data['bbox'], list(paths)[0])
+                if converted:
+                    result['bbox_conversion'] = {'original': data['bbox'], 'normalized': bbox}
+                    self.log({'event': 'bbox_conversion', 'call_id': call_id,
+                              **result['bbox_conversion']})
+                data['bbox'] = bbox
+            if schema == BBOX_SCHEMA and not data.get('found') and data.get('bbox') != [0, 0, 0, 0]:
+                raise ValueError('absent face requires zero bbox')
             Draft202012Validator(schema).validate(data)
             result.update(status='pass', data=data)
         except Exception as exc:
@@ -194,6 +207,137 @@ def identity_checklist(identity, outfit):
     groups['outfit_state'] = {'expected': outfit, 'source': 'storyboard.json:outfit'}
     return groups
 
+
+
+VISIBILITY_PROMPT = (
+    'First determine visible=true/false for EVERY item from actual pixels, before grading. '
+    'If any required part cannot be observed (cropped, occluded, back view or too few pixels '
+    'to distinguish its attribute), visible=false and status=not_visible; never pass it from '
+    'the expectation or reference alone. Empty expectations are not required: compare only '
+    'visible reference details without inventing canonical traits. '
+    'pass=clear correct match; minor=small discrepancy; fail=visible mismatch; '
+    'not_visible=not observable. Give concrete evidence in reason. ')
+SINGLE_PROMPT = (
+    'Audit body anatomy, hands, action against the shot, object contact, composition and style. '
+    'Do not infer intended action. For EACH prop checklist entry count all matching objects '
+    'including extras, then report observed count, holder/location and state in reason; compare '
+    'each with expectation. Missing expected objects and extra objects are fail, not invisible. '
+    'Distinguish occlusion from absence. State includes all supplied description tags. '
+    'For framing_observation describe actual visible body extent (head to where) in reason '
+    'and classify lowest_visible; do not judge requested framing. ')
+CONSISTENCY_PROMPT = (
+    'Compare script-owned identity and outfit checklist only. Images: full reference, current '
+    'full image, optionally face pair LEFT reference RIGHT current. For each item separately '
+    'compare reference/current AND sourced expectation. Explicit outfit changes are allowed '
+    'only when declared. Also audit supplied scene fields against current/previous state. ')
+FRAMING_OBSERVATION = object_schema({
+    'lowest_visible': {'enum': ['face', 'shoulders', 'chest', 'waist', 'hips', 'thighs',
+                                'knees', 'calves', 'feet', 'unknown']}, 'reason': TEXT})
+
+
+def normalize_bbox(bbox, path):
+    if (len(bbox) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                             or not math.isfinite(v) or v < 0 for v in bbox)
+            or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):
+        raise ValueError('invalid face bbox')
+    converted = any(v > 1 for v in bbox)
+    if converted:
+        with Image.open(path) as image:
+            w, h = image.size
+        if any(v > limit for v, limit in zip(bbox, [w, h, w, h])):
+            raise ValueError('pixel bbox exceeds image dimensions')
+        bbox = [v / limit for v, limit in zip(bbox, [w, h, w, h])]
+    return bbox, converted
+
+
+def enforce_visibility(result):
+    if result['status'] == 'pass':
+        for item in result['data'].values():
+            if item.get('visible') is False:
+                item['status'] = 'not_visible'
+    return result
+
+
+def visibility_summary(results):
+    keys = set(k for r in results if r['status'] == 'pass' for k in r['data'])
+    required = {k for r in results for k, v in r.get('checklist', {}).items() if v.get('expected')}
+    if not any('checklist' in r for r in results):
+        required = keys
+    return {'unreviewed': [{'shot': r.get('shot'), 'item': k, 'note': '未经审核'}
+                          for r in results for k, v in r.get('data', {}).items()
+                          if v.get('status') == 'not_visible' and k in required],
+            'all_shots_not_visible': sorted(k for k in required if results and all(
+                r['status'] == 'pass' and r['data'].get(k, {}).get('status') == 'not_visible'
+                for r in results))}
+
+
+def prop_checklist(props, shot):
+    lookup = {p['id']: p for p in props}
+    checks = {}
+    for n, key in enumerate(shot.get('key_props', []), 1):
+        prop = lookup.get(key['prop_id'], {'id': key['prop_id']})
+        checks[f'prop_{n}'] = {'expected': {**prop, **key,
+            'count': key.get('count', prop.get('count', 1))}, 'source': 'storyboard.json:props/shot.key_props'}
+    return checks
+
+
+def framing_grade(expected, observed, config):
+    allowed = config.get('framing_definitions', {}).get(expected)
+    return {'status': 'pass' if allowed and observed['lowest_visible'] in allowed else 'fail',
+            'reason': f"expected={expected}; allowed={allowed}; observed={observed['lowest_visible']}; "
+                      + observed['reason']}
+
+
+def reliability_key(key):
+    if key.startswith('outfit_'):
+        return 'outfit'
+    if key.startswith('prop_'):
+        return 'props'
+    if key in ('hair_ornaments', 'accessories'):
+        return 'accessories'
+    return key
+
+
+def load_reliability(config):
+    path = Path(config.get('review_reliability_file', Path(__file__).resolve().parents[2] /
+                           'config/review_reliability.json'))
+    return json.loads(path.read_text()).get('items', {}) if path.exists() else {}
+
+
+def annotate_reliability(result, items):
+    for key, item in result.get('data', {}).items():
+        status = items.get(reliability_key(key), {}).get('status', 'unverified')
+        item['reliability'] = status
+        item['verified'] = status == 'reliable' and item.get('status') == 'pass'
+        item['reliability_note'] = '' if status == 'reliable' else '该项未经可靠审核'
+    return result
+
+
+def audit_single(vlm, path, entry, props, config, purpose):
+    checks = prop_checklist(props, entry['shot'])
+    schema = grading_schema([*SINGLE_KEYS, *checks], visibility=True)
+    if entry['shot'].get('framing'):
+        schema['properties']['framing_observation'] = FRAMING_OBSERVATION
+        schema['required'].append('framing_observation')
+    result = vlm.call(purpose, messages(VISIBILITY_PROMPT + SINGLE_PROMPT +
+        'Expected shot: ' + json.dumps(entry['shot'], ensure_ascii=False) +
+        '\nProp checklist: ' + json.dumps(checks, ensure_ascii=False), [path]), schema, [path])
+    enforce_visibility(result)
+    if result['status'] == 'pass' and 'framing_observation' in result['data']:
+        observed = result['data'].pop('framing_observation')
+        result['framing_observation'] = observed
+        result['data']['framing'] = framing_grade(entry['shot']['framing'], observed, config)
+    result['prop_checklist'] = checks
+    return annotate_reliability(result, load_reliability(config))
+
+
+def audit_consistency(vlm, paths, checks, config, purpose, reference_note='参考=已审核定妆图'):
+    result = vlm.call(purpose, messages(VISIBILITY_PROMPT + CONSISTENCY_PROMPT + reference_note + '. ' +
+        'Checklist: ' + json.dumps(checks, ensure_ascii=False), paths),
+        grading_schema(checks, visibility=True), paths)
+    enforce_visibility(result)
+    result['checklist'] = checks
+    return annotate_reliability(result, load_reliability(config))
 
 def scene_checklist(current, previous):
     """Generate one scene check per task-supplied field without adding scene elements."""
@@ -239,7 +383,7 @@ def result_statuses(result):
 BBOX_SCHEMA = object_schema({
     'found': {'type': 'boolean'},
     'bbox': {'type': 'array', 'minItems': 4, 'maxItems': 4,
-             'items': {'type': 'number', 'minimum': 0, 'maximum': 1}}, 'reason': TEXT})
+             'items': {'type': 'number'}}, 'reason': TEXT})
 BLIND_SCHEMA = object_schema({key: TEXT for key in
                              ['where', 'event', 'action', 'change', 'ending', 'uncertainty']})
 BLIND_SCHEMA['description'] = (
@@ -303,15 +447,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
     statuses = []
     try:
         for number, (path, entry) in enumerate(zip(paths, board['shots']), 1):
-            result = vlm.call(f'single_{number:02d}', messages(
-                'Audit the image, with concrete visible evidence for each grade. '
-                'pass=clear and correct, minor=small flaw without blocking readability, '
-                'fail=major defect, missing required event/prop, or cannot determine. '
-                'Check body anatomy, hands, action versus expected shot, prop/object contact, '
-                'composition/readability and coherent anime illustration style. Do not infer '
-                'an absent action from the expected shot. Expected shot: ' +
-                json.dumps(entry['shot'], ensure_ascii=False), [path]),
-                grading_schema(SINGLE_KEYS), [path])
+            result = audit_single(vlm, path, entry, board.get('props', []), config, f'single_{number:02d}')
             report['single'].append({'shot': number, **result})
             statuses.extend(result_statuses(result))
         for number, path in enumerate(paths, 1):
@@ -339,34 +475,15 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             checks = {**checklist, **scene_checklist(entry['scene'], previous_scene),
                       'scene_transition': {'expected': {'previous': previous_scene,
                                                        'current': entry['scene']}, 'source': 'storyboard.json:scene'}}
-            if face['status'] != 'pass' or (portrait is None and report['faces'][0]['status'] != 'pass'):
-                result = {'status': 'fail', 'error': 'face crop/reference unavailable'}
-            else:
+            compare_paths = [reference_full if portrait else paths[0], path]
+            pair = None
+            if face['status'] == 'pass' and (portrait or report['faces'][0]['status'] == 'pass'):
                 pair = artifacts / f'face_pair_{number:02d}.png'
-                face_pair(reference_face if portrait else job_dir / report['faces'][0]['path'], job_dir / face['path'], pair)
-                compare_paths = [pair, reference_full if portrait else paths[0]]
-                if number > 1:
-                    compare_paths.append(paths[number - 2])
-                compare_paths.append(path)
-                result = vlm.call(f'consistency_{number:02d}', messages(
-                    'Audit ONLY the script-generated checklist below, returning one grade per exact key. '
-                    'First image is face comparison: LEFT reference, RIGHT current. '
-                    + reference_note + '. Remaining images: full reference, '
-                    + ('previous full shot, ' if number > 1 else '') + 'current full shot. '
-                    'For each identity feature, compare reference/current and sourced expectation separately '
-                    'in the reason, not a global same-person judgment. Empty expectation means unsourced: '
-                    'compare only visible reference features and say expectation not specified; never invent '
-                    'a canonical feature. Clothing components come from current outfit state, allowing explicit '
-                    'outfit changes only. For each script-generated scene field, check the specific '
-                    'elements described by its current and previous values against the visible images. '
-                    'Do not add expected scene elements absent from those values. Also assess visual '
-                    'continuity, citing visible evidence; identical declared states do not excuse '
-                    'unexplained visual changes. A null previous value means no prior expectation '
-                    'was specified for that field. '
-                    'Unobservable or ambiguous REQUIRED features => fail with reason. '
-                    'pass=clear match; minor=small discrepancy; fail=major mismatch/unknown. Checklist: '
-                    + json.dumps(checks, ensure_ascii=False), compare_paths),
-                    grading_schema(checks), compare_paths)
+                face_pair(reference_face if portrait else job_dir / report['faces'][0]['path'],
+                          job_dir / face['path'], pair)
+                compare_paths.append(pair)
+            result = audit_consistency(vlm, compare_paths, checks, config, f'consistency_{number:02d}', reference_note)
+            if pair:
                 result['face_pair'] = str(pair.relative_to(job_dir))
             report['consistency'].append({'shot': number, 'checklist': checks, **result})
             statuses.extend(result_statuses(result))
@@ -392,6 +509,8 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
     finally:
         if client is None:
             vlm.close()
+    report['visibility'] = visibility_summary(report['consistency'])
+    report['reliability'] = load_reliability(config)
     report['conclusion'] = conclude(statuses)
     report['layer_conclusions'] = {
         'single': conclude(s for r in report['single'] for s in result_statuses(r)),
@@ -406,7 +525,9 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
     record = {'session_id': vlm.session_id, 'at': datetime.now(timezone.utc).isoformat(),
               'review_file': 'review.json', 'log_file': 'review_log.jsonl',
               'conclusion': report['conclusion'], 'layer_conclusions': report['layer_conclusions'],
-              'reference_note': reference_note, 'reference': portrait, 'usage': report['usage']}
+              'reference_note': reference_note, 'reference': portrait, 'usage': report['usage'],
+              'visibility': report['visibility'], 'reliability': report['reliability'],
+              'item_reviews': {layer: report[layer] for layer in ['single', 'consistency']}}
     # Preserve prior records and snapshot on repeat rather than silently replace evidence.
     archive = artifacts / f'review_{vlm.session_id}.json'
     save_json_atomic(archive, report)
@@ -433,7 +554,9 @@ def write_review_md(job_dir, report):
             else:
                 for key, item in result['data'].items():
                     reason = item['reason'].replace('\n', ' ')
-                    lines.append(f"- {key}: **{item['status']}** — {reason}")
+                    lines.append(f"- {key}: **{item['status']}** — {reason}; {item.get('reliability_note', '该项未经可靠审核')}")
+    lines.extend(['', '## 未经审核的不可见必需项', '', '```json',
+                  json.dumps(report.get('visibility', {}), ensure_ascii=False, indent=2), '```'])
     lines.extend(['', '## 面部裁切（并排图左参考，右当前）', ''])
     for face in report['faces']:
         lines.append(f"- 第 {face['shot']} 镜: {face['status']}; " +
