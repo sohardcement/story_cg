@@ -1,6 +1,7 @@
 """Restartable four-shot story pipeline built on the P1-01 runner."""
 
 import copy
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -56,7 +57,8 @@ def plan_job(job_dir: str | Path, config: dict) -> dict:
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before planning")
     return plan_story(job_dir, job["story"], identity, job["shot_count"],
-                      config["model_service_url"], max_calls=20)
+                      config["model_service_url"], max_calls=config.get("planning", {}).get("max_calls", 25),
+                      retries=config.get("planning", {}).get("retries", 10), config=config)
 
 
 def _model_manifest(config: dict, client) -> dict:
@@ -102,7 +104,7 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
         if not matching:
             continue
         attempt = matching[-1]
-        parts = assemble_prompt(identity, entry)
+        parts = assemble_prompt(identity, entry, props=board["props"], config=config)
         workflow = attempt["workflow"]
         images.append({"shot_id": shot_id, "attempt_number": attempt["attempt_number"],
                        "prompt_id": attempt["prompt_id"], "filename_prefix": attempt["filename_prefix"],
@@ -112,14 +114,21 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
                        "seed": attempt["seed"], "sampler": workflow["7"]["inputs"],
                        "resolution": workflow["6"]["inputs"], **attempt["image"]})
     elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(job["created_at"])).total_seconds()
+    prior_path = job_dir / "manifest.json"
+    prior = json.loads(prior_path.read_text(encoding="utf-8")) if prior_path.exists() else {}
     manifest = {"job_id": job["job_id"], "character_input": job["character"],
                 "story": job["story"], "identity_file": "identity.json",
                 "storyboard_file": "storyboard.json", "models": _model_manifest(config, client),
-                "reference_relationship": "none in P1-02", "review_records": [],
+                "reference_relationship": "none; tag-only generation, identity tier pending_P6",
+                "review_records": prior.get("review_records", []),
                 "images": images, "usage": {"generated_images": state.get("stats", {}).get("generated_images", 0),
                                              "submission_attempts": state.get("stats", {}).get("submission_attempts", 0),
-                                             "llm_calls": len(log["calls"]), "review_calls": 0,
+                                             "llm_calls": len(log["calls"]),
+                                             "review_calls": prior.get("usage", {}).get("review_calls", 0),
                                              "elapsed_seconds": round(elapsed, 1)}}
+    for key in ("review_call_seconds", "review_elapsed_seconds"):
+        if key in prior.get("usage", {}):
+            manifest["usage"][key] = prior["usage"][key]
     save_json_atomic(job_dir / "manifest.json", manifest)
     return manifest
 
@@ -169,12 +178,16 @@ def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
     review_dir.mkdir(parents=True, exist_ok=True)
     short = re.sub(r"[^\w\u3400-\u9fff]+", "", job["story"])[:30]
     review_path = review_dir / f'{job["character"]}-{short}.jpg'
-    review_path.write_bytes(path.read_bytes())
+    if review_path.exists() and review_path.read_bytes() != path.read_bytes():
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()[:10]
+        review_path = review_dir / f'{job["character"]}-{short}-{job_dir.name}-{digest}.jpg'
+    if not review_path.exists():
+        review_path.write_bytes(path.read_bytes())
     return review_path
 
 
 def run_story_job(job_dir: str | Path, config: dict, client,
-                  *, review_dir: str | Path = "review") -> dict:
+                  *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None) -> dict:
     job_dir = Path(job_dir)
     identity = resolve_job(job_dir)
     if identity["status"] != "locked":
@@ -188,15 +201,19 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
     state = None
     for entry in board["shots"]:
-        parts = assemble_prompt(identity, entry)
+        parts = assemble_prompt(identity, entry, props=board["props"], config=config)
+        shot_config = copy.deepcopy(config)
+        shot_config["negative_prompt"] = ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
         state = run_gen_one(job_dir, f'shot{entry["number"]:02d}', parts["positive_tags"],
-                            parts["framing"], config, client)
+                            parts["framing"], config, client, negative_prompt=shot_config["negative_prompt"],
+                            repair_diagnosis=(repair_diagnoses or {}).get(str(entry["number"])))
         latest = next(a for a in reversed(state["attempts"])
                       if a["shot_id"] == f'shot{entry["number"]:02d}')
         if latest["status"] != "completed":
             break
     if state is not None:
         write_story_manifest(job_dir, config, client)
-        if sum(a["status"] == "completed" for a in state["attempts"]) == len(board["shots"]):
+        if all(any(a["status"] == "completed" and a["shot_id"] == f'shot{entry["number"]:02d}'
+                   for a in state["attempts"]) for entry in board["shots"]):
             make_contact_sheet(job_dir, review_dir)
     return state or {}

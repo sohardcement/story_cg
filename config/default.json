@@ -4,15 +4,35 @@
   "http_timeout_seconds": 180,
   "poll_interval_seconds": 2,
   "resolutions": {
-    "wide": [1216, 832],
-    "full": [832, 1216],
-    "medium": [1024, 1024],
-    "closeup": [1024, 1024]
+    "wide": [
+      1216,
+      832
+    ],
+    "full": [
+      832,
+      1216
+    ],
+    "medium": [
+      1024,
+      1024
+    ],
+    "closeup": [
+      1024,
+      1024
+    ]
   },
   "checkpoint": "waiIllustriousSDXL_v170.safetensors",
   "style_loras": [
-    {"name": "Iwao178.safetensors", "strength_model": 0.5, "strength_clip": 0.5},
-    {"name": "akaimelon.safetensors", "strength_model": 0.5, "strength_clip": 0.5}
+    {
+      "name": "Iwao178.safetensors",
+      "strength_model": 0.5,
+      "strength_clip": 0.5
+    },
+    {
+      "name": "akaimelon.safetensors",
+      "strength_model": 0.5,
+      "strength_clip": 0.5
+    }
   ],
   "positive_prefix": "masterpiece, best quality, safe, sfw",
   "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
@@ -28,5 +48,55 @@
     "max_images_per_job": 40,
     "max_job_minutes": 45,
     "stop_after_no_improvement_rounds": 2
+  },
+  "framing_tags": {
+    "wide": [
+      "wide_shot",
+      "full_body",
+      "scenery"
+    ],
+    "full": [
+      "full_body"
+    ],
+    "medium": [
+      "cowboy_shot"
+    ],
+    "closeup": [
+      "upper_body",
+      "close-up"
+    ]
+  },
+  "camera_tags": {
+    "front": [],
+    "above": [
+      "from_above"
+    ],
+    "below": [
+      "from_below"
+    ],
+    "side": [
+      "from_side"
+    ],
+    "behind": [
+      "from_behind"
+    ],
+    "dutch": [
+      "dutch_angle"
+    ]
+  },
+  "planning": {
+    "max_calls": 25,
+    "retries": 10
+  },
+  "framing_negative_tags": {
+    "wide": [],
+    "full": [],
+    "medium": [
+      "wide_shot"
+    ],
+    "closeup": [
+      "full_body",
+      "wide_shot"
+    ]
   }
 }

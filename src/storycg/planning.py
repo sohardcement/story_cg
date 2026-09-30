@@ -11,28 +11,39 @@ from storycg.state import save_json_atomic
 
 
 TEXT = {"type": "string", "minLength": 1}
+TAGS = {"type": "array", "items": TEXT, "uniqueItems": True}
 SCENE = {"type": "object", "additionalProperties": False,
-         "required": ["location", "time", "weather", "lighting", "environment_change"],
-         "properties": {key: TEXT for key in
-                        ["location", "time", "weather", "lighting", "environment_change"]}}
+         "required": ["location", "time", "weather", "lighting", "environment_change", "tags", "negative_tags"],
+         "properties": {**{key: TEXT for key in
+                        ["location", "time", "weather", "lighting", "environment_change"]},
+                        "tags": {**TAGS, "minItems": 1}, "negative_tags": TAGS}}
 OUTFIT = {"type": "object", "additionalProperties": False,
-          "required": ["clothing_state", "change_at_shot"],
-          "properties": {"clothing_state": TEXT,
+          "required": ["clothing_state", "change_at_shot", "tags"],
+          "properties": {"clothing_state": TEXT, "tags": {**TAGS, "minItems": 1},
                          "change_at_shot": {"type": ["integer", "null"], "minimum": 1}}}
+PROP_STATE = {"type": "object", "additionalProperties": False,
+              "required": ["id", "kind", "description_tags"],
+              "properties": {"id": TEXT, "kind": TEXT,
+                             "description_tags": {**TAGS, "minItems": 1}}}
 PROP = {"type": "object", "additionalProperties": False,
-        "required": ["name", "held_by", "position"],
-        "properties": {key: TEXT for key in ["name", "held_by", "position"]}}
+        "required": ["prop_id", "held_by", "position", "relation_tags", "location_tags"],
+        "properties": {"prop_id": TEXT, "held_by": {"enum": ["subject", "other", "none", "offscreen"]},
+                       "position": TEXT, "relation_tags": TAGS, "location_tags": TAGS}}
 SHOT = {"type": "object", "additionalProperties": False,
-        "required": ["narrative_role", "action", "expression", "key_props",
-                     "spatial_relation", "framing", "camera_angle", "change_from_previous"],
-        "properties": {**{key: TEXT for key in ["narrative_role", "action", "expression",
-                                                "spatial_relation", "camera_angle",
-                                                "change_from_previous"]},
+        "required": ["narrative_role", "description", "action", "expression", "key_props", "tags",
+                     "spatial_relation", "framing", "camera_angle", "change_from_previous", "composition_reason"],
+        "properties": {**{key: TEXT for key in ["narrative_role", "description", "action", "expression",
+                                                "spatial_relation", "change_from_previous"]},
+                       "composition_reason": {"type": "string"},
+                       "tags": {**TAGS, "minItems": 1},
                        "key_props": {"type": "array", "items": PROP},
+                       "camera_angle": {"enum": ["front", "above", "below", "side", "behind", "dutch"]},
                        "framing": {"enum": ["wide", "full", "medium", "closeup"]}}}
 STORYBOARD_SCHEMA = {"$schema": "https://json-schema.org/draft/2020-12/schema",
                      "type": "object", "additionalProperties": False,
-                     "required": ["shots"], "properties": {"shots": {"type": "array", "items": {
+                     "required": ["props", "shots"], "properties": {
+                         "props": {"type": "array", "items": PROP_STATE},
+                         "shots": {"type": "array", "items": {
                          "type": "object", "additionalProperties": False,
                          "required": ["number", "scene", "outfit", "shot"],
                          "properties": {"number": {"type": "integer", "minimum": 1},
@@ -41,7 +52,7 @@ STORYBOARD_SCHEMA = {"$schema": "https://json-schema.org/draft/2020-12/schema",
 APPEARANCE_EN = re.compile(
     r"\b(?:hair|haired|hairstyle|bangs|twintails?|ponytails?|braids?|eyes?|eyed|iris|pupils?|"
     r"eyelashes|eyebrows?|ears?|skin|complexion|face|facial features|body type|"
-    r"height|stature|build|figure|petite|elf|horns?|tails?|fangs?|freckles|moles?|"
+    r"breasts?|bust|slender|muscular|plump|chubby|thin|fat|ahoge|height|stature|build|figure|petite|elf|horns?|tails?|fangs?|freckles|moles?|"
     r"lips?|nose|mouth)\b", re.I)
 APPEARANCE_ZH = re.compile(
     r"头发|发色|发型|发丝|长发|短发|卷发|直发|银发|金发|黑发|白发|红发|蓝发|绿发|紫发|粉发|"
@@ -69,7 +80,44 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         raise ValueError(f"storyboard shot count: expected {shot_count}, got {len(board['shots'])}")
     if [entry["number"] for entry in board["shots"]] != list(range(1, shot_count + 1)):
         raise ValueError("storyboard shot numbers must be sequential")
+    from storycg.tags import canonical_tag
+    props = {p['id']: p for p in board['props']}
+    if len(props) != len(board['props']):
+        raise ValueError("prop ids must be unique")
+    signatures = set()
+    visual_attributes = re.compile(r"(?:^|_)(red|blue|green|yellow|orange|purple|pink|white|black|grey|gray|brown|silver|gold|multicolored|rainbow|striped|plaid|checkered|polka_dot|floral|argyle|camouflage|patterned)(?:_|$)")
+    kind_counts = {}
+    for prop in board['props']:
+        kind = canonical_tag(prop['kind'])
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+    for prop in board['props']:
+        kind = canonical_tag(prop['kind'])
+        attributes = frozenset(match.group(1) for tag in prop['description_tags']
+                               for match in visual_attributes.finditer(canonical_tag(tag)))
+        if kind_counts[kind] > 1 and not attributes:
+            raise ValueError("same-kind props require distinct color or pattern tags")
+        signature = (kind, attributes if kind_counts[kind] > 1 else
+                     frozenset(canonical_tag(t) for t in prop['description_tags']))
+        if signature in signatures:
+            raise ValueError("same-kind props require distinct visual descriptions")
+        signatures.add(signature)
+        for value in prop['description_tags']:
+            if APPEARANCE_EN.search(value.replace('_', ' ')) or APPEARANCE_ZH.search(value):
+                raise ValueError(f"appearance description is forbidden in props: {value}")
+    first = board['shots'][0]['shot']
+    if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
+        raise ValueError("first shot must establish the environment: wide framing and establishing role")
+    previous = None
     for entry in board["shots"]:
+        shot = entry['shot']
+        if previous and (shot['framing'], shot['camera_angle']) == (previous['framing'], previous['camera_angle']) and not shot['composition_reason'].strip():
+            raise ValueError("adjacent shots need different framing/angle or a composition_reason")
+        previous = shot
+        for ref in shot['key_props']:
+            if ref['prop_id'] not in props:
+                raise ValueError(f"unknown prop reference: {ref['prop_id']}")
+            if ref['held_by'] in ('subject', 'other') and not ref['relation_tags']:
+                raise ValueError("held props need hand/object relation tags")
         changed = entry["outfit"]["change_at_shot"]
         if changed is not None and changed != entry["number"]:
             raise ValueError("outfit change_at_shot must name the current shot")
@@ -90,7 +138,8 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
 
 def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                model_url: str, *, max_calls: int = 20, retries: int = 3,
-               client: httpx.Client | None = None) -> dict:
+               client: httpx.Client | None = None, config: dict | None = None,
+               tag_registry=None, feedback: str | None = None) -> dict:
     job_dir = Path(job_dir)
     plan_path = job_dir / "storyboard.json"
     if plan_path.exists():
@@ -100,7 +149,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         with httpx.Client(base_url=model_url.rstrip("/"), timeout=180,
                           trust_env=False) as owned:
             return plan_story(job_dir, story, identity, shot_count, model_url,
-                              max_calls=max_calls, retries=retries, client=owned)
+                              max_calls=max_calls, retries=retries, client=owned, config=config, tag_registry=tag_registry, feedback=feedback)
     model_response = client.get("/models")
     model_response.raise_for_status()
     models = model_response.json()["data"]
@@ -112,19 +161,29 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     log_path = job_dir / "plan_log.json"
     log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"calls": []}
     instructions = (
-        "Return only JSON matching the schema. Plan a sequence of exactly " + str(shot_count) +
-        " distinct visual shots for one named protagonist. Write all state strings in concise English "
-        "suitable for image generation. Refer to the main character only as 'protagonist'. "
-        "Do not include any character name, franchise, identity tag, physical appearance, "
-        "hair, eyes, ears, skin, height, face, or body descriptors. Other people, if needed, "
-        "must be anonymous backs, passersby, cropped body parts, or offscreen. Preserve the "
-        "story's causal event and ending. Specify what each important prop is, who holds it, "
-        "and where it is. Keep outfit and setting continuous; use change_at_shot only when "
-        "clothes actually change. Make the event legible without captions or dialogue. "
-        "For expression use only emotion words such as surprised, puzzled, or relieved; "
-        "never describe eyes, eyebrows, brow, face, skin, hair, ears, or body. "
-        "Preserve the user's exact temporal and weather facts, place, prop ownership, "
-        "and causal outcome. Do not introduce unrelated props or change the weather."
+        "Return only schema JSON. Plan exactly " + str(shot_count) + " visually causal shots. "
+        "Descriptions/action/expression/position are concise English for display and audit ONLY. "
+        "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
+        "No character names, franchises or physical appearance tags in any state. "
+        "Never use the words face, eyes, mouth, hair, ears anywhere, even in description, "
+        "composition_reason or spatial_relation. Say reaction closeup or surprised instead. "
+        "Do not describe hair, eyes, ears, skin, body shape, height or facial anatomy. "
+        "Use emotions such as surprised, confused, smile in shot.tags. "
+        "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. "
+        "First shot MUST be wide with narrative_role establishing. Vary framing and camera_angle "
+        "between adjacent shots; identical pairs require a meaningful composition_reason. "
+        "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
+        "Register every key prop at top-level props with unique id, kind (a real object tag), "
+        "description_tags containing kind plus concrete color/pattern object tags. Same-kind props "
+        "that must be distinguished MUST have conspicuously different colors or patterns. "
+        "Each shot references prop_id with held_by and position, AND real relation_tags/location_tags "
+        "that visually express contact and placement. held_by subject means the main person. "
+        "Use tags for holding/contact, pose, gesture and expression; omit irrelevant props per shot. "
+        "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
+        "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
+        "when the story states it has ended. No captions or dialogue: visually reveal recognition "
+        "of the error, its contrasting evidence and the corrective action. "
+        "v1 has one main person; others only anonymous backs, cropped parts or offscreen."
     )
     outfit_tags = [item["tag"].replace("_", " ") for item in
                    identity.get("default_outfit_tags", [])]
@@ -133,6 +192,8 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         base_user_content += ("\nSourced canonical outfit tags (clothing only): " +
                               ", ".join(outfit_tags) +
                               ". Use these in clothing_state unless the story changes clothes.")
+    if feedback:
+        base_user_content += "\nDiagnosis from actual generated images; rewrite to address it:\n" + feedback
     for _ in range(retries):
         if len(log["calls"]) >= max_calls:
             raise ValueError("LLM call budget exhausted")
@@ -145,9 +206,12 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             if previous and previous.get("error"):
                 user_content += ("\nThe previous storyboard was rejected: " + previous["error"] +
                                  f"\nRewrite all {shot_count} shots to satisfy the schema and remove every "
-                                 "appearance/anatomy description. Use emotion words only for expression.")
+                                 "appearance/anatomy description. Never use the words face, eyes, mouth, hair, ears "
+                                 "anywhere in descriptions/action/spatial_relation/composition_reason. "
+                                 "Use emotion words only for expression. "
+                                 "Do not copy an invalid field unchanged. Previous invalid JSON:\n" + previous.get("raw", ""))
             response = client.post("/chat/completions", json={
-                "model": model, "temperature": 0.2, "max_tokens": 4000,
+                "model": model, "temperature": 0.2, "max_tokens": 6500,
                 "messages": [{"role": "system", "content": instructions},
                              {"role": "user", "content": user_content}],
                 "response_format": {"type": "json_schema", "json_schema": {
@@ -156,7 +220,27 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             call["raw"] = content
-            board = validate_storyboard(json.loads(content), shot_count, identity)
+            board = json.loads(content)
+            schema_errors = list(Draft202012Validator(STORYBOARD_SCHEMA).iter_errors(board))
+            if schema_errors:
+                raise ValueError(f"storyboard schema: {schema_errors[0].message}")
+            # Reject appearance/identity additions before discarding unknown tags.
+            validate_storyboard(board, shot_count, identity)
+            from storycg.tags import TagRegistry, validate_tag_lists
+            if tag_registry is None:
+                with httpx.Client(base_url="https://danbooru.donmai.us", timeout=30, trust_env=False) as tag_client:
+                    registry = TagRegistry(job_dir / "cache" / "tags", client=tag_client)
+                    try:
+                        validate_tag_lists(board, registry, config, drop_unknown=True)
+                    finally:
+                        call['tag_validation'] = registry.records
+            else:
+                before = len(tag_registry.records)
+                try:
+                    validate_tag_lists(board, tag_registry, config, drop_unknown=True)
+                finally:
+                    call['tag_validation'] = tag_registry.records[before:]
+            board = validate_storyboard(board, shot_count, identity)
         except (ValueError, KeyError, IndexError, httpx.HTTPError) as exc:
             call["status"] = "invalid"
             call["error"] = f"{type(exc).__name__}: {exc}"
@@ -165,5 +249,6 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         call["status"] = "valid"
         save_json_atomic(log_path, log)
         save_json_atomic(plan_path, board)
+        save_json_atomic(job_dir / "props.json", board["props"])
         return board
     raise ValueError(f"storyboard failed validation after {retries} calls; see {log_path}")

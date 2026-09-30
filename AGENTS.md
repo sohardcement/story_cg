@@ -36,3 +36,5 @@
 （由监工在返工时追加）
 
 1. （P1-03 追加）不得读取、参考或复制旧项目的代码、配置、提示词模板和任务状态：包括 `~/Documents/ChatGPT/manga_skill`、`~/.config/magpie/library/` 下的 story-cg-director / comfyui-* skills，以及 Codex 全局记忆里关于这些旧项目的条目。TASK.md §2 只允许从现有 skills 取基础设施信息（地址、认证、模型位置），这些监工已在 PROGRESS.md 核实，直接用即可。
+2. （P1-03 追加）通用代码和固定提示词（审核器、分镜、拼装、修复）里不得出现测试剧情或测试角色的专有词（例如某次测试用到的道具、地点、角色名）。需要具体元素时，从该任务的状态文件（identity / outfit / scene / shot / props）生成。
+3. （P1-04 追加）`verify/` 是监工的目录，执行者不得写入。你自己的验证脚本和输出放在 `tools/` 或 `reports/assets/`。
