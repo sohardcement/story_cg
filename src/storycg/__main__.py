@@ -137,7 +137,13 @@ def main(argv: list[str] | None = None) -> int:
                 job['generation_options'] = saved_options
                 save_json_atomic(args.job_dir/'job.json', job)
             config = apply_options(config, saved_options)
+        if args.command in ("run", "make", "resume"):
+            config["repair_cycle_enabled"] = True
         client = ComfyClient(config["comfyui_url"], config["http_timeout_seconds"])
+        if args.command in ("run", "make", "resume") and (args.job_dir/"job.json").exists():
+            from storycg.budget import Budget, GuardedComfy
+            from storycg.cycle import settings
+            client = GuardedComfy(client,Budget(args.job_dir,settings()))
 
         try:
             if args.command == "gen-one":

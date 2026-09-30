@@ -1,0 +1,68 @@
+{
+  "enabled": true,
+  "problem_methods": {
+    "props": [
+      "instruction_edit",
+      "relayout"
+    ],
+    "eye_color": [
+      "instruction_edit",
+      "face_detail"
+    ],
+    "accessories": [
+      "instruction_edit",
+      "face_detail"
+    ],
+    "hair_color": [
+      "instruction_edit",
+      "face_detail"
+    ],
+    "hairstyle": [
+      "face_detail",
+      "relayout"
+    ],
+    "outfit": [
+      "instruction_edit",
+      "relayout"
+    ],
+    "action": [
+      "relayout"
+    ],
+    "hands": [
+      "relayout"
+    ],
+    "composition": [
+      "relayout"
+    ],
+    "framing": [
+      "relayout"
+    ],
+    "scene": [
+      "relayout"
+    ],
+    "narrative": [
+      "relayout"
+    ]
+  },
+  "inpaint_disabled_reason": "D6: object localization produced incorrect, duplicate and full-image boxes; local repaint effectiveness unverified.",
+  "max_rounds_per_shot": 3,
+  "max_images": 40,
+  "max_minutes": 45,
+  "max_consecutive_no_improvement": 2,
+  "max_vision_calls": 139,
+  "max_llm_calls": 28,
+  "metric": "strict decrease of reliable fail count; failed or incomplete audit never improves; ties retain incumbent",
+  "instruction_edit": {
+    "style_restore": false,
+    "denoise": 0.25
+  },
+  "story_rules": {
+    "max_obscured": 1,
+    "detached_position_requires_separated": true,
+    "hand_owner_required": true
+  },
+  "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM.",
+  "final_review_reserve_minutes": 8,
+  "candidate_identity_regression": "reject new reliable hair_color/outfit fail even if total decreases",
+  "diagnosis_validation_retries": 1
+}
