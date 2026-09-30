@@ -182,7 +182,7 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
 
 
 def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
-                 framing: str) -> dict:
+                 framing: str, negative_prompt: str | None = None) -> dict:
     if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job image budget exhausted")
     if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
@@ -191,12 +191,15 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
                               if a["shot_id"] == shot_id), default=0)
     prefix = make_prefix(state["job_id"], shot_id, attempt_number)
     seed = secrets.randbits(63)
+    workflow_config = dict(state["config"])
+    if negative_prompt is not None:
+        workflow_config["negative_prompt"] = negative_prompt
     attempt = {
         "job_id": state["job_id"], "shot_id": shot_id, "attempt_number": attempt_number,
         "seed": seed, "positive_tags": positive_tags, "framing": framing,
         "filename_prefix": prefix, "client_id": uuid.uuid4().hex,
         "prompt_id": None, "status": "ready", "post_count": 0,
-        "workflow": build_workflow(state["config"], positive_tags, framing, seed, prefix),
+        "workflow": build_workflow(workflow_config, positive_tags, framing, seed, prefix),
         "created_at": _now(),
     }
     state["attempts"].append(attempt)
@@ -207,12 +210,14 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
 def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
     if attempt["status"] == "failed":
         replacement = _new_attempt(job_dir, state, attempt["shot_id"],
-                                   attempt["positive_tags"], attempt["framing"])
+                                   attempt["positive_tags"], attempt["framing"],
+                                   attempt["workflow"]["5"]["inputs"]["text"])
         _process(job_dir, state, replacement, client, recovering=False)
 
 
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
-                config: dict, client) -> dict:
+                config: dict, client, *, negative_prompt: str | None = None,
+                repair_diagnosis: dict | None = None) -> dict:
     job_dir = Path(job_dir)
     job_id = job_dir.name
     make_prefix(job_id, shot_id, 1)
@@ -228,13 +233,29 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
         matching = [attempt for attempt in state["attempts"] if attempt["shot_id"] == shot_id]
         if matching:
             attempt = matching[-1]
+            if repair_diagnosis is not None and attempt['status'] == 'completed':
+                if not all(repair_diagnosis.get(k) for k in ('diagnosis', 'hypothesis', 'changes')):
+                    raise ValueError("repair needs diagnosis, hypothesis and changes")
+                new_negative = negative_prompt or state['config']['negative_prompt']
+                same_conditioning = (attempt['positive_tags'], attempt['framing'], attempt['workflow']['5']['inputs']['text']) == (positive_tags, framing, new_negative)
+                if same_conditioning and attempt.get('repair_diagnosis') == repair_diagnosis:
+                    return state  # A completed diagnosed repair is idempotent.
+                if same_conditioning:
+                    raise ValueError("repair must change conditioning, not seed alone")
+                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt)
+                replacement['repair_diagnosis'] = repair_diagnosis
+                _save(job_dir, state)
+                _process(job_dir, state, replacement, client, recovering=False)
+                return state
+            if negative_prompt is not None and attempt["workflow"]["5"]["inputs"]["text"] != negative_prompt:
+                raise ValueError("shot already exists with different negative prompt")
             if attempt["positive_tags"] != positive_tags or attempt["framing"] != framing:
                 raise ValueError("shot already exists with different tags or framing")
             if attempt["status"] not in ("completed", "failed"):
                 _process(job_dir, state, attempt, client, recovering=True)
             _retry_if_failed(job_dir, state, attempt, client)
             return state
-        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing)
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt)
         _process(job_dir, state, attempt, client, recovering=False)
         _retry_if_failed(job_dir, state, attempt, client)
         return state
