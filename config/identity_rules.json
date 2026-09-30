@@ -1,0 +1,131 @@
+{
+  "version": 2,
+  "frequency_semantics": "Danbooru related_tags.frequency for character + solo; sampled co-occurrence, not canonical truth; solo reduces other-character contamination but does not exclude cosplay or tagging errors",
+  "min_frequency": 0.4,
+  "candidate_min_frequency": 0.15,
+  "exclusive_min_gap": 0.15,
+  "exclusive_min_ratio": 1.5,
+  "categories": [
+    {
+      "name": "hair_color",
+      "pattern": "^(?:black|white|grey|gray|silver|blonde|brown|red|orange|yellow|green|blue|purple|pink|aqua|multicolored|two-tone)_hair$",
+      "exclusive": true
+    },
+    {
+      "name": "eye_color",
+      "pattern": "^(?:black|white|grey|gray|silver|brown|red|orange|yellow|green|blue|purple|pink|aqua|heterochromia)_eyes$|^heterochromia$",
+      "exclusive": true
+    },
+    {
+      "name": "hair_length",
+      "pattern": "^(?:short|medium|long|very_long)_hair$",
+      "exclusive": true
+    },
+    {
+      "name": "hairstyle",
+      "pattern": "^(?:(?:single|double)_hair_bun|hair_bun|twintails|low_twintails|ponytail|side_ponytail|braid|twin_braids)$",
+      "exclusive": true
+    },
+    {
+      "name": "hair_details",
+      "pattern": "^(?:bangs|blunt_bangs|parted_bangs|sidelocks|long_sidelocks|ahoge|hair_over_one_eye|hair_between_eyes|hime_cut)$",
+      "exclusive": false
+    },
+    {
+      "name": "features",
+      "pattern": "^(?:pointy_ears|elf|horns|animal_ears|fang|freckles|mole|mole_under_eye|glasses|rimless_eyewear|semi-rimless_eyewear)$",
+      "exclusive": false
+    },
+    {
+      "name": "accessory_color",
+      "pattern": "^(?:black|white|red|blue|green|yellow|purple|pink|gold|silver)_(?:hairband|earrings|ribbon|hair_ribbon|hair_bow|bow)$",
+      "exclusive_by_suffix": true
+    },
+    {
+      "name": "accessories",
+      "pattern": "^(?:hairband|earrings|jewelry|hair_ornament|hair_ribbon|hair_bow|hairclip|headband|necklace|choker)$",
+      "exclusive": false
+    },
+    {
+      "name": "outfit_base",
+      "pattern": "^(?:dress|sweater_dress|shirt|sweater|bodysuit|leotard|kimono|robe|uniform|suit|coat|jacket)$",
+      "exclusive": true,
+      "outfit": true
+    },
+    {
+      "name": "outfit_parts",
+      "pattern": "(?:^|_)(?:buttons?|footwear|skirt_set|shirt|jacket|skirt|belt|capelet|cape|collar|pantyhose|boots?|shoes?|dress|coat|cloak|robe|uniform|socks?|gloves?|hat|scarf|ribbon|gem|trim|vest|necktie|sweater|sleeves|thighhighs|bow|apron)(?:_|$)",
+      "exclusive_by_suffix": true,
+      "outfit": true
+    }
+  ],
+  "outfit_incompatible_groups": [
+    [
+      "dress",
+      "bodysuit",
+      "kimono",
+      "suit"
+    ],
+    [
+      "short_sleeves",
+      "long_sleeves",
+      "sleeveless"
+    ],
+    [
+      "pantyhose",
+      "thighhighs",
+      "knee_socks"
+    ]
+  ],
+  "wiki_variant_markers": "\\b(?:when|alternatively|alternate|sometimes|occasionally|instead|different|other)\\b|\\bas an?\\b",
+  "neutral_l2_tags": "solo, standing, looking_at_viewer, simple_background",
+  "lora": {
+    "strength_model": 0.8,
+    "strength_clip": 0.8,
+    "min_training_count": 1,
+    "min_character_share": 0.8
+  },
+  "references": {
+    "count": 3,
+    "min_score": 20
+  },
+  "related_query_suffix": "solo",
+  "compatible_tag_groups": [
+    [
+      "long_hair",
+      "very_long_hair"
+    ],
+    [
+      "dress",
+      "sweater_dress"
+    ]
+  ],
+  "outfit_selection": {
+    "component_min_frequency": 0.25,
+    "description_pattern": "\\b(?:wears?|wearing|wore|dons?|donned|dressed|clothing|costume|outfit)\\b",
+    "new_ensemble_pattern": "\\b(?:when dressed|dressed as|alternatively|alternate|instead|in the past)\\b",
+    "continuation_pattern": "^(?:over|under|she also|he also|they also|also|when outdoors)\\b",
+    "historical_pattern": "\\b(?:in the past|previously|formerly|used to)\\b|\\[\\[aged down(?:\\||\\]\\])",
+    "base_families": [
+      "sweater_dress",
+      "dress",
+      "shirt",
+      "sweater",
+      "bodysuit",
+      "leotard",
+      "kimono",
+      "robe",
+      "uniform",
+      "suit",
+      "coat",
+      "jacket"
+    ],
+    "layer_families": [
+      "coat",
+      "jacket"
+    ],
+    "tie_break": "wiki order",
+    "missing_frequency": "unavailable; ranks after measured frequencies",
+    "wiki_policy": "lock whole selected ensemble from wiki sentences, independently of identity appearance conflicts"
+  }
+}

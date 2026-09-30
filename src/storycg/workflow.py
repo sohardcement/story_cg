@@ -69,6 +69,13 @@ def build_workflow(config: dict, positive_tags: str, framing: str, seed: int, fi
             "clip_vision": ["22", 0], "weight": identity_reference["strength"], "weight_type": "linear",
             "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"}}
         workflow["7"]["inputs"]["model"] = ["23", 0]
+    if config.get("character_lora"):
+        from storycg.tiers import add_character_lora
+        lora = config["character_lora"]
+        workflow = add_character_lora(workflow, lora)
+        triggers = ", ".join(lora.get("trigger_words", []))
+        if triggers:
+            workflow["4"]["inputs"]["text"] += ", " + triggers
     return workflow
 
 
