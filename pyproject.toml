@@ -1,0 +1,19 @@
+[project]
+name = "storycg"
+version = "0.1.0"
+description = "Persisted single-shot ComfyUI generation for story CG"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27,<1",
+  "pillow>=11,<13",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/storycg"]
