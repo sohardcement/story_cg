@@ -1,6 +1,7 @@
 """Schema-bound runtime storyboarding with appearance exclusion."""
 
 import json
+import copy
 import re
 from pathlib import Path
 
@@ -48,6 +49,22 @@ STORYBOARD_SCHEMA = {"$schema": "https://json-schema.org/draft/2020-12/schema",
                          "required": ["number", "scene", "outfit", "shot"],
                          "properties": {"number": {"type": "integer", "minimum": 1},
                                         "scene": SCENE, "outfit": OUTFIT, "shot": SHOT}}}}}
+
+# Optional on legacy boards; production planning requires explicit visibility/ownership.
+SHOT['properties'].update({
+    'subject_visibility':{'enum':['clear','obscured']},
+    'other_people':{'type':'array','items':{'enum':['passerby','back_view','offscreen','partial']}},
+    'hand_owners':{'type':'array','items':{'enum':['subject','anonymous_other']}}})
+PROP['properties']['detached']={'type':'boolean'}
+
+
+def production_schema():
+    schema=copy.deepcopy(STORYBOARD_SCHEMA)
+    shot=schema['properties']['shots']['items']['properties']['shot']
+    shot['required'] += ['subject_visibility','other_people','hand_owners']
+    shot['properties']['key_props']['items']['required'].append('detached')
+    return schema
+
 
 APPEARANCE_EN = re.compile(
     r"\b(?:hair|haired|hairstyle|bangs|twintails?|ponytails?|braids?|eyes?|eyed|iris|pupils?|"
@@ -144,7 +161,9 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     plan_path = job_dir / "storyboard.json"
     if plan_path.exists():
         board = json.loads(plan_path.read_text(encoding="utf-8"))
-        return validate_storyboard(board, shot_count, identity)
+        validate_storyboard(board,shot_count,identity)
+        from storycg.story_rules import validate_story_rules
+        return validate_story_rules(board,allow_obscured=(config or {}).get("allow_obscured_protagonist",False))
     if client is None:
         with httpx.Client(base_url=model_url.rstrip("/"), timeout=180,
                           trust_env=False) as owned:
@@ -185,6 +204,9 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "of the error, its contrasting evidence and the corrective action. "
         "v1 has one main person; others only anonymous backs, cropped parts or offscreen."
     )
+    from storycg.story_rules import RULE_PROMPT
+    instructions += RULE_PROMPT
+    schema=production_schema() if (config or {}).get("repair_cycle_enabled") else STORYBOARD_SCHEMA
     outfit_tags = [item["tag"].replace("_", " ") for item in
                    identity.get("default_outfit_tags", [])]
     base_user_content = story
@@ -197,6 +219,11 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     for _ in range(retries):
         if len(log["calls"]) >= max_calls:
             raise ValueError("LLM call budget exhausted")
+        gate=None
+        if (config or {}).get("repair_cycle_enabled"):
+            from storycg.budget import Budget
+            from storycg.cycle import settings
+            gate=Budget(job_dir,settings());gate.check(llm=1)
         call = {"model": model, "status": "started"}
         log["calls"].append(call)
         save_json_atomic(log_path, log)
@@ -210,12 +237,12 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                                  "anywhere in descriptions/action/spatial_relation/composition_reason. "
                                  "Use emotion words only for expression. "
                                  "Do not copy an invalid field unchanged. Previous invalid JSON:\n" + previous.get("raw", ""))
-            response = client.post("/chat/completions", json={
+            response = client.post("/chat/completions", timeout=min(180,gate.remaining_seconds()) if gate else 180, json={
                 "model": model, "temperature": 0.2, "max_tokens": 6500,
                 "messages": [{"role": "system", "content": instructions},
                              {"role": "user", "content": user_content}],
                 "response_format": {"type": "json_schema", "json_schema": {
-                    "name": "storyboard", "strict": True, "schema": STORYBOARD_SCHEMA}},
+                    "name": "storyboard", "strict": True, "schema": schema}},
             })
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
@@ -241,6 +268,8 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                 finally:
                     call['tag_validation'] = tag_registry.records[before:]
             board = validate_storyboard(board, shot_count, identity)
+            from storycg.story_rules import validate_story_rules
+            validate_story_rules(board, allow_obscured=(config or {}).get('allow_obscured_protagonist', False))
         except (ValueError, KeyError, IndexError, httpx.HTTPError) as exc:
             call["status"] = "invalid"
             call["error"] = f"{type(exc).__name__}: {exc}"

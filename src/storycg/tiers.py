@@ -427,7 +427,8 @@ def live_inventory(config,client,reference_client,job_dir):
     from datetime import datetime,timezone
     info=client.http.get('/object_info');info.raise_for_status()
     names=lora_names(info.json())
-    metadata={name:client.get_model_metadata('loras',name) for name in names}
+    from storycg.model_metadata import cached_lora_metadata
+    metadata,metadata_status=cached_lora_metadata(config,client,names)
     tags=sorted({t for m in metadata.values() for t in _frequencies(m)})
     categories=[]
     for offset in range(0,len(tags),80):
@@ -436,7 +437,7 @@ def live_inventory(config,client,reference_client,job_dir):
         categories.append({'url':str(response.url),'response':response.json()})
     result={'retrieved_at':datetime.now(timezone.utc).isoformat(),
             'object_info_url':config['comfyui_url']+'/object_info',
-            'names':names,'metadata':metadata,'categories':categories,
+            'names':names,'metadata':metadata,'metadata_status':metadata_status,'categories':categories,
             'character_tags':sorted({t['name'] for r in categories for t in r['response'] if t['category']==4})}
     save_json_atomic(Path(job_dir)/'tier/inventory.json',result)
     return result

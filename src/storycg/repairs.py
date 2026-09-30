@@ -145,13 +145,13 @@ def fork_repair_job(source, destination):
 
 
 def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region_source=None,
-           prop_ids=None, denoise=None, seed=None, revised_entry=None, repair_id='repair1', operation=None):
+           prop_ids=None, denoise=None, seed=None, revised_entry=None, repair_id='repair1', operation=None, edit=None, source_attempt=None):
     """Resume by repair_id; changing an existing request is rejected, never reposted."""
     validate_diagnosis(diagnosis)
-    if primitive not in ('inpaint','face_detail','relayout','seed'): raise ValueError('unknown primitive')
+    if primitive not in ('inpaint','face_detail','relayout','seed','instruction_edit'): raise ValueError('unknown primitive')
     if primitive=='seed' and seed is None: raise ValueError('seed repair requires a seed')
     root=Path(root).resolve();shot_id=f'shot{shot_number:02d}'
-    request={'primitive':primitive,'shot':shot_number,'diagnosis':diagnosis,'bbox':bbox,'region_source':region_source,'prop_ids':prop_ids,'denoise':denoise,'seed':seed,'revised_entry':revised_entry, **({'operation':operation} if operation else {})}
+    request={'primitive':primitive,'shot':shot_number,'diagnosis':diagnosis,'bbox':bbox,'region_source':region_source,'prop_ids':prop_ids,'denoise':denoise,'seed':seed,'revised_entry':revised_entry, **({'operation':operation} if operation else {}), **({'edit':edit} if edit else {}), **({'source_attempt':source_attempt} if source_attempt is not None else {})}
     with _job_lock(root):
         state=load_state(root);config=copy.deepcopy(state['config'])
         board=json.loads((root/'storyboard.json').read_text());identity=json.loads((root/'identity.json').read_text());portrait=json.loads((root/'portrait.json').read_text())
@@ -162,6 +162,9 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
             board['shots'][shot_number-1]=revised_entry
             validate_storyboard(board,len(board['shots']),identity)
             entry=revised_entry
+        if primitive=='instruction_edit':
+            from storycg.editing import grounded_instruction
+            instruction=grounded_instruction(edit,{'identity':identity,'entry':entry,'props':board['props']})
         if primitive in ('inpaint','face_detail'):
             if not bbox or not region_source: raise ValueError('region and its provenance required')
             region_pixels(bbox,(1024,1024))
@@ -174,7 +177,7 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
             if rec.get('output') and all(a['status']=='completed' for a in state['attempts'] if a.get('repair_key')==key):
                 return rec  # Completed legacy requests must not acquire new stages under new selection rules.
         else:
-            source=next(a for a in reversed(state['attempts']) if a['shot_id']==shot_id and a['status']=='completed')
+            source=next(a for a in reversed(state['attempts']) if a['shot_id']==shot_id and a['status']=='completed' and (source_attempt is None or a['attempt_number']==source_attempt))
             rec={'request':request,'source_image':copy.deepcopy(source['image']),'source_attempt':source['attempt_number'],'diagnosis':copy.deepcopy(diagnosis),'stages':[], 'status':'prepared'}
             records[key]=rec;_save(root,state)
         settings=config.get('repair_settings') or json.loads((Path(__file__).resolve().parents[2]/'config/repairs.json').read_text())
@@ -255,6 +258,13 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
                 if a['status'] not in ('completed','failed'): _process(root,state,a,client,recovering=True)
             if a['status']!='completed': raise RuntimeError('repair stage incomplete; resume same request')
             return a
+        if primitive=='instruction_edit':
+            source_path=root/rec['source_image']['path']
+            if digest(source_path)!=rec['source_image']['sha256']: raise ValueError('source hash mismatch')
+            reference={'mechanism':'qwen_edit','strength':1.0,'uploaded_image':upload_reference(root,source_path,client),'path':rec['source_image']['path'],'sha256':rec['source_image']['sha256']}
+            tags=instruction
+            rec['instruction']=instruction
+            rec['mandatory_reaudit']=['identity','outfit']
         if primitive=='relayout':
             full=portrait_reference(root,portrait,'image',client,'qwen_edit',1.0)
             layout=stage(f'layout{shot_number:02d}',edit_instruction(entry,board['props']),full,'layout')
@@ -287,7 +297,7 @@ def write_repair_manifest(root,state):
     board=json.loads((root/'storyboard.json').read_text())
     base['images']=[{'shot_id':f'shot{e["number"]:02d}',**next(a['image'] for a in reversed(state['attempts']) if a['shot_id']==f'shot{e["number"]:02d}' and a['status']=='completed')} for e in board['shots']]
     base['repair_review_records']=[{'repair_key':k,**r['diagnosis']['result']} for k,r in state['repairs'].items() if r['diagnosis']['result']['status']=='reviewed']
-    base['repairs']=state['repairs'];base['attempts']=state['attempts'];base['repair_source']=state['repair_source']
+    base['repairs']=state['repairs'];base['attempts']=state['attempts'];base['repair_source']=state.get('repair_source',str(root))
     log=root/'review_log.jsonl'
     calls=sum(json.loads(line)['event']=='request' for line in log.read_text().splitlines()) if log.exists() else 0
     base['usage']={'generated_images':sum(a['status']=='completed' and not a.get('inherited') for a in state['attempts']),
