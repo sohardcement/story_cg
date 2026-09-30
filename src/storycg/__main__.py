@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     resolve = sub.add_parser("resolve", help="resolve a character using Danbooru")
     resolve.add_argument("job_dir", type=Path)
     resolve.add_argument("--character")
+    resolve.add_argument("--work", help="work name or copyright tag for disambiguation")
+    resolve.add_argument("--tag", help="explicit canonical character tag")
     plan = sub.add_parser("plan", help="create a schema-validated storyboard")
     plan.add_argument("job_dir", type=Path)
     plan.add_argument("--config", default="config/default.json", type=Path)
@@ -92,9 +94,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "resolve":
         if (args.job_dir / "job.json").exists():
-            result = resolve_job(args.job_dir)
-        elif args.character:
-            result = resolve_identity(args.character, args.job_dir / "cache" / "danbooru")
+            result = resolve_job(args.job_dir, work=args.work, character_tag=args.tag)
+        elif args.character or args.tag:
+            result = resolve_identity(args.character or args.tag, args.job_dir / "cache" / "danbooru",
+                                      work=args.work, character_tag=args.tag)
             save_json_atomic(args.job_dir / "identity.json", result)
         else:
             raise ValueError("resolve needs an existing job or --character")

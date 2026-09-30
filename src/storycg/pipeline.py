@@ -43,13 +43,18 @@ def new_job(job_dir: str | Path, character: str, story: str, shots: int = 4, *, 
     return record
 
 
-def resolve_job(job_dir: str | Path) -> dict:
+def resolve_job(job_dir: str | Path, *, work=None, character_tag=None) -> dict:
     job_dir = Path(job_dir)
     path = job_dir / "identity.json"
     if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if not (work or character_tag):
+            return existing
+        if existing.get("status") == "locked":
+            raise ValueError("identity already locked; use a new job for a different selection")
     job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
-    identity = resolve_identity(job["character"], job_dir / "cache" / "danbooru")
+    options = {k: v for k, v in {"work": work, "character_tag": character_tag}.items() if v}
+    identity = resolve_identity(job["character"], job_dir / "cache" / "danbooru", **options)
     save_json_atomic(path, identity)
     return identity
 
