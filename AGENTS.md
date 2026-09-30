@@ -34,3 +34,5 @@
 ## 监工补充禁令
 
 （由监工在返工时追加）
+
+1. （P1-03 追加）不得读取、参考或复制旧项目的代码、配置、提示词模板和任务状态：包括 `~/Documents/ChatGPT/manga_skill`、`~/.config/magpie/library/` 下的 story-cg-director / comfyui-* skills，以及 Codex 全局记忆里关于这些旧项目的条目。TASK.md §2 只允许从现有 skills 取基础设施信息（地址、认证、模型位置），这些监工已在 PROGRESS.md 核实，直接用即可。
