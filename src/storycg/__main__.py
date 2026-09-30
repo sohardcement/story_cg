@@ -8,7 +8,7 @@ from pathlib import Path
 from storycg.comfy import ComfyClient
 from storycg.config import load_config
 from storycg.identity import resolve_identity
-from storycg.pipeline import new_job, plan_job, resolve_job, run_story_job
+from storycg.pipeline import new_job, plan_job, resolve_job, run_story_job, resolve_and_validate_job
 from storycg.runner import resume_job, run_gen_one
 from storycg.state import load_state, save_json_atomic
 from storycg import review
@@ -18,6 +18,7 @@ from storycg.controls import apply_options
 def _summary(state: dict) -> dict:
     return {
         "job_id": state["job_id"],
+        **({"status":state["status"],"tier_evidence":state.get("tier_evidence",{})} if state.get("status") else {}),
         "stats": state.get("stats", {}),
         "attempts": [{
             "shot_id": attempt["shot_id"],
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     plan = sub.add_parser("plan", help="create a schema-validated storyboard")
     plan.add_argument("job_dir", type=Path)
     plan.add_argument("--config", default="config/default.json", type=Path)
-    run = sub.add_parser("run", help="resolve, plan, and generate a story job")
+    run = sub.add_parser("run", aliases=["make"], help="resolve, plan, and generate a story job")
     run.add_argument("job_dir", type=Path)
     run.add_argument("--character")
     run.add_argument("--story")
@@ -88,10 +89,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2 if result["conclusion"] == "未通过" else 0
 
     if args.command == "new":
-        print(json.dumps(new_job(args.job_dir, args.character, args.story, args.shots, generation_options=options,
-                                 generation_config=apply_options(load_config(args.config), options)),
-                         ensure_ascii=False, indent=2))
-        return 0
+        config=apply_options(load_config(args.config), options)
+        job=new_job(args.job_dir, args.character, args.story, args.shots,
+                    generation_options=options,generation_config=config)
+        identity=resolve_and_validate_job(args.job_dir,config)
+        print(json.dumps({**job,'identity':identity},ensure_ascii=False,indent=2))
+        return 0 if identity.get('identity_tier') in ('L1','L2') else 2
     if args.command == "resolve":
         if (args.job_dir / "job.json").exists():
             result = resolve_job(args.job_dir, work=args.work, character_tag=args.tag)
@@ -107,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         result = plan_job(args.job_dir, load_config(args.config))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    if args.command == "run" and not (args.job_dir / "job.json").exists():
+    if args.command in ("run", "make") and not (args.job_dir / "job.json").exists():
         if not args.character or not args.story:
             raise ValueError("new run requires --character and --story")
         new_job(args.job_dir, args.character, args.story, args.shots, generation_options=options)
@@ -118,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             config = load_state(args.job_dir)["config"]
         else:
             config = load_config(args.config)
-        if args.command in ('run', 'resume'):
+        if args.command in ('run', 'make', 'resume'):
             job = json.loads((args.job_dir/'job.json').read_text()) if (args.job_dir/'job.json').exists() else {}
             if not (args.job_dir/'state.json').exists() and job.get('generation_config'):
                 config = job['generation_config']
@@ -140,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "gen-one":
                 state = run_gen_one(args.job_dir, args.shot, args.tags,
                                     args.framing, config, client)
-            elif args.command == "run" or (args.command == "resume" and
+            elif args.command in ("run", "make") or (args.command == "resume" and
                                             (args.job_dir / "job.json").exists()):
                 state = run_story_job(args.job_dir, config, client)
             else:
@@ -148,6 +151,8 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             client.close()
     print(json.dumps(_summary(state), ensure_ascii=False, indent=2))
+    if state.get("status", "").startswith("tier_pending"):
+        return 2
     return 0 if all(a["status"] == "completed" for a in state["attempts"]) else 2
 
 

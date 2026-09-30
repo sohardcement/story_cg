@@ -85,7 +85,7 @@ def _model_manifest(config: dict, client) -> dict:
                   "hash_reason": "ComfyUI checkpoint hash endpoint unavailable",
                   **file_info("checkpoints", config["checkpoint"])}
     loras = []
-    for item in config["style_loras"]:
+    for item in config["style_loras"] + ([config["character_lora"]] if config.get("character_lora") else []):
         name = item["name"]
         try:
             metadata = client.get_model_metadata("loras", name)
@@ -208,6 +208,12 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     identity = resolve_job(job_dir)
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before generation")
+    from storycg.tiers import ensure_identity_tier, tier_generation_config
+    identity = ensure_identity_tier(job_dir, identity, config, client)
+    if identity.get('identity_tier') not in ('L1', 'L2'):
+        return {'job_id': job_dir.name, 'status': identity.get('identity_tier'),
+                'attempts': [], 'tier_evidence': identity.get('tier_evidence', {})}
+    config = tier_generation_config(config, identity)
     from storycg.reference import ensure_portrait
     portrait = ensure_portrait(job_dir, identity, config, client)
     board = plan_job(job_dir, config)
@@ -217,10 +223,11 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         config = copy.deepcopy(config)
         config["budget"]["max_images_per_job"] = min(max(8, 2 * len(board["shots"])), config["budget"]["max_images_per_job"])
         config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
+    config = tier_generation_config(config, identity)
     from storycg.controls import apply_options, portrait_reference, upload_reference
     from storycg.reference import edit_instruction
     job = json.loads((job_dir / 'job.json').read_text())
-    config = apply_options(config, job.get('generation_options'))
+    config = tier_generation_config(apply_options(config, job.get('generation_options')), identity)
     config.pop('generation_reference', None)
     config['auto_retry_failed'] = False
     control = config['identity_control']
@@ -260,3 +267,13 @@ def run_story_job(job_dir: str | Path, config: dict, client,
                    for a in state["attempts"]) for entry in board["shots"]):
             make_contact_sheet(job_dir, review_dir)
     return state or {}
+
+
+def resolve_and_validate_job(job_dir,config):
+    from storycg.comfy import ComfyClient
+    from storycg.tiers import ensure_identity_tier
+    identity=resolve_job(job_dir)
+    if identity.get('status')!='locked':return identity
+    client=ComfyClient(config['comfyui_url'],config['http_timeout_seconds'])
+    try:return ensure_identity_tier(job_dir,identity,config,client)
+    finally:client.close()
