@@ -5,6 +5,7 @@ description = "Persisted single-shot ComfyUI generation for story CG"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.27,<1",
+  "jsonschema>=4.23,<5",
   "pillow>=11,<13",
 ]
 

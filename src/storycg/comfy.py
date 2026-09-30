@@ -66,3 +66,13 @@ class ComfyClient:
         })
         response.raise_for_status()
         return response.content
+
+    def get_model_metadata(self, folder: str, filename: str) -> dict:
+        response = self.http.get(f"/view_metadata/{folder}", params={"filename": filename})
+        response.raise_for_status()
+        return response.json()
+
+    def list_model_files(self, folder: str) -> list[dict]:
+        response = self.http.get(f"/experiment/models/{folder}")
+        response.raise_for_status()
+        return response.json()

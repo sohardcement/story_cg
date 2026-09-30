@@ -40,7 +40,7 @@ def _history_finding(prompt_id: str, record: dict) -> Finding:
 
 
 def reconcile_attempt(attempt: dict, queue: dict, history: dict) -> Finding:
-    """Never infer a missed POST from absence after `submitting` was persisted."""
+    """Interpret one snapshot; the runner rechecks an absent submitting attempt."""
     known_id = attempt.get("prompt_id")
     if known_id and known_id in history:
         return _history_finding(known_id, history[known_id])
