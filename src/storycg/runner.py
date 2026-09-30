@@ -58,9 +58,9 @@ def _write_manifest(job_dir: Path, state: dict) -> None:
             images.append({
                 "shot_id": attempt["shot_id"], "attempt_number": attempt["attempt_number"],
                 "prompt_id": attempt["prompt_id"], "filename_prefix": attempt["filename_prefix"],
-                "seed": attempt["seed"],
-                "positive_prompt": attempt["workflow"]["4"]["inputs"]["text"],
-                "negative_prompt": attempt["workflow"]["5"]["inputs"]["text"],
+                "seed": attempt["seed"], "reference": attempt.get("reference"),
+                "positive_prompt": attempt["workflow"]["4"]["inputs"].get("text", attempt["workflow"]["4"]["inputs"].get("prompt")),
+                "negative_prompt": attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")),
                 **attempt["image"],
             })
     save_json_atomic(job_dir / "manifest.json", {"job_id": state["job_id"], "images": images,
@@ -187,14 +187,14 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
 
 
 def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
-                 framing: str, negative_prompt: str | None = None) -> dict:
+                 framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None) -> dict:
     if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job image budget exhausted")
     if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job submission budget exhausted")
     attempt_number = 1 + max((a["attempt_number"] for a in state["attempts"]
                               if a["shot_id"] == shot_id), default=0)
-    prefix = make_prefix(state["job_id"], shot_id, attempt_number)
+    prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number)
     seed = state["config"].get("generation_seed")
     if seed is None:
         seed = secrets.randbits(63)
@@ -203,13 +203,15 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
     workflow_config = dict(state["config"])
     if negative_prompt is not None:
         workflow_config["negative_prompt"] = negative_prompt
+    if generation_reference is not None:
+        workflow_config["generation_reference"] = generation_reference
     attempt = {
         "job_id": state["job_id"], "shot_id": shot_id, "attempt_number": attempt_number,
         "seed": seed, "positive_tags": positive_tags, "framing": framing,
         "filename_prefix": prefix, "client_id": uuid.uuid4().hex,
         "prompt_id": None, "status": "ready", "post_count": 0,
         "workflow": build_workflow(workflow_config, positive_tags, framing, seed, prefix),
-        "created_at": _now(),
+        "created_at": _now(), "reference": workflow_config.get("generation_reference"),
     }
     state["attempts"].append(attempt)
     _save(job_dir, state)
@@ -217,16 +219,16 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
 
 
 def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
-    if attempt["status"] == "failed":
+    if attempt["status"] == "failed" and state["config"].get("auto_retry_failed", True):
         replacement = _new_attempt(job_dir, state, attempt["shot_id"],
                                    attempt["positive_tags"], attempt["framing"],
-                                   attempt["workflow"]["5"]["inputs"]["text"])
+                                   attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")), generation_reference=attempt.get("reference"))
         _process(job_dir, state, replacement, client, recovering=False)
 
 
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
                 config: dict, client, *, negative_prompt: str | None = None,
-                repair_diagnosis: dict | None = None) -> dict:
+                repair_diagnosis: dict | None = None, generation_reference: dict | None = None) -> dict:
     job_dir = Path(job_dir)
     job_id = job_dir.name
     make_prefix(job_id, shot_id, 1)
@@ -242,21 +244,24 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
         matching = [attempt for attempt in state["attempts"] if attempt["shot_id"] == shot_id]
         if matching:
             attempt = matching[-1]
+            if generation_reference is not None and generation_reference != attempt.get("reference") and repair_diagnosis is None:
+                raise ValueError("shot already exists with different generation reference; diagnosis required")
             if repair_diagnosis is not None and attempt['status'] == 'completed':
                 if not all(repair_diagnosis.get(k) for k in ('diagnosis', 'hypothesis', 'changes')):
                     raise ValueError("repair needs diagnosis, hypothesis and changes")
-                new_negative = negative_prompt or state['config']['negative_prompt']
-                same_conditioning = (attempt['positive_tags'], attempt['framing'], attempt['workflow']['5']['inputs']['text']) == (positive_tags, framing, new_negative)
+                old_negative = attempt['workflow']['5']['inputs'].get('text', attempt['workflow']['5']['inputs'].get('prompt'))
+                new_negative = negative_prompt if negative_prompt is not None else old_negative
+                same_conditioning = (attempt['positive_tags'], attempt['framing'], old_negative) == (positive_tags, framing, new_negative) and (generation_reference is None or generation_reference == attempt.get("reference"))
                 if same_conditioning and attempt.get('repair_diagnosis') == repair_diagnosis:
                     return state  # A completed diagnosed repair is idempotent.
                 if same_conditioning:
                     raise ValueError("repair must change conditioning, not seed alone")
-                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt)
+                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, new_negative, generation_reference=generation_reference)
                 replacement['repair_diagnosis'] = repair_diagnosis
                 _save(job_dir, state)
                 _process(job_dir, state, replacement, client, recovering=False)
                 return state
-            if negative_prompt is not None and attempt["workflow"]["5"]["inputs"]["text"] != negative_prompt:
+            if negative_prompt is not None and attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")) != negative_prompt:
                 raise ValueError("shot already exists with different negative prompt")
             if attempt["positive_tags"] != positive_tags or attempt["framing"] != framing:
                 raise ValueError("shot already exists with different tags or framing")
@@ -264,7 +269,7 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                 _process(job_dir, state, attempt, client, recovering=True)
             _retry_if_failed(job_dir, state, attempt, client)
             return state
-        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt)
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference)
         _process(job_dir, state, attempt, client, recovering=False)
         _retry_if_failed(job_dir, state, attempt, client)
         return state

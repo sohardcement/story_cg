@@ -39,7 +39,7 @@
   },
   "positive_prefix": "masterpiece, best quality, general, safe, sfw",
   "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
-  "selection_status": "executor recommendation; supervisor visual decision pending",
+  "selection_status": "supervisor selected 2026-09-30 (P2-01); evidence verify/p2-gridA.jpg, verify/p2-gridB.jpg, verify/p2-Bfaces.jpg",
   "model_hashes": {
     "waiIllustriousSDXL_v170.safetensors": {
       "sha256": "unavailable",
