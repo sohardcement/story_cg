@@ -11,6 +11,7 @@ from storycg.identity import resolve_identity
 from storycg.pipeline import new_job, plan_job, resolve_job, run_story_job
 from storycg.runner import resume_job, run_gen_one
 from storycg.state import load_state, save_json_atomic
+from storycg import review
 
 
 def _summary(state: dict) -> dict:
@@ -42,6 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     status.add_argument("job_dir", type=Path)
     resume = sub.add_parser("resume", help="reconcile queue/history and continue")
     resume.add_argument("job_dir", type=Path)
+    audit = sub.add_parser("review", help="review existing images without generation")
+    audit.add_argument("job_dir", type=Path)
+    audit.add_argument("--config", default="config/default.json", type=Path)
     new = sub.add_parser("new", help="create a story job")
     new.add_argument("job_dir", type=Path)
     new.add_argument("--character", required=True)
@@ -60,6 +64,14 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--shots", type=int, default=4)
     run.add_argument("--config", default="config/default.json", type=Path)
     args = parser.parse_args(argv)
+
+    if args.command == "review":
+        config = (load_state(args.job_dir)["config"]
+                  if (args.job_dir / "state.json").exists() else load_config(args.config))
+        result = review.review_job(args.job_dir, config)
+        print(json.dumps({"conclusion": result["conclusion"],
+                          "usage": result.get("usage", {})}, ensure_ascii=False, indent=2))
+        return 2 if result["conclusion"] == "未通过" else 0
 
     if args.command == "new":
         print(json.dumps(new_job(args.job_dir, args.character, args.story, args.shots),
