@@ -23,6 +23,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _submission_count(state: dict) -> int:
+    return sum(a.get("post_count", int("submission_started_at" in a))
+               for a in state["attempts"])
+
+
 @contextmanager
 def _job_lock(job_dir: Path):
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -39,7 +44,7 @@ def _save(job_dir: Path, state: dict) -> None:
     state["stats"] = {
         "generated_images": sum(a["status"] == "completed" for a in state["attempts"]),
         "review_calls": 0,
-        "submission_attempts": sum("submission_started_at" in a for a in state["attempts"]),
+        "submission_attempts": _submission_count(state),
         "elapsed_seconds": round((datetime.now(timezone.utc) -
                                   datetime.fromisoformat(state["created_at"])).total_seconds(), 1),
     }
@@ -117,6 +122,13 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
         history = (client.get_history(attempt["prompt_id"]) if attempt["prompt_id"]
                    else client.get_all_history())
         finding = reconcile_attempt(attempt, queue, history)
+        if (finding.kind == "uncertain" and not attempt["prompt_id"] and
+                attempt["status"] in ("submitting", "uncertain")):
+            queue = client.get_queue()
+            history = client.get_all_history()
+            finding = reconcile_attempt(attempt, queue, history)
+            if finding.kind == "uncertain":
+                finding = Finding("submit")
     else:
         finding = Finding("submit")
 
@@ -135,8 +147,12 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
         _save(job_dir, state)
         return
     if finding.kind == "submit":
+        if _submission_count(state) >= config["budget"]["max_images_per_job"]:
+            raise ValueError("job submission budget exhausted")
         attempt["status"] = "submitting"
         attempt["submission_started_at"] = _now()
+        attempt["post_count"] = attempt.get("post_count", int("prompt_id" in attempt and
+                                                               attempt.get("prompt_id") is not None)) + 1
         _save(job_dir, state)
         try:
             prompt_id = client.submit_prompt(attempt["workflow"], attempt["client_id"])
@@ -147,6 +163,7 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
             raise
         attempt["prompt_id"] = prompt_id
         attempt["status"] = "submitted"
+        attempt.pop("error", None)
         _save(job_dir, state)
     else:
         attempt["prompt_id"] = finding.prompt_id
@@ -162,6 +179,36 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
         _save(job_dir, state)
     else:
         _finish_history(job_dir, state, attempt, client, record)
+
+
+def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
+                 framing: str) -> dict:
+    if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
+        raise ValueError("job image budget exhausted")
+    if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
+        raise ValueError("job submission budget exhausted")
+    attempt_number = 1 + max((a["attempt_number"] for a in state["attempts"]
+                              if a["shot_id"] == shot_id), default=0)
+    prefix = make_prefix(state["job_id"], shot_id, attempt_number)
+    seed = secrets.randbits(63)
+    attempt = {
+        "job_id": state["job_id"], "shot_id": shot_id, "attempt_number": attempt_number,
+        "seed": seed, "positive_tags": positive_tags, "framing": framing,
+        "filename_prefix": prefix, "client_id": uuid.uuid4().hex,
+        "prompt_id": None, "status": "ready", "post_count": 0,
+        "workflow": build_workflow(state["config"], positive_tags, framing, seed, prefix),
+        "created_at": _now(),
+    }
+    state["attempts"].append(attempt)
+    _save(job_dir, state)
+    return attempt
+
+
+def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
+    if attempt["status"] == "failed":
+        replacement = _new_attempt(job_dir, state, attempt["shot_id"],
+                                   attempt["positive_tags"], attempt["framing"])
+        _process(job_dir, state, replacement, client, recovering=False)
 
 
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
@@ -183,23 +230,13 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
             attempt = matching[-1]
             if attempt["positive_tags"] != positive_tags or attempt["framing"] != framing:
                 raise ValueError("shot already exists with different tags or framing")
-            if attempt["status"] != "completed":
+            if attempt["status"] not in ("completed", "failed"):
                 _process(job_dir, state, attempt, client, recovering=True)
+            _retry_if_failed(job_dir, state, attempt, client)
             return state
-        if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
-            raise ValueError("job image budget exhausted")
-        prefix = make_prefix(job_id, shot_id, 1)
-        seed = secrets.randbits(63)
-        attempt = {
-            "job_id": job_id, "shot_id": shot_id, "attempt_number": 1, "seed": seed,
-            "positive_tags": positive_tags, "framing": framing, "filename_prefix": prefix,
-            "client_id": uuid.uuid4().hex, "prompt_id": None, "status": "ready",
-            "workflow": build_workflow(state["config"], positive_tags, framing, seed, prefix),
-            "created_at": _now(),
-        }
-        state["attempts"].append(attempt)
-        _save(job_dir, state)
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing)
         _process(job_dir, state, attempt, client, recovering=False)
+        _retry_if_failed(job_dir, state, attempt, client)
         return state
 
 
@@ -209,7 +246,10 @@ def resume_job(job_dir: str | Path, client) -> dict:
         state = load_state(job_dir)
         if state["job_id"] != job_dir.name:
             raise ValueError("job directory and saved job ID differ")
-        for attempt in state["attempts"]:
+        shot_ids = list(dict.fromkeys(a["shot_id"] for a in state["attempts"]))
+        for shot_id in shot_ids:
+            attempt = next(a for a in reversed(state["attempts"]) if a["shot_id"] == shot_id)
             if attempt["status"] not in ("completed", "failed"):
                 _process(job_dir, state, attempt, client, recovering=True)
+            _retry_if_failed(job_dir, state, attempt, client)
         return state
