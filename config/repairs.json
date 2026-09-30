@@ -1,0 +1,6 @@
+{
+  "face_detail": {"denoise": 0.3, "bbox_expansion": 0.45, "resolution": [1024, 1024], "feather_pixels": 12},
+  "inpaint": {"denoise": 0.75, "resolution": [1024, 1024], "feather_pixels": 12},
+  "relayout": {"denoise": 0.55},
+  "max_new_images_per_repair_job": 16
+}
