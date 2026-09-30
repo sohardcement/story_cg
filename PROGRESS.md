@@ -20,7 +20,8 @@
 - **P4 阶段门槛：通过**（监工判定）。
 - P5-01 部分通过：面部精修有效（瞳色纠正）；区域重绘两例均失败（mask 选区错误、方图压扁接缝）；单镜重布局因 ComfyUI 宕机未完成。
 - ComfyUI 宕机约 20 分钟（02:46–03:06），期间完成 P6-01a（名字消歧、原设补全、默认服装选择，不出图）。
-- 下一步：P5-01b（区域重绘返工 + 完成第 5 例）。
+- P5-01b 部分通过：宕机前提交的任务经对账恢复、未重复提交（真实中断恢复成立）；重布局提升可读性但会复制物体；区域重绘因视觉定位不可靠未验证，默认关闭（D6）。
+- 下一步：P6-01b（L1/L2 层级实测），然后 P5-02（修复循环，加入指令编辑原语）。
 
 ## 占位项的取值（TASK.md 中未填写的【】）
 
@@ -100,6 +101,7 @@
 - D3 画风：Iwao178 0.4 / akaimelon 0.3（P2-01，身份优先取最低档）。
 - D4 Codex 派工加 `-c memories.use_memories=false`，避免 Codex 全局记忆中的旧 story-cg 项目内容渗入（TASK.md §2）。
 - D5 身份控制：IPAdapter plus-face SDXL，权重 0.4，参考=定妆图面部裁切（P3-01 试点，证据 `review/P3-01-pilot.jpg`）。0.7 否决（画风崩坏）。
+- D6 修复手段：区域重绘默认关闭（视觉定位不可靠，P5-01/P5-01b 未验证成立）；新增 Qwen 指令编辑作为道具数量/状态、瞳色、配饰的首选修复；重布局用于构图/动作；面部精修用于小脸身份细节。
 - D2 Codex 调用：`codex exec -C <workdir> --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -`；返工 `codex exec resume <id> -c sandbox_mode="workspace-write" -c sandbox_workspace_write.network_access=true --json -`。
 
 ## 工单列表
@@ -107,6 +109,7 @@
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P5-01b 区域重绘返工+第 5 例 | 部分通过 | 0 | 01a0f3e7-be0b-7ed3-ba6d-b214257f71d2 | `review/P5-01b-repairs.jpg` |
 | P6-01a 名字消歧+原设补全 | 通过 | 1 | 01a0f3b4-e778-77b1-b1b4-a717c595fbae | `runs/p6_01a_resolve/`、`reports/P6-01a.md` |
 | P5-01 修复原语 | 部分通过（区域重绘不成立；重布局被外部宕机阻塞） | 0 | 01a0f38f-4a7b-7ae0-8d74-3ccfc0eefda4 | `review/P5-01-repairs.jpg`、`verify/p5-01_face1.jpg` |
 | P4-02 审核器修正+冻结+校准 | 通过 | 0 | 01a0f35f-69e8-7512-8405-30d92f31ebb4 | `calibration/summary.md`、`config/review_reliability.json`、`verify/p4_recompute.py` |
@@ -135,6 +138,7 @@
 | P4-02 | 0 | 126 | 91 |
 | P5-01 | 5 | 38 | 96 |
 | P6-01a | 0 | 0 | 96 |
+| P5-01b | 7 | 36 | 103 |
 
 ## 审核器校准结果（P4-02，监工独立复算确认）
 
