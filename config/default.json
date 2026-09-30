@@ -85,7 +85,7 @@
     ]
   },
   "planning": {
-    "max_calls": 25,
+    "max_calls": 15,
     "retries": 10
   },
   "framing_negative_tags": {
@@ -140,8 +140,10 @@
     "qwen_lightning": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors"
   },
   "identity_control": {
-    "mechanism": null,
+    "mechanism": "ipadapter",
     "ipadapter_strength": 0.4,
-    "selection_status": "P3-01 pilot; supervisor visual decision pending"
-  }
+    "selection_status": "supervisor selected P3-01: plus-face SDXL 0.4"
+  },
+  "layout_mode": "none",
+  "layout_denoise": 0.55
 }

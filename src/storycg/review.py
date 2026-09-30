@@ -286,7 +286,18 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
         inputs.append({'shot': number, 'source': item['path'], 'sha256': digest,
                        'review_copy': str(sanitized.relative_to(job_dir)),
                        'review_copy_sha256': hashlib.sha256(sanitized.read_bytes()).hexdigest()})
-    report = {'version': 1, 'session_id': vlm.session_id, 'reference_note': REFERENCE_NOTE,
+    portrait = None
+    reference_note = REFERENCE_NOTE
+    if (job_dir/'portrait.json').exists():
+        from storycg.reference import require_portrait
+        portrait = require_portrait(job_dir)
+        reference_note = '参考=已审核定妆图'
+        reference_full = artifacts/'reference_portrait.png'
+        reference_face = artifacts/'reference_face.png'
+        for key, output in [('image', reference_full), ('face', reference_face)]:
+            with Image.open(job_dir/portrait[key]['path']) as source:
+                source.convert('RGB').save(output)
+    report = {'version': 1, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
               'inputs': inputs, 'single': [], 'faces': [], 'consistency': [],
               'rule': 'any fail/unknown/missing/error => 未通过; otherwise any minor => 有瑕疵但可选; all pass => 通过'}
     statuses = []
@@ -328,19 +339,19 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             checks = {**checklist, **scene_checklist(entry['scene'], previous_scene),
                       'scene_transition': {'expected': {'previous': previous_scene,
                                                        'current': entry['scene']}, 'source': 'storyboard.json:scene'}}
-            if face['status'] != 'pass' or report['faces'][0]['status'] != 'pass':
+            if face['status'] != 'pass' or (portrait is None and report['faces'][0]['status'] != 'pass'):
                 result = {'status': 'fail', 'error': 'face crop/reference unavailable'}
             else:
                 pair = artifacts / f'face_pair_{number:02d}.png'
-                face_pair(job_dir / report['faces'][0]['path'], job_dir / face['path'], pair)
-                compare_paths = [pair, paths[0]]
+                face_pair(reference_face if portrait else job_dir / report['faces'][0]['path'], job_dir / face['path'], pair)
+                compare_paths = [pair, reference_full if portrait else paths[0]]
                 if number > 1:
                     compare_paths.append(paths[number - 2])
                 compare_paths.append(path)
                 result = vlm.call(f'consistency_{number:02d}', messages(
                     'Audit ONLY the script-generated checklist below, returning one grade per exact key. '
                     'First image is face comparison: LEFT reference, RIGHT current. '
-                    + REFERENCE_NOTE + '. Remaining images: full reference, '
+                    + reference_note + '. Remaining images: full reference, '
                     + ('previous full shot, ' if number > 1 else '') + 'current full shot. '
                     'For each identity feature, compare reference/current and sourced expectation separately '
                     'in the reason, not a global same-person judgment. Empty expectation means unsourced: '
@@ -395,7 +406,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
     record = {'session_id': vlm.session_id, 'at': datetime.now(timezone.utc).isoformat(),
               'review_file': 'review.json', 'log_file': 'review_log.jsonl',
               'conclusion': report['conclusion'], 'layer_conclusions': report['layer_conclusions'],
-              'reference_note': REFERENCE_NOTE, 'usage': report['usage']}
+              'reference_note': reference_note, 'reference': portrait, 'usage': report['usage']}
     # Preserve prior records and snapshot on repeat rather than silently replace evidence.
     archive = artifacts / f'review_{vlm.session_id}.json'
     save_json_atomic(archive, report)
@@ -410,7 +421,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
 
 
 def write_review_md(job_dir, report):
-    lines = ['# 三层审核', '', f"结论：**{report['conclusion']}**", '', REFERENCE_NOTE, '',
+    lines = ['# 三层审核', '', f"结论：**{report['conclusion']}**", '', report['reference_note'], '',
              '规则：任何 fail、未知、缺项、超时或解析失败均未通过；无 fail 且有 minor 为有瑕疵但可选；全 pass 为通过。', '',
              '## 各层结论', '', *[f'- {key}: {value}' for key, value in report['layer_conclusions'].items()]]
     for layer in ['single', 'consistency']:

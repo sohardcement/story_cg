@@ -12,6 +12,7 @@ from storycg.pipeline import new_job, plan_job, resolve_job, run_story_job
 from storycg.runner import resume_job, run_gen_one
 from storycg.state import load_state, save_json_atomic
 from storycg import review
+from storycg.controls import apply_options
 
 
 def _summary(state: dict) -> dict:
@@ -63,7 +64,18 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--story")
     run.add_argument("--shots", type=int, default=4)
     run.add_argument("--config", default="config/default.json", type=Path)
+    new.add_argument('--config', default='config/default.json', type=Path)
+    resume.add_argument('--config', default='config/default.json', type=Path)
+    for command in (new, run, resume):
+        command.add_argument('--identity-control', choices=['none', 'ipadapter'])
+        command.add_argument('--layout-mode', choices=['none', 'qwen'])
+        command.add_argument('--seed', type=int)
     args = parser.parse_args(argv)
+    options = {key: value for key, value in {
+        'identity_control': getattr(args, 'identity_control', None),
+        'layout_mode': getattr(args, 'layout_mode', None),
+        'generation_seed': getattr(args, 'seed', None)}.items() if value is not None}
+
 
     if args.command == "review":
         config = (load_state(args.job_dir)["config"]
@@ -74,7 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2 if result["conclusion"] == "未通过" else 0
 
     if args.command == "new":
-        print(json.dumps(new_job(args.job_dir, args.character, args.story, args.shots),
+        print(json.dumps(new_job(args.job_dir, args.character, args.story, args.shots, generation_options=options,
+                                 generation_config=apply_options(load_config(args.config), options)),
                          ensure_ascii=False, indent=2))
         return 0
     if args.command == "resolve":
@@ -94,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run" and not (args.job_dir / "job.json").exists():
         if not args.character or not args.story:
             raise ValueError("new run requires --character and --story")
-        new_job(args.job_dir, args.character, args.story, args.shots)
+        new_job(args.job_dir, args.character, args.story, args.shots, generation_options=options)
     if args.command == "status":
         state = load_state(args.job_dir)
     else:
@@ -102,7 +115,24 @@ def main(argv: list[str] | None = None) -> int:
             config = load_state(args.job_dir)["config"]
         else:
             config = load_config(args.config)
+        if args.command in ('run', 'resume'):
+            job = json.loads((args.job_dir/'job.json').read_text()) if (args.job_dir/'job.json').exists() else {}
+            if not (args.job_dir/'state.json').exists() and job.get('generation_config'):
+                config = job['generation_config']
+            saved_options = job.get('generation_options', {})
+            if (args.job_dir/'state.json').exists():
+                frozen = {'identity_control': config.get('identity_control', {}).get('mechanism'),
+                          'layout_mode': config.get('layout_mode', 'none'),
+                          'generation_seed': config.get('generation_seed')}
+                if any(frozen.get(k) != v for k,v in options.items()):
+                    raise ValueError('existing state has different generation conditions; create a new job')
+            elif options:
+                saved_options = {**saved_options, **options}
+                job['generation_options'] = saved_options
+                save_json_atomic(args.job_dir/'job.json', job)
+            config = apply_options(config, saved_options)
         client = ComfyClient(config["comfyui_url"], config["http_timeout_seconds"])
+
         try:
             if args.command == "gen-one":
                 state = run_gen_one(args.job_dir, args.shot, args.tags,
