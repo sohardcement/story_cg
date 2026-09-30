@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+skill_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ! -f "$skill_root/project_path" ]]; then
+  printf '%s\n' '{"needs_user":true,"reason":"resource_unavailable","question":"Skill 未配置项目路径，请由安装者运行安装脚本。","options":[]}'
+  exit 1
+fi
+IFS= read -r project_root < "$skill_root/project_path"
+if [[ ! -x "$project_root/.venv/bin/python" ]]; then
+  printf '%s\n' '{"needs_user":true,"reason":"resource_unavailable","question":"项目 Python 环境不可用，请恢复后重试。","options":[]}'
+  exit 1
+fi
+cd -- "$project_root"
+export PYTHONPATH="$project_root/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$project_root/.venv/bin/python" -m storycg "$@"
