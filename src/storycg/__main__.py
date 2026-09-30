@@ -33,6 +33,18 @@ def _summary(state: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(argv) if argv is not None else sys.argv[1:]
+    # Preserve P6's positional make alias for pre-facade jobs.
+    if (argv and argv[0] == "make" and len(argv) > 1 and not argv[1].startswith("-")
+            and (Path(argv[1]) / "job.json").exists()
+            and not (Path(argv[1]) / "agent.json").exists()
+            and "--character" not in argv and "--story" not in argv):
+        argv[0] = "run"
+    if argv and (argv[0] in ("make", "approve", "deliver", "_worker") or
+                 (argv[0] in ("status", "resume") and len(argv) > 1 and
+                  (Path(argv[1]) / "agent.json").exists())):
+        from storycg.agent import main as agent_main
+        return agent_main(argv)
     parser = argparse.ArgumentParser(prog="python -m storycg")
     sub = parser.add_subparsers(dest="command", required=True)
     gen = sub.add_parser("gen-one", help="generate one persisted shot")
@@ -61,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     plan = sub.add_parser("plan", help="create a schema-validated storyboard")
     plan.add_argument("job_dir", type=Path)
     plan.add_argument("--config", default="config/default.json", type=Path)
-    run = sub.add_parser("run", aliases=["make"], help="resolve, plan, and generate a story job")
+    run = sub.add_parser("run", help="resolve, plan, and generate a story job")
     run.add_argument("job_dir", type=Path)
     run.add_argument("--character")
     run.add_argument("--story")

@@ -25,9 +25,11 @@ def count_usage(root):
                 else:vision+=1
     for path in root.rglob('plan_log.json'):
         llm+=len(read(path)['calls'])
+    for path in root.rglob('agent_llm_log.json'):
+        llm+=len(read(path)['calls'])
     job=read(root/'job.json')
     ended=None
-    for name in ('execution.json','cycle.json'):
+    for name in ('execution.json','cycle.json','agent.json'):
         path=root/name
         if path.exists():
             record=read(path)
@@ -35,6 +37,12 @@ def count_usage(root):
     elapsed=((ended or datetime.now(timezone.utc))-datetime.fromisoformat(job['created_at'])).total_seconds()
     execution_path=root/'execution.json'
     paused=json.loads(execution_path.read_text()).get('supervisor_wait_seconds',0) if execution_path.exists() else 0
+    agent_path=root/'agent.json'
+    if agent_path.exists():
+        agent=read(agent_path)
+        paused+=agent.get('paused_seconds',0)
+        if agent.get('waiting_since'):
+            paused+=max(0,((ended or datetime.now(timezone.utc))-datetime.fromisoformat(agent['waiting_since'])).total_seconds())
     wall_elapsed=elapsed
     elapsed=max(0,elapsed-paused)
     return {'generated_images':generated,'submission_attempts':posts,'review_calls':vision,

@@ -1,0 +1,16 @@
+---
+name: story-cg-v1
+description: 根据一个具名角色和剧情生成 4–6 张连续 CG；支持先看分镜、确认修改、查看进度、恢复中断与重新交付。
+---
+
+使用本 skill 处理角色剧情 CG。以本 skill 所在目录定位 `scripts/storycg`，用其绝对路径在终端执行；项目路径由安装脚本配置，流程由 Python 编排。
+
+- 默认：`scripts/storycg make --character '角色名' --story '剧情' [--shots 4]`。
+- 用户要求先看分镜：加 `--storyboard-first`。后台返回 `job_dir` 后轮询 `scripts/storycg status '<job_dir>'`（约 15–30 秒一次），不要阻塞等待长任务。到 `awaiting_approval` 展示 JSON 的中文 `storyboard`，等用户确认。
+- 确认：`scripts/storycg approve '<job_dir>'`；修改后确认：加 `--edit '修改说明'`（也可传说明文件路径）。再轮询 status。
+- 中断或资源恢复：`scripts/storycg resume '<job_dir>'`，再轮询 status；未确认分镜不会自动出图。
+- 重建交付文件：`scripts/storycg deliver '<job_dir>'`，不出图、不审核。
+
+stdout 是 JSON，stderr 是进度／诊断。仅当 `needs_user=true` 时按 `question` 和 `options` 提问：角色身份不明确、关键资源不可用、要求互相冲突。身份选择可用底层 `scripts/storycg resolve '<job_dir>' --tag '候选tag'` 或 `--work '作品名'`，再 resume；冲突修改后重新 make。`awaiting_approval` 是用户主动选择的确认步骤。普通创作选择自行决定；多具名角色转述 `notices`，按指定单主角继续。
+
+`completed` 或 `stopped` 时展示已有交付：回复中用 Hermes 媒体标记 `MEDIA:<artifacts.preview 的绝对路径>` 展示编号拼图，附简短结果、已知问题及 `artifacts.images/result/manifest` 路径。读取 result.md；如实保留“该项未经可靠审核”，尤其瞳色、配饰、整体角色，请用户看图确认。出错时说明 error／repair_blocked，已有产物不代表审核通过。状态为 interrupted 时 resume；无交付物的 stopped 不宣称成功。
