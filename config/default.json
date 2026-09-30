@@ -99,5 +99,49 @@
       "wide_shot"
     ]
   },
-  "style_file": "style.json"
+  "style_file": "style.json",
+  "portrait": {
+    "framing": "full",
+    "tags": [
+      "solo",
+      "standing",
+      "looking at viewer",
+      "full body",
+      "simple background",
+      "white background",
+      "expressionless",
+      "arms at sides"
+    ],
+    "max_attempts": 3,
+    "repair_tags": {
+      "hands": [
+        "relaxed hands",
+        "open hands"
+      ],
+      "body": [
+        "symmetrical pose"
+      ],
+      "composition": [
+        "centered composition",
+        "uncropped",
+        "feet visible"
+      ],
+      "identity": [
+        "front view"
+      ]
+    }
+  },
+  "reference_models": {
+    "ipadapter": "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+    "clip_vision": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
+    "qwen_unet": "qwen-image-edit-2511-Q4_K_M.gguf",
+    "qwen_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+    "qwen_vae": "qwen_image_vae.safetensors",
+    "qwen_lightning": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors"
+  },
+  "identity_control": {
+    "mechanism": null,
+    "ipadapter_strength": 0.4,
+    "selection_status": "P3-01 pilot; supervisor visual decision pending"
+  }
 }

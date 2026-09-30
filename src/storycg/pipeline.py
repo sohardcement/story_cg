@@ -112,7 +112,7 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
                        "positive_prompt": workflow["4"]["inputs"]["text"],
                        "negative_prompt": workflow["5"]["inputs"]["text"],
                        "seed": attempt["seed"], "sampler": workflow["7"]["inputs"],
-                       "resolution": workflow["6"]["inputs"], **attempt["image"]})
+                       "resolution": workflow["6"]["inputs"], "reference": attempt.get("reference"), **attempt["image"]})
     elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(job["created_at"])).total_seconds()
     prior_path = job_dir / "manifest.json"
     prior = json.loads(prior_path.read_text(encoding="utf-8")) if prior_path.exists() else {}
@@ -120,7 +120,7 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
                 "story": job["story"], "identity_file": "identity.json",
                 "storyboard_file": "storyboard.json", "models": _model_manifest(config, client),
                 "style": config.get("style_snapshot"),
-                "reference_relationship": "none; tag-only generation, identity tier pending_P6",
+                "reference_relationship": {"portrait": json.loads((job_dir / "portrait.json").read_text()) if (job_dir / "portrait.json").exists() else None},
                 "review_records": prior.get("review_records", []),
                 "images": images, "usage": {"generated_images": state.get("stats", {}).get("generated_images", 0),
                                              "submission_attempts": state.get("stats", {}).get("submission_attempts", 0),
@@ -193,6 +193,8 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     identity = resolve_job(job_dir)
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before generation")
+    from storycg.reference import ensure_portrait
+    portrait = ensure_portrait(job_dir, identity, config, client)
     board = plan_job(job_dir, config)
     if (job_dir / "state.json").exists():
         config = load_state(job_dir)["config"]
@@ -200,6 +202,18 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         config = copy.deepcopy(config)
         config["budget"]["max_images_per_job"] = min(8, config["budget"]["max_images_per_job"])
         config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
+    if not config.get("generation_reference"):
+        control = config.get('identity_control', {})
+        if control.get('mechanism') != 'ipadapter':
+            raise ValueError('identity reference mechanism awaits supervisor selection; use pilot tools for comparison')
+        if (job_dir / "state.json").exists():
+            raise ValueError("existing story snapshot has no generation reference; use a new task")
+        uploaded = client.upload_image(job_dir / portrait['face']['path'])
+        image_name = "/".join(filter(None, [uploaded.get('subfolder'), uploaded['name']]))
+        config['generation_reference'] = {'mechanism': 'ipadapter', 'strength': control['ipadapter_strength'],
+            'uploaded_image': image_name, 'path': portrait['face']['path'],
+            'sha256': portrait['face']['sha256'], 'source_task': portrait['source_task'],
+            'portrait_sha256': portrait['image']['sha256']}
     state = None
     for entry in board["shots"]:
         parts = assemble_prompt(identity, entry, props=board["props"], config=config)

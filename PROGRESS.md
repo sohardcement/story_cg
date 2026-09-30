@@ -12,7 +12,8 @@
 - P1-03 通过（返工 1 次）：三层审核器初版，盲审请求经监工读日志与代码确认不含剧情/分镜/角色名。
 - P1-04 部分通过：镜头 tag 化、道具登记、景别映射、场景负面词已实现并见效（对照 `review/P1-02-vs-P1-04.jpg`）；但只看图仍读不出剧情，道具数量/持有关系靠纯文本无法可靠绑定。
 - **P2 阶段门槛：通过**（监工判定）。选定 WAI v170 + Iwao178 0.4 + akaimelon 0.3，euler_ancestral / normal / 28 步 / CFG 5.5，写入 `config/style.json`。理由：更高权重会让瞳色偏离原设并产生多余肢体残片（证据 `verify/p2-Bfaces.jpg`）。
-- 下一步：P3-01（定妆图 + IPAdapter / Qwen Edit 试点）。
+- P3-01 通过：定妆门槛+缓存实现；试点中 IPAdapter 0.4 修正了基线的蓝瞳（身份改善），0.7 画风崩坏；Qwen 布局对道具位置最有效但慢且会多画道具。监工选定 IPAdapter 0.4 为默认身份控制（D5）。
+- 下一步：P3-02（整组有参考/无参考对照 + 混合布局模式）。
 
 ## 占位项的取值（TASK.md 中未填写的【】）
 
@@ -92,6 +93,7 @@
 - D1 占位项取值见上表。
 - D3 画风：Iwao178 0.4 / akaimelon 0.3（P2-01，身份优先取最低档）。
 - D4 Codex 派工加 `-c memories.use_memories=false`，避免 Codex 全局记忆中的旧 story-cg 项目内容渗入（TASK.md §2）。
+- D5 身份控制：IPAdapter plus-face SDXL，权重 0.4，参考=定妆图面部裁切（P3-01 试点，证据 `review/P3-01-pilot.jpg`）。0.7 否决（画风崩坏）。
 - D2 Codex 调用：`codex exec -C <workdir> --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -`；返工 `codex exec resume <id> -c sandbox_mode="workspace-write" -c sandbox_workspace_write.network_access=true --json -`。
 
 ## 工单列表
@@ -99,6 +101,7 @@
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P3-01 定妆+参考机制试点 | 通过 | 0 | 01a0f2f4-1b7f-70a1-9a68-3570d3c53297 | `review/P3-01-pilot.jpg`、`runs/p3_01_pilot_20260930/manifest.json` |
 | P2-01 画风网格 | 通过 | 0 | 01a0f2e5-502f-7a61-8ec4-260891c14059 | `review/P2-grid-A.jpg`、`review/P2-grid-B.jpg`、`verify/p2-Bfaces.jpg` |
 | P1-04 镜头 tag 化+道具登记+景别映射 | 部分通过（叙事未达成） | 0 | 01a0f2c1-6126-7300-968b-7e7f9699ed4e | `review/P1-02-vs-P1-04.jpg`、`review/芙莉莲-拿错伞-P1-04.jpg` |
 | P1-03 三层审核器初版 | 通过 | 1 | 01a0f2a7-d180-78a3-b8f6-6343c002c0ca | `runs/p1_02_frieren_20260930/review.json`、`review_log.jsonl`、`review_artifacts/face_pair_*.png` |
@@ -115,6 +118,7 @@
 | P1-03 | 0 | 14 | 5 |
 | P1-04 | 8 | 14（LLM 6） | 13 |
 | P2-01 | 20 | 0 | 33 |
+| P3-01 | 17 | 31 | 50 |
 
 ## 审核器与监工判断不一致记录
 
@@ -124,6 +128,9 @@
 | P1-03 对 P1-02 组 | 场景连续性 4 镜全 pass | 不一致：列车颜色/车型每镜都变 | 场景连续性漏判；同一次调用在盲审里自己描述了列车变化 |
 | P1-03 对 P1-02 组 | 第 3 镜 hands pass、prop_contact minor | 不一致：头顶开伞无可见握持 | 手-道具接触漏判 |
 | P1-03 对 P1-02 组 | 第 1/2/4 镜构图"符合 medium" | 不一致：实际近全身 | 景别判断不可靠 |
+| P3-01 试点 | 上半身近景 brown boots pass | 不一致：画面里根本没有靴子 | 不可观察项未判 fail（违反自身规则） |
+| P3-01 试点 | M1 0.7 配饰 pass | 不一致：耳饰由细长垂饰变成大圆红宝石 | 小配饰形状变化漏判 |
+| P3-01 试点 | 基线第 3 镜 eye_color fail | 一致：蓝瞳 | 瞳色大偏差能检出 |
 | P1-04 组 | 第 4 镜 action/prop_contact pass | 不一致：两把伞都在手里，没有放下红伞 | 持有关系漏判（第二次出现） |
 | P1-03 对 P1-02 组 | 身份/服装多数 pass | 基本一致（参考是第 1 镜，不是定妆图） | 仅能说明组内相对一致 |
 

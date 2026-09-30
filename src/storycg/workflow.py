@@ -7,9 +7,11 @@ def build_workflow(config: dict, positive_tags: str, framing: str, seed: int, fi
     if not positive_tags.strip():
         raise ValueError("positive tags must not be empty")
     width, height = config["resolutions"][framing]
+    if config.get("generation_reference", {}).get("mechanism") == "qwen_edit":
+        return build_qwen_workflow(config, config["generation_reference"]["uploaded_image"], positive_tags, width, height, seed, filename_prefix)
     first, second = config["style_loras"]
     sampler = config["sampler"]
-    return {
+    workflow = {
         "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": config["checkpoint"]}},
         "2": {"class_type": "LoraLoader", "inputs": {
             "model": ["1", 0], "clip": ["1", 1], "lora_name": first["name"],
@@ -38,4 +40,41 @@ def build_workflow(config: dict, positive_tags: str, framing: str, seed: int, fi
         "9": {"class_type": "SaveImage", "inputs": {
             "images": ["8", 0], "filename_prefix": filename_prefix,
         }},
+    }
+
+    reference = config.get("generation_reference")
+    if reference:
+        workflow["10"] = {"class_type": "LoadImage", "inputs": {"image": reference["uploaded_image"]}}
+        if reference["mechanism"] == "ipadapter":
+            workflow["11"] = {"class_type": "IPAdapterModelLoader", "inputs": {"ipadapter_file": config["reference_models"]["ipadapter"]}}
+            workflow["13"] = {"class_type": "CLIPVisionLoader", "inputs": {"clip_name": config["reference_models"]["clip_vision"]}}
+            workflow["12"] = {"class_type": "IPAdapterAdvanced", "inputs": {
+                "model": ["3", 0], "ipadapter": ["11", 0], "image": ["10", 0],
+                "clip_vision": ["13", 0], "weight": reference["strength"], "weight_type": "linear",
+                "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"}}
+            workflow["7"]["inputs"]["model"] = ["12", 0]
+        elif reference["mechanism"] == "img2img":
+            workflow["11"] = {"class_type": "ImageScale", "inputs": {"image": ["10",0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "disabled"}}
+            workflow["12"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["11",0], "vae": ["1",2]}}
+            workflow["7"]["inputs"].update(latent_image=["12",0],denoise=reference["strength"])
+        else:
+            raise ValueError("unknown reference mechanism")
+    return workflow
+
+
+def build_qwen_workflow(config, uploaded_image, prompt, width, height, seed, prefix):
+    models=config['reference_models']
+    return {
+        '1':{'class_type':'UnetLoaderGGUF','inputs':{'unet_name':models['qwen_unet']}},
+        '2':{'class_type':'LoraLoaderModelOnly','inputs':{'model':['1',0],'lora_name':models['qwen_lightning'],'strength_model':1.0}},
+        '3':{'class_type':'ModelSamplingAuraFlow','inputs':{'model':['2',0],'shift':3.0}},
+        '4':{'class_type':'TextEncodeQwenImageEditPlus','inputs':{'clip':['11',0],'vae':['12',0],'image1':['10',0],'prompt':prompt}},
+        '5':{'class_type':'TextEncodeQwenImageEditPlus','inputs':{'clip':['11',0],'vae':['12',0],'image1':['10',0],'prompt':''}},
+        '6':{'class_type':'EmptySD3LatentImage','inputs':{'width':width,'height':height,'batch_size':1}},
+        '7':{'class_type':'KSampler','inputs':{'model':['3',0],'positive':['4',0],'negative':['5',0], 'latent_image':['6',0], 'seed':seed,'steps':4,'cfg':1.0,'sampler_name':'euler','scheduler':'simple','denoise':1.0}},
+        '8':{'class_type':'VAEDecode','inputs':{'samples':['7',0],'vae':['12',0]}},
+        '9':{'class_type':'SaveImage','inputs':{'images':['8',0],'filename_prefix':prefix}},
+        '10':{'class_type':'LoadImage','inputs':{'image':uploaded_image}},
+        '11':{'class_type':'CLIPLoader','inputs':{'clip_name':models['qwen_clip'],'type':'qwen_image','device':'default'}},
+        '12':{'class_type':'VAELoader','inputs':{'vae_name':models['qwen_vae']}},
     }
