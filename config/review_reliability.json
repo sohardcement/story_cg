@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "items": {
+    "character": {
+      "status": "unreliable",
+      "error_samples": 9,
+      "ok_samples": 10,
+      "counts": {
+        "error": {
+          "fail": 8,
+          "not_visible": 10
+        },
+        "ok": {
+          "minor": 4,
+          "not_visible": 16
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 0.4444444444444444,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 19,
+      "unstable_rate": 0.0
+    },
+    "hair_color": {
+      "status": "reliable",
+      "error_samples": 3,
+      "ok_samples": 16,
+      "counts": {
+        "error": {
+          "fail": 6
+        },
+        "ok": {
+          "pass": 32
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 1.0,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 19,
+      "unstable_rate": 0.0
+    },
+    "hairstyle": {
+      "status": "unverified",
+      "error_samples": 2,
+      "ok_samples": 17,
+      "counts": {
+        "error": {
+          "fail": 2,
+          "pass": 2
+        },
+        "ok": {
+          "pass": 32,
+          "minor": 2
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 0.5,
+      "nonpass_detection_rate": 0.5,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 19,
+      "unstable_rate": 0.0
+    },
+    "eye_color": {
+      "status": "unreliable",
+      "error_samples": 5,
+      "ok_samples": 12,
+      "counts": {
+        "error": {
+          "minor": 4,
+          "fail": 4,
+          "not_visible": 2
+        },
+        "ok": {
+          "pass": 22,
+          "not_visible": 2
+        },
+        "not_visible": {
+          "not_visible": 6
+        }
+      },
+      "fail_detection_rate": 0.4,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 6,
+      "unstable_pairs": 0,
+      "total_pairs": 20,
+      "unstable_rate": 0.0
+    },
+    "accessories": {
+      "status": "unreliable",
+      "error_samples": 3,
+      "ok_samples": 15,
+      "counts": {
+        "error": {
+          "fail": 2,
+          "not_visible": 4
+        },
+        "ok": {
+          "pass": 4,
+          "not_visible": 26
+        },
+        "not_visible": {
+          "not_visible": 2
+        }
+      },
+      "fail_detection_rate": 0.3333333333333333,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 2,
+      "unstable_pairs": 0,
+      "total_pairs": 19,
+      "unstable_rate": 0.0
+    },
+    "outfit": {
+      "status": "reliable",
+      "error_samples": 3,
+      "ok_samples": 16,
+      "counts": {
+        "error": {
+          "fail": 6
+        },
+        "ok": {
+          "minor": 2,
+          "pass": 28,
+          "not_visible": 2
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 1.0,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 19,
+      "unstable_rate": 0.0
+    },
+    "props": {
+      "status": "reliable",
+      "error_samples": 9,
+      "ok_samples": 3,
+      "counts": {
+        "error": {
+          "fail": 16,
+          "not_visible": 2
+        },
+        "ok": {
+          "pass": 6
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 0.8888888888888888,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 12,
+      "unstable_rate": 0.0
+    },
+    "action": {
+      "status": "reliable",
+      "error_samples": 7,
+      "ok_samples": 3,
+      "counts": {
+        "error": {
+          "fail": 14
+        },
+        "ok": {
+          "pass": 6
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 1.0,
+      "nonpass_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "invisible_pass": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 10,
+      "unstable_rate": 0.0
+    }
+  },
+  "rule": "error_samples>=3 and ok_samples>=3; fail_detection>=0.75 and false_positive<=0.20 => reliable; insufficient => unverified; otherwise unreliable",
+  "freeze": {
+    "src/storycg/review.py": "bd61d7beafbf9d5b4d6882e8876cfeb60228957375fa5ca053d15433d3df9b3a",
+    "src/storycg/reference.py": "15bdfeba929d29e11fc3694c17dad3749ac1832c7a0bfa60c1f59611f70f8338",
+    "src/storycg/calibration.py": "37474975c67ec6751aa147c009168f8208a33e6a2a72a2891a8769d3d6983b76",
+    "config/default.json": "1a33082aee544884bfe27055f359a742d8b7234b2f26d91d9a3b1ebed5a26684",
+    "tools/p4_calibrate.py": "4f8daa556db1e2dbdf6292b63e2f0b2e1ac7c7f52b803a2329ba213030308aa8"
+  }
+}

@@ -145,5 +145,23 @@
     "selection_status": "supervisor selected P3-01: plus-face SDXL 0.4"
   },
   "layout_mode": "none",
-  "layout_denoise": 0.55
+  "layout_denoise": 0.55,
+  "framing_definitions": {
+    "wide": [
+      "feet"
+    ],
+    "full": [
+      "feet"
+    ],
+    "medium": [
+      "waist",
+      "hips",
+      "thighs"
+    ],
+    "closeup": [
+      "face",
+      "shoulders",
+      "chest"
+    ]
+  }
 }
