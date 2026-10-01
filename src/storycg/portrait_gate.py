@@ -18,7 +18,10 @@ def gate_accepts(result):
             notes.append(key+': 该项未经审核（无来源期望且不可见）')
         else:return False,[]
     if any(key not in checks and item.get('status')!='pass' for key,item in data.items()):return False,[]
-    return True,notes
+    from storycg.review_gate import detection_gate
+    statuses,detection_notes=detection_gate(result.get('detection_items',{}))
+    if 'fail' in statuses:return False,detection_notes
+    return True,notes+detection_notes
 
 
 def recover_d7_portrait(root,identity,config,cache_dir='runs/portrait_cache'):

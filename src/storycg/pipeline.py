@@ -213,7 +213,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
                   *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None) -> dict:
     job_dir = Path(job_dir)
     if (job_dir/'cycle.json').exists():
-        from storycg.cycle import run_repair_cycle
+        from storycg.runtime_gate import run_repair_cycle
         return run_repair_cycle(job_dir, load_state(job_dir)['config'], client)
     identity = resolve_job(job_dir)
     if identity.get("status")=="needs_user":
@@ -306,7 +306,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
                    for a in state["attempts"]) for entry in board["shots"]):
             make_contact_sheet(job_dir, review_dir)
     if config.get("repair_cycle_enabled") and state is not None and (job_dir/"contact_sheet.jpg").exists():
-        from storycg.cycle import run_repair_cycle
+        from storycg.runtime_gate import run_repair_cycle
         return run_repair_cycle(job_dir,config,client)
     return state or {}
 

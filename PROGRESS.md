@@ -222,6 +222,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
   - D16（补充）：分镜阶段每镜强制单主角，一镜内不描述两个姿态；归属类剧情（如拿错伞）要在分镜里先建立道具归属。
   - D17（补充）：Qwen-Image 2.1 及其 ControlNet 本轮不接入。
   - 拓扑（用户说明）：omarchy 负责监工与编排；Windows 跑 ComfyUI（127.0.0.1）；MacBook Pro 跑视觉模型（127.0.0.1）。监工不能在 Windows 上装依赖，需要时把需求写清楚交用户转派。
+- D18（P9-05 后监工决定）：层级判定（L2 知识探针、L3 定妆比对）中，v2 可靠性配置里为 `unverified` 的项（hairstyle、hair_ornaments、footwear）**不得否决**；`unreliable` 但校准误报为 0 的项仍可否决（D8）。依据：P9-04 的 D14 样本显示正是发型/发饰类项会把"看不见"误判（A1、A3），约尔两次因发髻/发带被降为 L4 很可能是这类误判。
 - D2 Codex 调用：`codex exec -C <workdir> --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -`；返工 `codex exec resume <id> -c sandbox_mode="workspace-write" -c sandbox_workspace_write.network_access=true --json -`。
 
 ## 工单列表
@@ -229,6 +230,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P9-05 分镜规则+门禁+回归 | 部分完成 | 0 | 01a0f8c2-d9d0-7e31-82f5-7203c65713d3 | `review/P9-05-*.jpg`、`reports/P9-05.md` |
 | P9-04 审核器 v2 冻结与校准 | 通过（D14 未解决） | 1（主机挂起续跑） | 01a0f639-1644-7800-9347-e6380df6d6d9 | `calibration/v2/summary.md`、`config/review_reliability.json`、`verify/p9_04_recompute.txt` |
 | P9-03 第二轮校准样本 | 通过 | 1（监工条文措辞） | 01a0f62a-50d9-79e3-b075-8fd83988a6eb | `review/P9-03-samples.jpg`、`verify/P9-labels.json` |
 | P9-02 检测接入流程 | 通过（瞳色采样覆盖率低，待校准） | 1 | 01a0f5f7-d475-74f0-bd70-7a97649cc3c4 | `review/P9-02-inpaint.jpg`、`review/P9-02-eyes.jpg`、`verify/p9-02_d1_after.jpg` |
@@ -286,6 +288,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | P9-02（含返工） | 3 | 4 | 220 |
 | P9-03（含返工） | 3 | 0 | 223 |
 | P9-04（含续跑） | 0 | 192 | 223 |
+| P9-05 | 28 | 88 | 251 |
 
 ## 审核器校准结果（P4-02，监工独立复算确认）
 
