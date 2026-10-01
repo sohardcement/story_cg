@@ -30,11 +30,16 @@ def object_schema(properties):
             'required': list(properties), 'properties': properties}
 
 
-def grading_schema(keys, *, visibility=False):
+def grading_schema(keys, *, visibility=False, observability=False):
     grade = copy.deepcopy(GRADE)
     if visibility:
         grade['required'].append('visible')
         grade['properties']['visible'] = {'type': 'boolean'}
+    if observability:
+        grade['required'] += ['should_be_visible', 'visibility_reason']
+        grade['properties'].update({
+            'should_be_visible': {'type': 'boolean'},
+            'visibility_reason': {'enum': ['visible', 'absent', 'angle', 'occluded', 'out_of_frame', 'too_small']}})
     return object_schema({key: grade for key in keys})
 
 
@@ -190,6 +195,8 @@ def identity_checklist(identity, outfit):
             category = 'eye_color'
         elif any(word in tag for word in ('hair_ornament', 'hairclip', 'hairband', 'hair_bow', 'hair_ribbon')):
             category = 'hair_ornaments'
+        elif any(word in tag for word in ('earring', 'necklace', 'bracelet', 'jewelry', 'accessory')):
+            category = 'accessories'
         elif any(word in tag for word in ('hair', 'bangs', 'tail', 'braid')):
             category = 'hairstyle'
         else:
@@ -209,6 +216,20 @@ def identity_checklist(identity, outfit):
 
 
 
+OBSERVABILITY_PROMPT = (
+    'For EVERY feature first judge whether its expected region SHOULD BE VISIBLE in the CURRENT '
+    'image given the actual camera angle, framing, occlusion and pixel size, independently of whether '
+    'the feature is present. Report should_be_visible and visibility_reason. '
+    'If the region should be inspectable but the expected feature is missing, should_be_visible=true, '
+    'visible=false, visibility_reason=absent, status=fail. Absence requires concrete evidence of the '
+    'exposed region, never just failure to see the feature. '
+    'If angle, occlusion, cropping or too few pixels prevent inspection, should_be_visible=false, '
+    'visible=false, status=not_visible; visibility_reason must be angle, occluded, out_of_frame or '
+    'too_small. Explain the region and cause in reason. Never infer absence from non-observation. '
+    'If inspectable and present, should_be_visible=true, visible=true, visibility_reason=visible; '
+    'grade the actual match as pass/minor/fail. For grouped traits assess EACH expected part in reason; '
+    'an unobservable required part is not_visible unless another inspectable part has a mismatch. '
+    'Empty expectations are unsourced: do not invent canonical features. ')
 VISIBILITY_PROMPT = (
     'First determine visible=true/false for EVERY item from actual pixels, before grading. '
     'If any required part cannot be observed (cropped, occluded, back view or too few pixels '
@@ -253,7 +274,12 @@ def normalize_bbox(bbox, path):
 def enforce_visibility(result):
     if result['status'] == 'pass':
         for item in result['data'].values():
-            if item.get('visible') is False:
+            if item.get('should_be_visible') is False:
+                item['status'] = 'not_visible'
+            elif item.get('should_be_visible') is True and item.get('visible') is False:
+                item['status'] = 'fail'
+                item['visibility_reason'] = 'absent'
+            elif item.get('visible') is False:
                 item['status'] = 'not_visible'
     return result
 
@@ -306,7 +332,7 @@ def load_reliability(config):
 
 def annotate_reliability(result, items):
     for key, item in result.get('data', {}).items():
-        status = items.get(reliability_key(key), {}).get('status', 'unverified')
+        status = items.get(key, items.get(reliability_key(key), {})).get('status', 'unverified')
         item['reliability'] = status
         item['verified'] = status == 'reliable' and item.get('status') == 'pass'
         item['reliability_note'] = '' if status == 'reliable' else '该项未经可靠审核'
@@ -332,9 +358,9 @@ def audit_single(vlm, path, entry, props, config, purpose):
 
 
 def audit_consistency(vlm, paths, checks, config, purpose, reference_note='参考=已审核定妆图'):
-    result = vlm.call(purpose, messages(VISIBILITY_PROMPT + CONSISTENCY_PROMPT + reference_note + '. ' +
+    result = vlm.call(purpose, messages(OBSERVABILITY_PROMPT + CONSISTENCY_PROMPT + reference_note + '. ' +
         'Checklist: ' + json.dumps(checks, ensure_ascii=False), paths),
-        grading_schema(checks, visibility=True), paths)
+        grading_schema(checks, visibility=True, observability=True), paths)
     enforce_visibility(result)
     result['checklist'] = checks
     return annotate_reliability(result, load_reliability(config))
@@ -442,7 +468,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             source.convert('RGB').save(reference_full)
         from storycg.detection_review import detect_face_record
         reference_detection,reference_crop=detect_face_record(reference_full,reference_face)
-    report = {'version': 1, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
+    report = {'version': 2, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
               'inputs': inputs, 'single': [], 'faces': [], 'consistency': [],
               'rule': 'any fail/unknown/missing/error => 未通过; otherwise any minor => 有瑕疵但可选; all pass => 通过'}
     if portrait:
@@ -465,8 +491,12 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             else:
                 face['error'] = 'face_not_detected'
             report['faces'].append(face)
-            report['detection_items'].append({'shot':number,**audit_detection(path,identity,entry,
-                reference_path=reference_full if portrait else paths[0])})
+            detection_items = audit_detection(path,identity,entry,
+                reference_path=reference_full if portrait else paths[0], review_config=config)
+            from storycg.detection_review import review_detection_items
+            detection_review = review_detection_items(detection_items, load_reliability(config))
+            report['detection_items'].append({'shot':number, **detection_items, 'review':detection_review})
+            statuses.extend(result_statuses(detection_review))
             # A face-free back view is an observation, not an extra visual failure.
             statuses.append(face['status'])
         for number, (path, entry, face) in enumerate(zip(paths, board['shots'], report['faces']), 1):
@@ -532,7 +562,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
               'reference_note': reference_note, 'reference': portrait, 'usage': report['usage'],
               'visibility': report['visibility'], 'reliability': report['reliability'],
               'detection_items': report['detection_items'], 'blind_thumbnails': report['blind_thumbnails'],
-              'item_reviews': {layer: report[layer] for layer in ['single', 'consistency']}}
+              'item_reviews': {layer: report[layer] for layer in ['single', 'consistency', 'detection_items']}}
     # Preserve prior records and snapshot on repeat rather than silently replace evidence.
     archive = artifacts / f'review_{vlm.session_id}.json'
     save_json_atomic(archive, report)
@@ -569,10 +599,10 @@ def write_review_md(job_dir, report):
     for item in report['consistency']:
         if item.get('face_pair'):
             lines.append(f"- 第 {item['shot']} 镜 [面部对照]({item['face_pair']})")
-    lines.extend(['', '## 本机检测审核项（未校准）', ''])
+    lines.extend(['', '## 本机检测审核项', ''])
     for item in report.get('detection_items',[]):
         values='; '.join(key+'='+str(item[key]['status']) for key in ('eye_color_sampled','accessory_color_sampled','protagonist_count'))
-        lines.append(f"- 第 {item['shot']} 镜: {values}; 主体数={item['protagonist_count']['protagonist_count']}; 未校准")
+        lines.append(f"- 第 {item['shot']} 镜: {values}; 主体数={item['protagonist_count']['protagonist_count']}; " + "; ".join(k+":"+v["reliability"] for k,v in item["review"]["data"].items()))
     for key in ['narrative_blind', 'narrative_compare']:
         lines.extend(['', f'## {key}', '', '```json',
                       json.dumps(report[key], ensure_ascii=False, indent=2), '```'])

@@ -1,4 +1,4 @@
-"""Uncalibrated local observations; never alter frozen visual-model verdicts."""
+"""Local observations and calibrated grades; preserve raw detection evidence."""
 import hashlib
 import json
 import re
@@ -158,7 +158,7 @@ def sample_accessory_color(image, face, *, reference=None, identity=None, config
     return sample
 
 
-def audit_detection(source, identity, entry, *, reference_path=None, result=None, config=None):
+def audit_detection(source, identity, entry, *, reference_path=None, result=None, config=None, review_config=None):
     cfg=config or settings(); result=detect.detect_image(source) if result is None else result
     face=max(result['faces'],key=lambda f:(f['area_ratio'],f['confidence']),default=None)
     ref=None
@@ -166,11 +166,20 @@ def audit_detection(source, identity, entry, *, reference_path=None, result=None
         ref_faces=detect.detect_faces(reference_path)
         ref_face=max(ref_faces,key=lambda f:(f['area_ratio'],f['confidence']),default=None)
         ref=(reference_path,ref_face)
-    return {'eye_color_sampled':sample_eye_color(source,face,identity,reference=ref,config=cfg),
+    observations = {'eye_color_sampled':sample_eye_color(source,face,identity,reference=ref,config=cfg),
             'accessory_color_sampled':sample_accessory_color(source,face,reference=ref,identity=identity,config=cfg),
             'protagonist_count':protagonist_count(result['faces'],result['persons'],entry.get('shot',entry),config=cfg),
             'face_status':'detected' if face else 'face_not_detected',
             'detection':detect.json_result(result)}
+    from storycg.review import load_reliability
+    normalized = review_detection_items(observations, load_reliability(review_config or {}))
+    for key in DETECTION_KEYS:
+        grade = normalized['data'][key]
+        observations[key].update({name: grade[name] for name in ('reliability', 'verified', 'reliability_note')})
+        observations[key]['grade_status'] = grade['status']
+        observations[key]['calibration'] = grade['reliability']
+    observations['review'] = normalized
+    return observations
 
 
 def blind_thumbnails(paths, output_dir, *, long_edge=None):
@@ -261,3 +270,20 @@ def repair_mask(source, result, purpose, output_dir, *, config=None):
             'provenance':provenance,'size':list(size),'config_snapshot':cfg,'detector_config':detect.load_detect_config()}
     (output_dir/'region.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
     return record
+
+
+DETECTION_KEYS = ('eye_color_sampled', 'accessory_color_sampled', 'protagonist_count')
+
+
+def review_detection_items(observations, reliability):
+    """Keep raw detector evidence and normalize its verdicts for shared aggregation."""
+    from storycg.review import annotate_reliability
+    mapping = {'ok': 'pass', 'mismatch': 'fail', 'duplicate': 'fail',
+               'not_visible': 'not_visible', 'none_visible': 'not_visible'}
+    data = {}
+    for key in DETECTION_KEYS:
+        observed = observations.get(key, {})
+        data[key] = {'status': mapping.get(observed.get('status'), 'fail'),
+                     'reason': observed.get('reason', 'local detection: ' + str(observed.get('status'))),
+                     'observation': dict(observed)}
+    return annotate_reliability({'status': 'pass', 'data': data}, reliability)

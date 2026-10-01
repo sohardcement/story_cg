@@ -112,14 +112,14 @@ def portrait_prompt(identity, config, additions=()):
 
 def audit_portrait(root, image, identity, config, vlm, attempt):
     from storycg.review import (messages, grading_schema,
-                               identity_checklist, result_statuses, conclude, VISIBILITY_PROMPT,
+                               identity_checklist, result_statuses, conclude, OBSERVABILITY_PROMPT,
                                enforce_visibility, annotate_reliability, load_reliability)
     root=Path(root)
     from storycg.detection_review import detect_face_record, audit_detection
     bbox,face=detect_face_record(image,root/'portrait'/f'face_{attempt}.png')
     if face:
         face['path']=str(Path(face['path']).relative_to(root))
-    detection_items=audit_detection(image,identity,{'shot':{}})
+    detection_items=audit_detection(image,identity,{'shot':{}}, review_config=config)
     checks=identity_checklist(identity,default_outfit(identity))
     # Each outfit source tag remains explicit, including overlapping/layered components.
     for n,item in enumerate(identity['default_outfit_tags'],1):
@@ -129,16 +129,16 @@ def audit_portrait(root, image, identity, config, vlm, attempt):
         'composition':config['portrait']['tags']}.items()})
     paths=[image]+([root/face['path']] if face else [])
     audit=vlm.call(f'portrait_audit_{attempt}',messages(
-        VISIBILITY_PROMPT + 'Audit this character setting portrait against ONLY the sourced checklist. '
+        OBSERVABILITY_PROMPT + 'Audit this character setting portrait against ONLY the sourced checklist. '
         'Image 1 is full portrait; image 2 if present is its face crop. '
         'Assess every feature and clothing component, anatomy and hands with concrete visible evidence. '
-        'pass=clear match; minor=small discrepancy; fail=major mismatch or unknown. '
+        'pass=clear match; minor=small discrepancy; fail=major observable mismatch or absence. '
         'Unobservable required features => not_visible. Empty expectations are unsourced: '
         'do not invent a canonical feature. Checklist: '+json.dumps(checks,ensure_ascii=False),paths),
-        grading_schema(checks, visibility=True),paths)
+        grading_schema(checks, visibility=True, observability=True),paths)
     enforce_visibility(audit)
     annotate_reliability(audit, load_reliability(config))
-    statuses=result_statuses(audit)+(['pass'] if face else ['fail'])
+    statuses=result_statuses(audit)+result_statuses(detection_items['review'])+(['pass'] if face else ['fail'])
     return {'status':'pass' if conclude(statuses)=='通过' else 'fail',
             'conclusion':conclude(statuses),'bbox':bbox,'audit':audit,'checklist':checks,'face':face,
             'detection_items':detection_items}
