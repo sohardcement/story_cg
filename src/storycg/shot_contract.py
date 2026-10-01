@@ -14,6 +14,7 @@ ATOMIC_TAG = {'type':'string','pattern':r'^[a-z0-9]+(?:_[a-z0-9]+)*$','minLength
 
 def extend_schema(schema, *, required=False):
     schema['properties']['schema_version']={'const':2}
+    schema['properties']['possession_swap']={'type':'boolean'}
     shot=schema['properties']['shots']['items']['properties']['shot']
     shot['properties'].update(pose=ATOMIC_TAG, protagonist_instances={'type':'integer','minimum':1,'maximum':2})
     prop=schema['properties']['props']['items']
@@ -54,6 +55,8 @@ def moment(shot, path):
 
 def validate_contract(board):
     if board.get('schema_version')!=2:return board
+    from storycg.posture_tags import validate_posture_blocks
+    validate_posture_blocks(board)
     registry={p['id']:p for p in board['props']}
     groups=defaultdict(list)
     for p in board['props']:
@@ -87,10 +90,12 @@ def validate_contract(board):
                     'same-kind ownership comparison appears before subject ownership is established', 'add an earlier shot holding the subject-owned object with distinguishing features clearly visible')
         for kind in new_evidence:established.setdefault(kind,i)
         for kind,ids in current.items():seen[kind].update(ids)
+    if board.get('possession_swap') is True:
+        validate_possession_swap(board, registry)
     return board
 
 RULE_PROMPT=(
-    ' D16: schema_version=2. Every shot depicts exactly ONE instantaneous pose/action. '
+    ' D16: schema_version=2. possession_swap is a boolean reflecting mistaken possession or exchange in the input story. When true, show subject holding their own distinguishable object first, then holding the other-owned same-kind object, and show both distinguishable objects together in at least one later shot. Every shot depicts exactly ONE instantaneous pose/action. '
     'pose is ONE real atomic Danbooru tag, not a phrase/list/sequence. The script derives action, description and shot.tags from pose/expression; do not return these derived fields. '
     'expression is ONE real emotion tag, never another action or posture. Never put another pose in any tag block. '
     'Object contact and location go in key_props relation_tags/location_tags. Split sequential actions into separate shots. '
@@ -108,6 +113,7 @@ def planner_schema(schema):
     """Remove redundant writable representations of the same moment."""
     import copy
     schema=copy.deepcopy(schema)
+    if 'possession_swap' not in schema['required']:schema['required'].append('possession_swap')
     shot=schema['properties']['shots']['items']['properties']['shot']
     for field in ('description','action','tags'):
         shot['required'].remove(field)
@@ -126,3 +132,29 @@ def materialize(board):
         shot.update(action=shot['pose'],description=shot['pose'],
                     tags=list(dict.fromkeys([shot['pose'],shot['expression']])))
     return compiled
+
+
+def validate_possession_swap(board,registry):
+    for i,e in enumerate(board['shots']):
+        shot=e['shot']
+        if shot.get('subject_visibility')!='clear':continue
+        for own in shot['key_props']:
+            p=registry[own['prop_id']]
+            if p.get('owner')!='subject' or not own.get('establishes_ownership'):continue
+            kind=p['kind'].strip().lower().replace(' ','_')
+            for later in board['shots'][i+1:]:
+                s=later['shot']
+                if s.get('subject_visibility')!='clear':continue
+                swaps=[r for r in s['key_props'] if r['held_by']=='subject' and
+                    registry[r['prop_id']].get('owner') not in ('subject','none',None) and
+                    registry[r['prop_id']]['kind'].strip().lower().replace(' ','_')==kind and
+                    r.get('distinguishing_features_visible')]
+                if not swaps:continue
+                ids={p['id'],*(r['prop_id'] for r in swaps)}
+                for contrast in board['shots'][i+1:]:
+                    visible={r['prop_id'] for r in contrast['shot']['key_props'] if
+                        r['held_by']!='offscreen' and r.get('distinguishing_features_visible')}
+                    if p['id'] in visible and len(visible & ids)>=2:return
+    raise StoryRuleViolation('possession_swap',['$.possession_swap','$.shots'],
+        'requires earlier subject ownership, later subject possession of an other-owned same-kind object, and both distinguishable objects visible together',
+        'establish ownership first, then show mistaken possession and a visible two-object comparison')

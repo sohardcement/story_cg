@@ -225,7 +225,8 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         from storycg.cycle import settings
         gate=Budget(job_dir,settings())
         gate.check()
-    from storycg.tiers import ensure_identity_tier, tier_generation_config
+    from storycg.tier_gate import ensure_identity_tier
+    from storycg.tiers import tier_generation_config
     if config.get("repair_cycle_enabled"):
         from storycg.budget import CycleClient
         tier_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=24,max_seconds=gate.remaining_seconds())
@@ -313,7 +314,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
 
 def resolve_and_validate_job(job_dir,config):
     from storycg.comfy import ComfyClient
-    from storycg.tiers import ensure_identity_tier
+    from storycg.tier_gate import ensure_identity_tier
     identity=resolve_job(job_dir)
     if identity.get('status')!='locked':return identity
     client=ComfyClient(config['comfyui_url'],config['http_timeout_seconds'])
