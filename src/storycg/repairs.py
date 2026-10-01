@@ -396,7 +396,8 @@ def record_result(root,key,review,observation):
 def rewrite_composition(root, shot_number, diagnosis, llm):
     """Optional runtime rewrite; locked identity, outfit and scene never enter editable schema."""
     validate_diagnosis(diagnosis)
-    from storycg.planning import SHOT
+    from storycg.planning import production_schema
+    shot_schema=production_schema()["properties"]["shots"]["items"]["properties"]["shot"]
     from storycg.review import messages
     root=Path(root)
     board=json.loads((root/'storyboard.json').read_text())
@@ -405,8 +406,9 @@ def rewrite_composition(root, shot_number, diagnosis, llm):
     answer=llm.call('repair_composition_rewrite',messages(
         'Revise only this shot composition to address the diagnosis. Preserve narrative event and registered prop IDs. '
         'Make camera, framing and contact positions readable. Do not add identity or appearance descriptions. '
+        'Return every required shot field, including pose, reflection, protagonist_instances, subject_visibility, other_people, hand_owners, and all prop reference fields. action and description must equal pose; tags contain pose/expression only. '
         'Diagnosis: '+json.dumps(diagnosis,ensure_ascii=False)+'\nShot: '+json.dumps(original['shot'],ensure_ascii=False)+
-        '\nRegistered props: '+json.dumps(board['props'],ensure_ascii=False)),SHOT)
+        '\nRegistered props: '+json.dumps(board['props'],ensure_ascii=False)),shot_schema)
     save_json_atomic(root/f'rewrite_shot{shot_number:02d}_{llm.session_id}.json',answer)
     if answer['status']!='pass': raise ValueError('composition rewrite failed')
     candidate=copy.deepcopy(original);candidate['shot']=answer['data']

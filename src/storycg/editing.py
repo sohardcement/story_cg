@@ -3,7 +3,7 @@ from jsonschema import Draft202012Validator
 
 EDIT_SCHEMA = {'type':'object','additionalProperties':False,
     'required':['operation','target','description'], 'properties':{
-    'operation':{'enum':['set','remove_surplus','place','remove_duplicate_protagonist']},
+    'operation':{'enum':['set','change_prop_state','remove_surplus','place','remove_duplicate_protagonist']},
     'target':{'type':'string','minLength':1}, 'description':{'type':'string','minLength':1}}}
 
 
@@ -32,6 +32,16 @@ def grounded_instruction(edit,state):
         if target!='entry.shot.action':raise ValueError('duplicate removal requires shot action')
         background=', '.join(state['entry'].get('scene',{}).get('tags',[]))
         instruction=f'Retain exactly one protagonist, the one whose pose matches this action: {description}. Remove the other protagonist whose pose does not match that action. Fill the vacated area with the surrounding background: {background}.'
+    elif edit['operation']=='change_prop_state':
+        if not target.startswith('props.'):
+            raise ValueError('state change requires a registered prop')
+        prop=state['props'][int(target.split('.')[1])]
+        ref=next((r for r in state['entry']['shot']['key_props'] if r['prop_id']==prop['id'] and r['held_by']!='offscreen'),None)
+        if ref is None:raise ValueError('target object is not active in this shot')
+        instruction=(f"Change only the visible state and attributes of the registered object {prop['id']} "
+            f"at {ref['position']} to match its complete registered description: {', '.join(prop['description_tags'])}. "
+            f"Required shot state: {ref.get('state', 'unchanged')}. "
+            "Preserve the number of objects and their placement; do not remove any object instance.")
     elif edit['operation']=='remove_surplus':
         if not target.startswith('props.'):
             raise ValueError('surplus removal requires a registered prop')
