@@ -538,6 +538,10 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
     root=Path(job_dir).resolve()
     if identity.get('status')!='locked':return identity
     from storycg.fallback import ensure_l3,needs_user,import_user_reference,comparison_available
+    if identity.get('identity_tier') not in ('L1','L2','L3','L4') and not (root/'portrait.json').exists():
+        from storycg.reference import reuse_l3_portrait
+        cached=reuse_l3_portrait(root,identity,tier_generation_config(config,dict(identity,identity_tier='L3')))
+        if cached:return cached
     probe=root/'tier'/f'probe_v{load_rules()["tier_review"]["version"]}_{root.name}'
     opts=json.loads((root/'job.json').read_text()).get('generation_options',{}) if (root/'job.json').exists() else {}
     try:user_ref=import_user_reference(root,opts['reference_path']) if opts.get('reference_path') else None

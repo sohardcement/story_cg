@@ -23,5 +23,8 @@
   "relayout": {
     "denoise": 0.55
   },
-  "max_new_images_per_repair_job": 16
+  "max_new_images_per_repair_job": 16,
+  "portrait": {
+    "max_repairs": 2
+  }
 }
