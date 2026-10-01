@@ -106,9 +106,15 @@ def _model(path):
     os.environ['MPLCONFIGDIR'] = str(runtime / 'matplotlib')
     os.environ['YOLO_OFFLINE'] = 'true'
     os.environ['YOLO_AUTOINSTALL'] = 'false'
-    with redirect_stdout(sys.stderr):
-        from ultralytics import YOLO
-        return YOLO(path)
+    pillow_open = Image.open
+    try:
+        with redirect_stdout(sys.stderr):
+            from ultralytics import YOLO
+            return YOLO(path)
+    finally:
+        # Ultralytics globally wraps Pillow and tries HEIF imports on ANY error.
+        # Preserve the caller's PNG/JPEG/file-error behavior without extra packages.
+        Image.open = pillow_open
 
 
 def _detect(image, kind, config):

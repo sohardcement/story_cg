@@ -18,7 +18,12 @@
     "max_area_fraction": 0.6,
     "context_margin": 0.12,
     "boundary_band": 4,
-    "boundary_threshold": 24
+    "boundary_threshold": 24,
+    "seam": {
+      "support_alpha": 2,
+      "percentile": 90,
+      "band_pixels": 1
+    }
   },
   "relayout": {
     "denoise": 0.55

@@ -32,6 +32,33 @@ def improved(before,after):
     return reliable_failures(after)<reliable_failures(before)
 
 
+def repair_findings(audit):
+    results=[audit['single'],audit['consistency']]
+    count=audit.get('detection_items',{}).get('protagonist_count')
+    if count:
+        observed={**count,'status':'fail' if count['status']=='duplicate' else 'not_visible' if count['status']=='none_visible' else 'pass',
+                  'observed_status':count['status'],'reliability':'unverified',
+                  'reason':'local major face/person count; uncalibrated'}
+        results.append({'status':'pass','data':{'protagonist_count':observed}})
+    return results
+
+
+def detection_improved(before,after):
+    old=before.get('detection_items',{}).get('protagonist_count',{})
+    new=after.get('detection_items',{}).get('protagonist_count',{})
+    if old.get('status')!='duplicate' or new.get('status')!='ok':return False
+    if new['protagonist_count']>=old['protagonist_count']:return False
+    for layer in ('single','consistency'):
+        prior=before[layer];current=after[layer]
+        if current.get('status')!='pass' or not current.get('data'):return False
+        if not prior.get('data',{}).keys() <= current['data'].keys():return False
+        for key,value in current['data'].items():
+            status=value.get('status');previous=prior.get('data',{}).get(key,{}).get('status')
+            if status=='fail' and previous!='fail':return False
+            if status=='not_visible' and previous!='not_visible':return False
+    return True
+
+
 def allowed_decision(decision, cfg=None):
     cfg=cfg or settings()
     if decision.get('primitive') not in cfg['problem_methods'].get(decision.get('problem'),[]):
@@ -97,6 +124,7 @@ def candidate_improved(before,after):
 def validate_edit_target(problem,edit,state):
     grounded_instruction(edit,state)
     target=edit['target'];description=edit['description']
+    if problem=='protagonist_count' and edit['operation']=='remove_duplicate_protagonist' and target=='entry.shot.action':return
     if problem=='props':
         if target.startswith('props.'):
             p=state['props'][int(target.split('.')[1])]
@@ -155,7 +183,7 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
         'Choose ONLY from allowed_methods for the actual problem. Prefer instruction_edit for registered object number/state/color or small attribute/clothing drift. '
         'instruction_edit: supply edit with an exact key and exact value from exact_edit_descriptions, no invented descriptions; shot=null. '
         'relayout: edit=null; provide revised shot only, preserve event and registered prop IDs, improve visible cues/camera/contact. '
-        'face_detail: edit=null and shot=null. Do not merely change seed or synonyms. '
+        'face_detail and inpaint: edit=null and shot=null; regions come from local detection only. Do not merely change seed or synonyms. '
         'target_shot must equal '+str(number)+'. '
         +('For narrative repair explain missing visible cue from image-only retelling and fix this target shot. ' if narrative else '')
         +json.dumps(content,ensure_ascii=False))
@@ -176,6 +204,7 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
 def permitted_methods(problem,cycle,number):
     methods=cycle['config']['problem_methods'][problem]
     if methods[0]=='instruction_edit' and not any(h['decision'].get('primitive')=='instruction_edit' and h['decision'].get('problem')==problem for h in cycle['shots'][str(number)]['history']):return methods[:1]
+    if problem=='protagonist_count':return ['relayout']
     return methods
 
 def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):
@@ -211,19 +240,22 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
     source=root/image['path']
     if digest(source)!=image['sha256']:raise ValueError('candidate hash mismatch')
     single=review.audit_single(vlm,source,entry,board['props'],config,label+'_single')
-    detected=vlm.call(label+'_bbox',review.messages(
-        'Locate the main foreground protagonist face only. Return normalized [left,top,right,bottom], small margin. If not visible found=false, zero bbox.',[source]),review.BBOX_SCHEMA,[source])
-    portrait=read(root/'portrait.json');paths=[root/portrait['image']['path'],source];face=None
-    if detected['status']=='pass' and detected['data']['found']:
-        try:
-            face_path=root/'cycle_artifacts'/f'{label}_face.png';face_path.parent.mkdir(parents=True,exist_ok=True)
-            face=review.crop_face(source,detected['data']['bbox'],face_path)
-            pair=root/'cycle_artifacts'/f'{label}_pair.png'
-            review.face_pair(root/portrait['face']['path'],face_path,pair);paths.append(pair)
-        except ValueError:face=None
+    from storycg.detection_review import detect_face_record, audit_detection
+    face_path=root/'cycle_artifacts'/f'{label}_face.png'
+    detected,face=detect_face_record(source,face_path)
+    portrait=read(root/'portrait.json');paths=[root/portrait['image']['path'],source]
+    if face:
+        face['path']=str(face_path.relative_to(root))
+        pair=root/'cycle_artifacts'/f'{label}_pair.png'
+        # The reference pair also uses a local crop, including legacy portraits.
+        ref_path=root/'cycle_artifacts'/f'{label}_reference_face.png'
+        _,ref_face=detect_face_record(paths[0],ref_path)
+        if ref_face:
+            review.face_pair(ref_path,face_path,pair);paths.append(pair)
+    detection_items=audit_detection(source,identity,entry,reference_path=paths[0])
     consistency=review.audit_consistency(vlm,paths,review.identity_checklist(identity,entry['outfit']),config,label+'_identity_outfit')
-    result={'image':image,'single':single,'consistency':consistency,'detection':detected,'face':face,
-            'conclusion':review.conclude([*review.result_statuses(single),*review.result_statuses(consistency), 'pass' if face else 'fail'])}
+    result={'image':image,'single':single,'consistency':consistency,'detection':detected,'face':face,'detection_items':detection_items,
+            'conclusion':review.conclude([*review.result_statuses(single),*review.result_statuses(consistency)])}
     save_json_atomic(path,result);return result
 
 
@@ -359,7 +391,7 @@ def run_repair_cycle(job_dir,config,client):
         for number_text,slot in cycle['shots'].items():
             number=int(number_text)
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
-                before=slot['best_audit'];results=[before['single'],before['consistency']]
+                before=slot['best_audit'];results=repair_findings(before)
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
                 if not pending:
                     actionable=[i for i in issues(results) if i['status']=='fail' and i['key']!='audit_error']
@@ -377,7 +409,12 @@ def run_repair_cycle(job_dir,config,client):
                     if quota(cost,reserve_vision=7+3*len(board['shots'])+2):slot['stop']=quota(cost,reserve_vision=7+3*len(board['shots'])+2);persist();break
                     pending={'round':len(slot['history'])+1,'decision':decision,'status':'prepared','source_attempt':slot['best_attempt']}
                     slot['history'].append(pending);persist()
-                apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
+                try:
+                    apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
+                except ValueError as exc:
+                    if not str(exc).startswith('non_subject_mask_ambiguous'):raise
+                    pending.update(status='completed',skipped=True,error=str(exc))
+                    slot['stop']='non_subject_mask_ambiguous'
                 persist()
         if not quota(reserve_vision=3*len(board['shots'])+2):
             cycle['phase']='final_review';persist()
@@ -434,10 +471,17 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     kwargs={'repair_id':f'cycle{pending["round"]}', 'source_attempt':pending['source_attempt']}
     if decision['primitive']=='instruction_edit':kwargs['edit']=decision['edit']
     if decision['primitive']=='relayout':kwargs['revised_entry']=candidate
-    if decision['primitive']=='face_detail':
-        detection=slot['best_audit']['detection']
-        if detection['status']!='pass' or not detection['data']['found']:raise ValueError('no visible face for face refinement')
-        kwargs.update(bbox=detection['data']['bbox'],region_source={'file':'cycle.json','shot':number,'source_sha256':slot['best_audit']['image']['sha256']})
+    if decision['primitive'] in ('face_detail','inpaint'):
+        from storycg.detection_review import repair_mask
+        from storycg.detect import detect_image
+        source=root/slot['best_audit']['image']['path']
+        purpose='remove_person' if decision['problem']=='protagonist_count' else 'face'
+        region=repair_mask(source,None,purpose,root/'cycle_artifacts'/f'mask_{number}_{pending["round"]}')
+        if region['provenance']['uncertain']:
+            raise ValueError('non_subject_mask_ambiguous: merged segmentation requires experimental review')
+        kwargs.update(bbox=region['bbox'],mask_path=region['mask_path'],mask_sha256=region['mask_sha256'],
+            region_source=region['provenance'])
+        if purpose=='remove_person':kwargs['operation']={'type':'remove_person'}
     label=f'repair_{number}_{pending["round"]}'
     before_neighbors=neighbors(root,number,slot['best_audit']['image'],entry,board,cycle,config,vlm,label+'_before')
     rec=repair(root,number,decision['primitive'],diagnosis,client,**kwargs)
@@ -445,11 +489,18 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     audited=audit_candidate(root,number,rec['output'],candidate,board,identity,config,vlm,label)
     adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
     before=[slot['best_audit']['single'],slot['best_audit']['consistency'],*before_neighbors];after=[audited['single'],audited['consistency'],*adjacent]
-    better=candidate_improved(before,after) and bool(audited.get("face"))
+    visual_better=candidate_improved(before,after)
+    count_better=decision['problem']=='protagonist_count' and detection_improved(slot['best_audit'],audited)
+    better=(visual_better or count_better) and rec.get("boundary_check",{"passed":True})["passed"]
+    if decision['problem']=='protagonist_count':
+        recheck=audited.get('detection_items',{}).get('protagonist_count',{})
+        better=better and recheck.get('status')=='ok'
+        pending['count_recheck']=recheck
+        pending['fallback_required']=recheck.get('status')=='duplicate'
     # Reliability of adjacent scene checks is unverified; retain all observations, never call them improvement.
     pending.update(status='completed',output=rec['output'],audit=audited,neighbors=adjacent,before_neighbors=before_neighbors,
         result={'reliable_fails_before':reliable_failures(before),'reliable_fails_after':reliable_failures(after),
-                'improved':better,'conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
+                'improved':better,'improvement_basis':'uncalibrated_detection' if count_better else 'reliable_visual_metric','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
     key=f'shot{number:02d}_cycle{pending["round"]}'
     record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
     if better:

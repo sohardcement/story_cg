@@ -1,0 +1,156 @@
+{
+  "calibration": "uncalibrated",
+  "blind_long_edge": 768,
+  "count": {
+    "face_confidence": 0.6,
+    "relative_face_area": 0.3,
+    "person_confidence": 0.5,
+    "person_area": 0.08
+  },
+  "mask": {
+    "partition_vertical_weight": 0.15
+  },
+  "colors": {
+    "eye_region": [
+      0.08,
+      0.34,
+      0.92,
+      0.66
+    ],
+    "accessory_expansion": 0.45,
+    "min_saturation": 0.4,
+    "min_value": 0.22,
+    "skin_hue": [
+      8,
+      48
+    ],
+    "min_pixels": 12,
+    "hue_bin_degrees": 15,
+    "cluster_radius": 15,
+    "min_dominant_fraction": 0.6,
+    "reference_hue_tolerance": 30,
+    "hue_ranges": {
+      "red": [
+        [
+          330,
+          360
+        ],
+        [
+          0,
+          35
+        ]
+      ],
+      "orange": [
+        [
+          18,
+          45
+        ]
+      ],
+      "yellow": [
+        [
+          45,
+          75
+        ]
+      ],
+      "gold": [
+        [
+          40,
+          70
+        ]
+      ],
+      "green": [
+        [
+          65,
+          175
+        ]
+      ],
+      "aqua": [
+        [
+          155,
+          195
+        ]
+      ],
+      "cyan": [
+        [
+          165,
+          200
+        ]
+      ],
+      "blue": [
+        [
+          185,
+          265
+        ]
+      ],
+      "purple": [
+        [
+          245,
+          315
+        ]
+      ],
+      "violet": [
+        [
+          245,
+          315
+        ]
+      ],
+      "pink": [
+        [
+          290,
+          360
+        ],
+        [
+          0,
+          30
+        ]
+      ],
+      "magenta": [
+        [
+          285,
+          330
+        ]
+      ],
+      "brown": [
+        [
+          8,
+          45
+        ]
+      ]
+    },
+    "hair_regions": [
+      [
+        0,
+        0,
+        1,
+        0.25
+      ],
+      [
+        0,
+        0.25,
+        0.16,
+        0.65
+      ],
+      [
+        0.84,
+        0.25,
+        1,
+        0.65
+      ]
+    ],
+    "skin_regions": [
+      [
+        0.25,
+        0.7,
+        0.75,
+        0.9
+      ]
+    ],
+    "palette_bin": 16,
+    "palette_clusters": 3,
+    "palette_distance": 28,
+    "max_value": 0.98,
+    "max_component_width": 0.22,
+    "max_component_height": 0.28,
+    "skin_hue_distance": 20
+  }
+}

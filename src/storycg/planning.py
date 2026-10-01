@@ -55,6 +55,7 @@ STORYBOARD_SCHEMA = {"$schema": "https://json-schema.org/draft/2020-12/schema",
 # Optional on legacy boards; production planning requires explicit visibility/ownership.
 SHOT['properties'].update({
     'subject_visibility':{'enum':['clear','obscured']},
+    'reflection':{'type':'boolean','description':'True only when the shot explicitly includes one mirror or glass reflection of the protagonist.'},
     'other_people':{'type':'array','items':{'enum':['passerby','back_view','offscreen','partial']}},
     'hand_owners':{'type':'array','items':{'enum':['subject','anonymous_other']}}})
 PROP['properties']['detached']={'type':'boolean', 'description': 'True only at the instant an object is airborne, flying away, falling or departing from the subject. False for placed/set-down props resting on a surface or at a location, even when separated from the subject.'}
