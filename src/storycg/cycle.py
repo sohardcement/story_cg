@@ -34,7 +34,10 @@ def improved(before,after):
 
 def repair_findings(audit):
     results=[audit['single'],audit['consistency']]
-    count=audit.get('detection_items',{}).get('protagonist_count')
+    detection = audit.get('detection_items',{})
+    if detection.get('review'):
+        return [*results, detection['review']]
+    count=detection.get('protagonist_count')
     if count:
         observed={**count,'status':'fail' if count['status']=='duplicate' else 'not_visible' if count['status']=='none_visible' else 'pass',
                   'observed_status':count['status'],'reliability':'unverified',
@@ -252,10 +255,10 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
         _,ref_face=detect_face_record(paths[0],ref_path)
         if ref_face:
             review.face_pair(ref_path,face_path,pair);paths.append(pair)
-    detection_items=audit_detection(source,identity,entry,reference_path=paths[0])
+    detection_items=audit_detection(source,identity,entry,reference_path=paths[0], review_config=config)
     consistency=review.audit_consistency(vlm,paths,review.identity_checklist(identity,entry['outfit']),config,label+'_identity_outfit')
     result={'image':image,'single':single,'consistency':consistency,'detection':detected,'face':face,'detection_items':detection_items,
-            'conclusion':review.conclude([*review.result_statuses(single),*review.result_statuses(consistency)])}
+            'conclusion':review.conclude([*review.result_statuses(single),*review.result_statuses(consistency),*review.result_statuses(detection_items['review'])])}
     save_json_atomic(path,result);return result
 
 

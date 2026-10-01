@@ -365,9 +365,12 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
             ref_paths.append(path)
     except (ValueError,OSError,KeyError,TypeError) as exc:
         evidence['error']=str(exc);return failed
+    from storycg.review import OBSERVABILITY_PROMPT, enforce_visibility
     grade={'type':'object','additionalProperties':False,
-           'required':['status','reason','test_observation','reference_observation'],
-           'properties':{'status':{'enum':['pass','minor','fail','not_visible']},
+           'required':['status','reason','test_observation','reference_observation','visible','should_be_visible','visibility_reason'],
+           'properties':{'visible':{'type':'boolean'},'should_be_visible':{'type':'boolean'},
+                         'visibility_reason':{'enum':['visible','absent','angle','occluded','out_of_frame','too_small']},
+                         'status':{'enum':['pass','minor','fail','not_visible']},
                          'reason':{'type':'string','minLength':1},
                          'test_observation':{'type':'string','minLength':1},
                          'reference_observation':{'type':'string','minLength':1}}}
@@ -384,7 +387,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
             active={f'c{i:04d}':row for i,row in enumerate(entries) if row['applicable']}
             schema={'type':'object','additionalProperties':False,
                     'properties':{key:grade for key in active},'required':list(active)}
-            prompt=('Image 1 = generated test image. Image 2 = Danbooru reference. '
+            prompt=(OBSERVABILITY_PROMPT + 'Image 1 = generated test image. Image 2 = Danbooru reference. '
                     'Judge Image 1, never treat Image 2 as the generated test. '
                     'For each entry, first write test_observation from Image 1 only, '
                     'then reference_observation from Image 2 only, then compare against the sourced expected tag. '
@@ -404,6 +407,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
                 evidence['vision_calls']+=1
                 if result.get('status')!='pass':raise ValueError(result.get('error','visual comparison failed'))
                 Draft202012Validator(schema).validate(result['data'])
+                enforce_visibility(result)
                 rows=[{**row,**result['data'][key]} for key,row in active.items()]
             except Exception as exc:
                 rows=[{**row,'status':'fail','reason':str(exc),

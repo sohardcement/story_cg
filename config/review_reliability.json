@@ -1,34 +1,38 @@
 {
-  "version": 1,
+  "version": 2,
   "items": {
     "character": {
       "status": "unreliable",
       "error_samples": 9,
       "ok_samples": 10,
+      "not_visible_samples": 0,
       "counts": {
         "error": {
           "fail": 8,
           "not_visible": 10
         },
         "ok": {
-          "minor": 4,
-          "not_visible": 16
+          "fail": 2,
+          "not_visible": 16,
+          "pass": 2
         },
         "not_visible": {}
       },
       "fail_detection_rate": 0.4444444444444444,
-      "nonpass_detection_rate": 1.0,
-      "false_positive_rate": 0.0,
-      "invisible_pass": 0,
+      "false_positive_rate": 0.1,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
       "invisible_total": 0,
       "unstable_pairs": 0,
       "total_pairs": 19,
-      "unstable_rate": 0.0
+      "unstable_rate": 0.0,
+      "deterministic": false
     },
     "hair_color": {
       "status": "reliable",
       "error_samples": 3,
       "ok_samples": 16,
+      "not_visible_samples": 0,
       "counts": {
         "error": {
           "fail": 6
@@ -39,119 +43,129 @@
         "not_visible": {}
       },
       "fail_detection_rate": 1.0,
-      "nonpass_detection_rate": 1.0,
       "false_positive_rate": 0.0,
-      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
       "invisible_total": 0,
       "unstable_pairs": 0,
       "total_pairs": 19,
-      "unstable_rate": 0.0
+      "unstable_rate": 0.0,
+      "deterministic": false
     },
     "hairstyle": {
       "status": "unverified",
       "error_samples": 2,
-      "ok_samples": 17,
+      "ok_samples": 19,
+      "not_visible_samples": 1,
       "counts": {
         "error": {
           "fail": 2,
           "pass": 2
         },
         "ok": {
-          "pass": 32,
-          "minor": 2
-        },
-        "not_visible": {}
-      },
-      "fail_detection_rate": 0.5,
-      "nonpass_detection_rate": 0.5,
-      "false_positive_rate": 0.0,
-      "invisible_pass": 0,
-      "invisible_total": 0,
-      "unstable_pairs": 0,
-      "total_pairs": 19,
-      "unstable_rate": 0.0
-    },
-    "eye_color": {
-      "status": "unreliable",
-      "error_samples": 5,
-      "ok_samples": 12,
-      "counts": {
-        "error": {
-          "minor": 4,
-          "fail": 4,
-          "not_visible": 2
-        },
-        "ok": {
-          "pass": 22,
-          "not_visible": 2
+          "pass": 38
         },
         "not_visible": {
-          "not_visible": 6
+          "pass": 2
         }
       },
-      "fail_detection_rate": 0.4,
-      "nonpass_detection_rate": 1.0,
+      "fail_detection_rate": 0.5,
       "false_positive_rate": 0.0,
-      "invisible_pass": 0,
-      "invisible_total": 6,
+      "not_visible_fail_rate": 0.0,
+      "invisible_fail": 0,
+      "invisible_total": 2,
       "unstable_pairs": 0,
-      "total_pairs": 20,
-      "unstable_rate": 0.0
+      "total_pairs": 22,
+      "unstable_rate": 0.0,
+      "deterministic": false
     },
-    "accessories": {
-      "status": "unreliable",
-      "error_samples": 3,
-      "ok_samples": 15,
+    "eye_color": {
+      "status": "reliable",
+      "error_samples": 9,
+      "ok_samples": 22,
+      "not_visible_samples": 6,
       "counts": {
         "error": {
-          "fail": 2,
+          "fail": 14,
           "not_visible": 4
         },
         "ok": {
-          "pass": 4,
-          "not_visible": 26
+          "pass": 36,
+          "not_visible": 8
+        },
+        "not_visible": {
+          "not_visible": 12
+        }
+      },
+      "fail_detection_rate": 0.7777777777777778,
+      "false_positive_rate": 0.0,
+      "not_visible_fail_rate": 0.0,
+      "invisible_fail": 0,
+      "invisible_total": 12,
+      "unstable_pairs": 0,
+      "total_pairs": 37,
+      "unstable_rate": 0.0,
+      "deterministic": false
+    },
+    "accessories": {
+      "status": "unreliable",
+      "error_samples": 4,
+      "ok_samples": 18,
+      "not_visible_samples": 1,
+      "counts": {
+        "error": {
+          "fail": 2,
+          "not_visible": 4,
+          "pass": 2
+        },
+        "ok": {
+          "not_visible": 28,
+          "pass": 8
         },
         "not_visible": {
           "not_visible": 2
         }
       },
-      "fail_detection_rate": 0.3333333333333333,
-      "nonpass_detection_rate": 1.0,
+      "fail_detection_rate": 0.25,
       "false_positive_rate": 0.0,
-      "invisible_pass": 0,
+      "not_visible_fail_rate": 0.0,
+      "invisible_fail": 0,
       "invisible_total": 2,
       "unstable_pairs": 0,
-      "total_pairs": 19,
-      "unstable_rate": 0.0
+      "total_pairs": 23,
+      "unstable_rate": 0.0,
+      "deterministic": false
     },
     "outfit": {
       "status": "reliable",
       "error_samples": 3,
       "ok_samples": 16,
+      "not_visible_samples": 0,
       "counts": {
         "error": {
           "fail": 6
         },
         "ok": {
-          "minor": 2,
-          "pass": 28,
+          "pass": 30,
           "not_visible": 2
         },
         "not_visible": {}
       },
       "fail_detection_rate": 1.0,
-      "nonpass_detection_rate": 1.0,
       "false_positive_rate": 0.0,
-      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
       "invisible_total": 0,
       "unstable_pairs": 0,
       "total_pairs": 19,
-      "unstable_rate": 0.0
+      "unstable_rate": 0.0,
+      "deterministic": false
     },
     "props": {
       "status": "reliable",
       "error_samples": 9,
       "ok_samples": 3,
+      "not_visible_samples": 0,
       "counts": {
         "error": {
           "fail": 16,
@@ -163,18 +177,20 @@
         "not_visible": {}
       },
       "fail_detection_rate": 0.8888888888888888,
-      "nonpass_detection_rate": 1.0,
       "false_positive_rate": 0.0,
-      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
       "invisible_total": 0,
       "unstable_pairs": 0,
       "total_pairs": 12,
-      "unstable_rate": 0.0
+      "unstable_rate": 0.0,
+      "deterministic": false
     },
     "action": {
       "status": "reliable",
       "error_samples": 7,
       "ok_samples": 3,
+      "not_visible_samples": 0,
       "counts": {
         "error": {
           "fail": 14
@@ -185,21 +201,161 @@
         "not_visible": {}
       },
       "fail_detection_rate": 1.0,
-      "nonpass_detection_rate": 1.0,
       "false_positive_rate": 0.0,
-      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
       "invisible_total": 0,
       "unstable_pairs": 0,
       "total_pairs": 10,
-      "unstable_rate": 0.0
+      "unstable_rate": 0.0,
+      "deterministic": false
+    },
+    "hair_ornaments": {
+      "status": "unverified",
+      "error_samples": 1,
+      "ok_samples": 3,
+      "not_visible_samples": 0,
+      "counts": {
+        "error": {
+          "not_visible": 2
+        },
+        "ok": {
+          "pass": 2,
+          "not_visible": 4
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 4,
+      "unstable_rate": 0.0,
+      "deterministic": false
+    },
+    "footwear": {
+      "status": "unverified",
+      "error_samples": 0,
+      "ok_samples": 0,
+      "not_visible_samples": 1,
+      "counts": {
+        "error": {},
+        "ok": {},
+        "not_visible": {
+          "pass": 2
+        }
+      },
+      "fail_detection_rate": null,
+      "false_positive_rate": null,
+      "not_visible_fail_rate": 0.0,
+      "invisible_fail": 0,
+      "invisible_total": 2,
+      "unstable_pairs": 0,
+      "total_pairs": 1,
+      "unstable_rate": 0.0,
+      "deterministic": false
+    },
+    "eye_color_sampled": {
+      "status": "unreliable",
+      "error_samples": 9,
+      "ok_samples": 22,
+      "not_visible_samples": 6,
+      "counts": {
+        "error": {
+          "fail": 7,
+          "not_visible": 2
+        },
+        "ok": {
+          "not_visible": 8,
+          "fail": 11,
+          "pass": 3
+        },
+        "not_visible": {
+          "not_visible": 6
+        }
+      },
+      "fail_detection_rate": 0.7777777777777778,
+      "false_positive_rate": 0.5,
+      "not_visible_fail_rate": 0.0,
+      "invisible_fail": 0,
+      "invisible_total": 6,
+      "unstable_pairs": 0,
+      "total_pairs": 0,
+      "unstable_rate": null,
+      "deterministic": true
+    },
+    "accessory_color_sampled": {
+      "status": "unreliable",
+      "error_samples": 4,
+      "ok_samples": 18,
+      "not_visible_samples": 1,
+      "counts": {
+        "error": {
+          "not_visible": 4
+        },
+        "ok": {
+          "not_visible": 17,
+          "pass": 1
+        },
+        "not_visible": {
+          "not_visible": 1
+        }
+      },
+      "fail_detection_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "not_visible_fail_rate": 0.0,
+      "invisible_fail": 0,
+      "invisible_total": 1,
+      "unstable_pairs": 0,
+      "total_pairs": 0,
+      "unstable_rate": null,
+      "deterministic": true
+    },
+    "protagonist_count": {
+      "status": "reliable",
+      "error_samples": 3,
+      "ok_samples": 7,
+      "not_visible_samples": 0,
+      "counts": {
+        "error": {
+          "fail": 3
+        },
+        "ok": {
+          "pass": 7
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 1.0,
+      "false_positive_rate": 0.0,
+      "not_visible_fail_rate": null,
+      "invisible_fail": 0,
+      "invisible_total": 0,
+      "unstable_pairs": 0,
+      "total_pairs": 0,
+      "unstable_rate": null,
+      "deterministic": true
     }
   },
   "rule": "error_samples>=3 and ok_samples>=3; fail_detection>=0.75 and false_positive<=0.20 => reliable; insufficient => unverified; otherwise unreliable",
   "freeze": {
-    "src/storycg/review.py": "bd61d7beafbf9d5b4d6882e8876cfeb60228957375fa5ca053d15433d3df9b3a",
-    "src/storycg/reference.py": "15bdfeba929d29e11fc3694c17dad3749ac1832c7a0bfa60c1f59611f70f8338",
+    "src/storycg/review.py": "3efed19f968731bfddf5e61c227f24210e0ab448fa7506b9b2ec60e649b4e6e5",
+    "src/storycg/reference.py": "0c2b955e8553c74a75746367ebf924483195dda89821ea3533173be998a70035",
+    "src/storycg/tiers.py": "2ac6f53a30c61664adb1f5a9f5cf49581f27288ff74d8f5bfd12621f739567a4",
+    "src/storycg/cycle.py": "c5f9f0abd3f40039a8928e028b0ad68369359844dcec3b5cd3a4c29a002e7815",
+    "src/storycg/detection_review.py": "2df4c287ca1fb6641aee187bdaf333f083586a24c1cc5ec83a379d5e0ad15c7f",
+    "src/storycg/eye_sampling.py": "47672b25afa94146207fad2d6c30528f5ba1ebff7120dad5e055cda3c9c82991",
+    "src/storycg/detect.py": "af5be5d2a1c70ec177c888e1fe886bdc368ca52b82cbe67df3e4c85d20c87e60",
     "src/storycg/calibration.py": "37474975c67ec6751aa147c009168f8208a33e6a2a72a2891a8769d3d6983b76",
-    "config/default.json": "1a33082aee544884bfe27055f359a742d8b7234b2f26d91d9a3b1ebed5a26684",
-    "tools/p4_calibrate.py": "4f8daa556db1e2dbdf6292b63e2f0b2e1ac7c7f52b803a2329ba213030308aa8"
-  }
+    "src/storycg/calibration_v2.py": "73f89a8c8ba0627c63fb07567f3574e96db135984ea8002e4a0f125f13f9755d",
+    "config/default.json": "c4b3726e9c4d4ea8e3cc2138d85b36fdbbe4d86b46039ee3947979d5442965f0",
+    "config/detection_review.json": "d65f70e653a57b93b92ce8ca6f54f6404c22dde5267ee3355d550fa116483813",
+    "config/detect.json": "9f13bfceaa0b8e7a2fdd15939d0c6d83741b426c385e435cf29ff894ae0c7629",
+    "config/identity_rules.json": "53a4459104e0d9b78490a0ded0d5afb9ad0c37b1010a3f3417ef2c0a32cb8707",
+    "models/detect/face_yolov8s.pt": "c7237eff25787377de196961140ceaed324d859ee8de5a775d93d33a0e3fab78",
+    "models/detect/person_yolov8s-seg.pt": "53c54aec2239355faffc6c5b70d0f3d05042f386f956cbec39cec46ad456f050",
+    "tools/p9_04_calibrate.py": "cd5bca0e776fd3655e4a190d33b8c1b04a1e7cbb39fbeb12b0b5a5ee709beabd"
+  },
+  "calibration_results": "calibration/v2/results.json"
 }
