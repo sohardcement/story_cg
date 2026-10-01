@@ -17,11 +17,36 @@ def repair_findings(audit):
         review=observations.get('review',{})
         # Only reliable observed failures can become a detection repair target.
         data={k:v for k,v in review.get('data',{}).items()
-              if review.get('status')=='pass' and v.get('status')=='fail'
+              if review.get('status')=='pass' and v.get('status') in ('fail','duplicate')
               and frozen.review.load_reliability({}).get(k,{}).get('status')=='reliable'}
-        if data:results.append({'status':'pass','data':data})
+        if data:results.append({'status':'pass','data':{k:{**v,'status':'fail'} for k,v in data.items()}})
     return results
 
+
+
+def count_diagnosis_schema(entry):
+    return review.object_schema({
+        'diagnosis':review.TEXT,'hypothesis':review.TEXT,'changes':review.TEXT,
+        'problem':{'const':'protagonist_count'},'primitive':{'const':'instruction_edit'},
+        'edit':review.object_schema({'operation':{'const':'remove_duplicate_protagonist'},
+            'target':{'const':'entry.shot.action'},'description':{'const':entry['shot']['action']}}),
+        'shot':{'type':'null'},'target_shot':{'const':entry['number']}})
+
+
+def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
+    count=any(i['key']=='protagonist_count' and i['status']=='fail' for i in issues(audit))
+    methods=permitted_methods('protagonist_count',cycle,number)
+    if count and methods==['instruction_edit'] and not narrative:
+        label=f'decision_{number}_{len(cycle["shots"][str(number)]["history"])+1}_count_schema3'
+        prompt=('Reliable local detection found duplicate protagonist instances. Diagnose this observed count failure, '
+            'give a causal hypothesis and use the existing remove_duplicate_protagonist instruction edit. '
+            'The edit retains the protagonist matching the registered action and removes the extra instance. '
+            'Do not edit any object or invent state. '+json.dumps({'issues':issues(audit),'entry':entry},ensure_ascii=False))
+        result=cached_call(root,label,vlm,'cycle_llm_'+label,review.messages(prompt),count_diagnosis_schema(entry))
+        if result.get('status')!='pass':raise ValueError('count diagnostic LLM failed: '+str(result.get('error')))
+        Draft202012Validator(count_diagnosis_schema(entry)).validate(result['data'])
+        return frozen.validate_decision(result['data'],number,audit,entry,board,identity,cycle)
+    return frozen.diagnose(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
 
 def deliver(root,cycle,config,client):
     state=frozen.deliver(root,cycle,config,client)
@@ -31,6 +56,28 @@ def deliver(root,cycle,config,client):
         save_json_atomic(root/'manifest.json',manifest)
     return state
 
+
+
+def reopen_targeted_repair(root,numbers,*,max_new_images=8,max_minutes=60):
+    root=Path(root);cycle=read(root/'cycle.json')
+    if cycle.get('phase')!='complete':raise ValueError('targeted repair requires a completed cycle')
+    if not numbers or any(str(n) not in cycle['shots'] for n in numbers):raise ValueError('unknown repair shot')
+    archive=root/'cycle_artifacts/pre_targeted_repair.json'
+    if archive.exists():raise ValueError('targeted repair already initialized; resume existing scope')
+    save_json_atomic(archive,cycle)
+    baseline=usage(root)
+    cycle['repair_scope']={'shots':numbers,'baseline_usage':baseline,'max_new_images':max_new_images,
+        'max_minutes':max_minutes,'started_at':datetime.now(timezone.utc).isoformat()}
+    cycle['config'].update(max_images=baseline['submission_attempts']+max_new_images,
+        max_minutes=baseline['elapsed_seconds']/60+max_minutes,
+        max_vision_calls=baseline['review_calls']+settings()['max_vision_calls'],
+        max_llm_calls=baseline['llm_calls']+settings()['max_llm_calls'])
+    for n in numbers:
+        slot=cycle['shots'][str(n)]
+        slot.setdefault('prior_stops',[]).append({'stop':slot.pop('stop',None),'error':slot.pop('diagnosis_error',None)})
+        slot['validation_policy_revision']=3
+    cycle['phase']='repairing';cycle.pop('finished_at',None)
+    save_json_atomic(root/'cycle.json',cycle)
 
 def run_repair_cycle(job_dir,config,client):
     root=Path(job_dir).resolve();path=root/'cycle.json'
@@ -85,6 +132,7 @@ def run_repair_cycle(job_dir,config,client):
         cycle['phase']='repairing';persist()
         for number_text,slot in cycle['shots'].items():
             number=int(number_text)
+            if cycle.get('repair_scope') and number not in cycle['repair_scope']['shots']:continue
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
                 before=slot['best_audit'];results=repair_findings(before)
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
@@ -122,7 +170,7 @@ def run_repair_cycle(job_dir,config,client):
             cycle['final_review']=report;persist()
             narrative=report.get('narrative_compare',{})
             bad=narrative.get('status')!='pass' or any(narrative.get('data',{}).get(k,{}).get('status')=='fail' for k in ('key_events','ending'))
-            if bad and not cycle.get('narrative_attempted') and not quota(2,reserve_vision=3*len(board['shots'])+7,reserve_llm=2):
+            if bad and not cycle.get('repair_scope') and not cycle.get('narrative_attempted') and not quota(2,reserve_vision=3*len(board['shots'])+7,reserve_llm=2):
                 # Runtime identifies the missing visible cue and target, within the same mapping.
                 choose=cached_call(root,'narrative_target',vlm,'cycle_llm_narrative_target',review.messages(
                     'Identify one shot missing a visible causal cue for the key event/ending that the image-only retelling failed to read. Choose its number; do not claim it passed. '+json.dumps({'comparison':narrative,'board':board},ensure_ascii=False)),review.object_schema({'target_shot':{'type':'integer','minimum':1,'maximum':len(board['shots'])},'missing_cue':review.TEXT}))

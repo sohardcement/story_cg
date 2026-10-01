@@ -63,7 +63,7 @@ def _injected_workflow(workflow,record):
 
 
 def compare_injected(root,identity,tests,refs,reliability,vlm):
-    from storycg.tiers import compare_l2
+    from storycg.tier_gate import compare_l2
     return compare_l2(root,identity,tests,refs,reliability,vlm,workflow_validator=_injected_workflow,
                       comparison_file='l3/comparison.json')
 
@@ -80,7 +80,7 @@ def l3_comparison_passes(comparison):
     # reliable clothing items when the reference's default subject is applicable.
     for row in comparison['tier_evidence'].get('outfit_comparisons',[]):
         active=[r for r in row['comparisons'] if r.get('applicable')]
-        if any(r.get('status')=='fail' for r in active):return False
+        if row.get('reliability')!='unverified' and any(r.get('status')=='fail' for r in active):return False
         if row.get('reliability')=='reliable' and any(r.get('status')!='pass' for r in active):return False
     return True
 
@@ -96,7 +96,8 @@ def _face(root,path,vlm,purpose,dest):
 def current_l3_approval(approved):
     """An old affirmative result cannot bypass the current comparison policy."""
     from storycg.identity_enrichment import load_rules
-    from storycg.tiers import evaluate_l2,identity_checklist
+    from storycg.tier_gate import evaluate_l2
+    from storycg.tiers import identity_checklist
     evidence=approved.get('tier_evidence',{})
     comparison=evidence.get('l3',{}).get('comparison',{})
     if (evidence.get('comparison_version')!=load_rules()['tier_review']['version'] or

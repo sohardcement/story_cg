@@ -8,6 +8,9 @@ def spaces(text):
 
 def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> dict:
     config = config or load_config('config/default.json')
+    if 'pose' in entry['shot']:
+        from storycg.posture_tags import filtered_inputs
+        entry,props=filtered_inputs(entry,props)
     identity_block = spaces(identity['identity_block'])
     outfit, scene, shot = entry['outfit'], entry['scene'], entry['shot']
     if 'pose' in shot:

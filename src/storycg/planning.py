@@ -181,6 +181,10 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     plan_path = job_dir / "storyboard.json"
     if plan_path.exists():
         board = json.loads(plan_path.read_text(encoding="utf-8"))
+        intake_path=job_dir/'agent.json'
+        intake=json.loads(intake_path.read_text()).get('intake',{}) if intake_path.exists() else {}
+        if 'possession_swap' in intake and board.get('possession_swap') is not intake['possession_swap']:
+            raise ValueError('storyboard possession_swap differs from locked intake')
         validate_storyboard(board,shot_count,identity)
         from storycg.story_rules import validate_story_rules
         return validate_story_rules(board,allow_obscured=(config or {}).get("allow_obscured_protagonist",False))
@@ -238,6 +242,12 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     outfit_tags = [item["tag"].replace("_", " ") for item in
                    identity.get("default_outfit_tags", [])]
     base_user_content = story
+    intake_path=job_dir/'agent.json'
+    intake=json.loads(intake_path.read_text()).get('intake',{}) if intake_path.exists() else {}
+    if 'possession_swap' in intake:
+        schema['properties']['possession_swap']={'const':intake['possession_swap']}
+        if 'possession_swap' not in schema['required']:schema['required'].append('possession_swap')
+        base_user_content += '\nLocked intake possession_swap='+json.dumps(intake['possession_swap'])
     if outfit_tags:
         base_user_content += ("\nSourced canonical outfit tags (clothing only): " +
                               ", ".join(outfit_tags) +

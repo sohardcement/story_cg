@@ -28,8 +28,9 @@ RELIABILITY_NOTE = ('发色、视觉瞳色等身份审核以逐项 reliability �
                     '检测弃权标注未经审核；未可靠校准的项目标注“该项未经可靠审核”，建议用户看图确认。')
 TEXT = {'type': 'string'}
 INTAKE_SCHEMA = {'type': 'object', 'additionalProperties': False,
-                 'required': ['named_characters', 'conflict'], 'properties': {
-                     'named_characters': {'type': 'array', 'items': TEXT}, 'conflict': TEXT}}
+                 'required': ['named_characters', 'conflict', 'possession_swap'], 'properties': {
+                     'named_characters': {'type': 'array', 'items': TEXT}, 'conflict': TEXT,
+                     'possession_swap': {'type':'boolean'}}}
 
 
 def read(root, name, default=None):
@@ -191,7 +192,7 @@ def execute(root):
             update(root, phase='checking_requirements')
             job = read(root, 'job.json')
             intake = runtime_json(root, config, 'intake',
-                'Identify explicitly named people in this input. Return an empty conflict unless the user explicitly demands mutually incompatible outcomes or constraints; ordinary creative choices are not conflicts. Multiple named people are not a conflict; v1 keeps the supplied protagonist. Give conflicts in Chinese.\n'+json.dumps({'character': job['character'], 'story': job['story']}, ensure_ascii=False), INTAKE_SCHEMA)
+                'Identify explicitly named people in this input. Set possession_swap true when the story involves the protagonist mistakenly taking/holding an object belonging to another owner or an exchange of ownership-distinguished objects; otherwise false. Infer this from the meaning, not a keyword list. Return an empty conflict unless the user explicitly demands mutually incompatible outcomes or constraints; ordinary creative choices are not conflicts. Multiple named people are not a conflict; v1 keeps the supplied protagonist. Give conflicts in Chinese.\n'+json.dumps({'character': job['character'], 'story': job['story']}, ensure_ascii=False), INTAKE_SCHEMA)
             validate(intake, INTAKE_SCHEMA)
             if intake['conflict']:
                 question(root, 'requirements_conflict', intake['conflict']+' 请说明采用哪项要求。')
@@ -350,6 +351,9 @@ def main(argv):
             command.add_argument('--identity-control', choices=['none', 'ipadapter'])
             command.add_argument('--layout-mode', choices=['none', 'qwen'])
             command.add_argument('--seed', type=int)
+        if name=='resume':
+            command.add_argument('--repair-shot',type=int)
+            command.add_argument('--max-new-images',type=int,default=8)
         if name in ('make','resume'):
             command.add_argument('--reference-path',type=Path)
             command.add_argument('--tag')
@@ -410,6 +414,12 @@ def main(argv):
                             old.update(status='locked',identity_tier='tier_pending_L3_L4',needs_user=False)
                             old['tier_evidence']['validation_completed']=False
                         save_json_atomic(root/'identity.json',old)
+                if args.command=='resume' and args.repair_shot is not None:
+                    if not 1<=args.max_new_images<=8:raise ValueError('targeted repair image cap must be 1..8')
+                    from storycg.runtime_gate import reopen_targeted_repair
+                    reopen_targeted_repair(root,[args.repair_shot],max_new_images=args.max_new_images)
+                    end_wait(root)
+                    update(root,phase='queued',finished_at=None)
                 if args.command == 'deliver':
                     deliver(root)
                 elif args.command == 'approve':
