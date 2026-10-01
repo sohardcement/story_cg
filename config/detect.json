@@ -1,0 +1,18 @@
+{
+  "device": "cpu",
+  "imgsz": 640,
+  "iou": 0.7,
+  "max_det": 100,
+  "faces": {
+    "model": "models/detect/face_yolov8s.pt",
+    "confidence": 0.25,
+    "min_area_ratio": 0.0
+  },
+  "persons": {
+    "model": "models/detect/person_yolov8s-seg.pt",
+    "confidence": 0.25,
+    "min_area_ratio": 0.0
+  },
+  "mask": {"expansion": 0.1, "feather_px": 8},
+  "crop": {"expansion": 0.25}
+}

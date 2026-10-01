@@ -1,0 +1,19 @@
+{
+  "repository": "https://huggingface.co/Bingsu/adetailer",
+  "revision": "53cc19de382014514d9d4038601d261a7faa9b7b",
+  "selection": "s variants requested by P9-01; higher model-card accuracy than n, smaller CPU cost than m.",
+  "models": [
+    {
+      "filename": "face_yolov8s.pt",
+      "source_url": "https://huggingface.co/Bingsu/adetailer/resolve/53cc19de382014514d9d4038601d261a7faa9b7b/face_yolov8s.pt",
+      "size_bytes": 22507707,
+      "sha256": "c7237eff25787377de196961140ceaed324d859ee8de5a775d93d33a0e3fab78"
+    },
+    {
+      "filename": "person_yolov8s-seg.pt",
+      "source_url": "https://huggingface.co/Bingsu/adetailer/resolve/53cc19de382014514d9d4038601d261a7faa9b7b/person_yolov8s-seg.pt",
+      "size_bytes": 23850731,
+      "sha256": "53c54aec2239355faffc6c5b70d0f3d05042f386f956cbec39cec46ad456f050"
+    }
+  ]
+}

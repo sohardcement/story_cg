@@ -6,3 +6,7 @@ runs/**/*.png
 runs/**/.lock
 
 .pytest-tmp/
+
+models/detect/*.pt
+models/detect/*.download
+.cache/detect/
