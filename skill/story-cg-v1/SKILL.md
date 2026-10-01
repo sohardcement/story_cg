@@ -14,3 +14,5 @@ description: 根据一个具名角色和剧情生成 4–6 张连续 CG；支持
 stdout 是 JSON，stderr 是进度／诊断。仅当 `needs_user=true` 时按 `question` 和 `options` 提问：角色身份不明确、关键资源不可用、要求互相冲突。身份选择可用底层 `scripts/storycg resolve '<job_dir>' --tag '候选tag'` 或 `--work '作品名'`，再 resume；冲突修改后重新 make。`awaiting_approval` 是用户主动选择的确认步骤。普通创作选择自行决定；多具名角色转述 `notices`，按指定单主角继续。
 
 `completed` 或 `stopped` 时展示已有交付：回复中用 Hermes 媒体标记 `MEDIA:<artifacts.preview 的绝对路径>` 展示编号拼图，附简短结果、已知问题及 `artifacts.images/result/manifest` 路径。读取 result.md；如实保留“该项未经可靠审核”，尤其瞳色、配饰、整体角色，请用户看图确认。出错时说明 error／repair_blocked，已有产物不代表审核通过。状态为 interrupted 时 resume；无交付物的 stopped 不宣称成功。
+
+运行时代理仅通过上述 CLI 操作任务，不得直接修改项目代码、配置或任务状态文件。遇到错误或问题，将 `status` 返回的 `error`／`repair_blocked`／`question` 原样告诉用户；资源恢复后可以执行 `resume` 并继续轮询。不得自行修代码或改写状态来绕过错误。

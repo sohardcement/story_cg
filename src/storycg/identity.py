@@ -174,6 +174,10 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
     pending={'identity_tier':'tier_pending_comfyui','tier_evidence':{
         'status':'not_run','reason':'ComfyUI unavailable; live LoRA metadata and unconditioned L2 generation required',
         'generation_count':0,'vision_calls':0}}
+    if not choices and not candidates:
+        from storycg.fallback import needs_user
+        return needs_user(Path(cache_dir), {'input_name':name,'candidates':candidates,
+            'appearance_tags':[],'default_outfit_tags':[],**pending}, '找不到该角色的资料',persist=False)
     if len(choices)!=1:
         return {'input_name':name,'status':'needs_clarification','work_input':work,
                 'reason':'no matching character candidate' if not choices else 'ambiguous character candidates',
