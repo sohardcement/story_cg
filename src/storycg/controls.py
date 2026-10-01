@@ -41,8 +41,20 @@ def upload_reference(root, path, client, *, expected_sha256=None):
 
 
 def portrait_reference(root, portrait, key, client, mechanism, strength):
-    item = portrait[key]
+    detection = None
+    if key == 'face' and mechanism == 'ipadapter':
+        from storycg.detection_review import detect_face_record
+        source = Path(root)/portrait['image']['path']
+        if digest(source) != portrait['image']['sha256']:
+            raise ValueError('portrait image hash mismatch')
+        target = Path(root)/'detected_references'/(portrait['image']['sha256'] + '.png')
+        detection,item = detect_face_record(source,target)
+        if item is None:raise ValueError('face_not_detected: IPAdapter reference unavailable')
+        item['path'] = str(target.relative_to(root))
+    else:
+        item = portrait[key]
     return {'mechanism': mechanism, 'strength': strength, 'path': item['path'],
+            **({'detection': detection} if detection else {}),
             'sha256': item['sha256'], 'source_task': portrait['source_task'],
             'portrait_sha256': portrait['image']['sha256'],
             'uploaded_image': upload_reference(root, Path(root)/item['path'], client, expected_sha256=item['sha256'])}

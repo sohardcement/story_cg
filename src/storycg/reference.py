@@ -111,20 +111,15 @@ def portrait_prompt(identity, config, additions=()):
 
 
 def audit_portrait(root, image, identity, config, vlm, attempt):
-    from storycg.review import (messages, grading_schema, BBOX_SCHEMA, crop_face,
+    from storycg.review import (messages, grading_schema,
                                identity_checklist, result_statuses, conclude, VISIBILITY_PROMPT,
                                enforce_visibility, annotate_reliability, load_reliability)
     root=Path(root)
-    bbox=vlm.call(f'portrait_bbox_{attempt}',messages(
-        'Locate the single protagonist face with ears, forehead and chin. Return normalized '
-        '[left, top, right, bottom]; found=false if no identifiable face.',[image]),BBOX_SCHEMA,[image])
-    face=None
-    if bbox['status']=='pass' and bbox['data']['found']:
-        try:
-            face=crop_face(image,bbox['data']['bbox'],root/'portrait'/f'face_{attempt}.png')
-            face['path']=str(Path(face['path']).relative_to(root))
-        except ValueError:
-            pass
+    from storycg.detection_review import detect_face_record, audit_detection
+    bbox,face=detect_face_record(image,root/'portrait'/f'face_{attempt}.png')
+    if face:
+        face['path']=str(Path(face['path']).relative_to(root))
+    detection_items=audit_detection(image,identity,{'shot':{}})
     checks=identity_checklist(identity,default_outfit(identity))
     # Each outfit source tag remains explicit, including overlapping/layered components.
     for n,item in enumerate(identity['default_outfit_tags'],1):
@@ -145,7 +140,8 @@ def audit_portrait(root, image, identity, config, vlm, attempt):
     annotate_reliability(audit, load_reliability(config))
     statuses=result_statuses(audit)+(['pass'] if face else ['fail'])
     return {'status':'pass' if conclude(statuses)=='通过' else 'fail',
-            'conclusion':conclude(statuses),'bbox':bbox,'audit':audit,'checklist':checks,'face':face}
+            'conclusion':conclude(statuses),'bbox':bbox,'audit':audit,'checklist':checks,'face':face,
+            'detection_items':detection_items}
 
 
 def portrait_repair_instruction(identity, result):

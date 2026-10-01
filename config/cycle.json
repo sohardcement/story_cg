@@ -6,16 +6,16 @@
       "relayout"
     ],
     "eye_color": [
-      "instruction_edit",
-      "face_detail"
+      "face_detail",
+      "instruction_edit"
     ],
     "accessories": [
-      "instruction_edit",
-      "face_detail"
+      "face_detail",
+      "instruction_edit"
     ],
     "hair_color": [
-      "instruction_edit",
-      "face_detail"
+      "face_detail",
+      "instruction_edit"
     ],
     "hairstyle": [
       "face_detail",
@@ -42,12 +42,15 @@
     ],
     "narrative": [
       "relayout"
+    ],
+    "protagonist_count": [
+      "instruction_edit",
+      "relayout"
     ]
   },
-  "inpaint_disabled_reason": "D6: object localization produced incorrect, duplicate and full-image boxes; local repaint effectiveness unverified.",
   "max_rounds_per_shot": 3,
   "max_images": 40,
-  "max_minutes": 45,
+  "max_minutes": 60,
   "max_consecutive_no_improvement": 2,
   "max_vision_calls": 139,
   "max_llm_calls": 28,
@@ -64,5 +67,6 @@
   "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM.",
   "final_review_reserve_minutes": 8,
   "candidate_identity_regression": "reject new reliable hair_color/outfit fail even if total decreases",
-  "diagnosis_validation_retries": 1
+  "diagnosis_validation_retries": 1,
+  "inpaint_scope": "D10: detector face mask and non-subject person mask only; all other methods retain D6"
 }

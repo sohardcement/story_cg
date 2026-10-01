@@ -86,11 +86,9 @@ def l3_comparison_passes(comparison):
 
 
 def _face(root,path,vlm,purpose,dest):
-    from storycg.review import messages,BBOX_SCHEMA,crop_face
-    result=vlm.call(purpose,messages('Locate the single protagonist face with ears, forehead and chin. '
-        'Return normalized [left, top, right, bottom]; found=false if no identifiable face.',[path]),BBOX_SCHEMA,[path])
-    if result.get('status')!='pass' or not result['data']['found']:raise ValueError('没有可定位的参考面部')
-    face=crop_face(path,result['data']['bbox'],root/dest)
+    from storycg.detection_review import detect_face_record
+    result,face=detect_face_record(path,root/dest)
+    if face is None:raise ValueError('face_not_detected: 没有可定位的参考面部')
     face['path']=str(Path(face['path']).relative_to(root))
     return face,result
 
@@ -172,7 +170,7 @@ def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None):
         image=root/test['path']
         try:
             output_face,bbox=_face(root,image,vlm,f'l3_portrait_bbox_{number}',str(session/f'face-{number}.png'))
-        except ValueError as exc:
+        except (ValueError, RuntimeError, OSError) as exc:
             item['diagnostic_repair']['result']='face localization unavailable; reuse this image on resume, no regeneration'
             save_json_atomic(attempt_path,attempts)
             pending=copy.deepcopy(identity)

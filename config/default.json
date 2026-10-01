@@ -46,7 +46,7 @@
   "budget": {
     "max_repairs_per_shot": 3,
     "max_images_per_job": 40,
-    "max_job_minutes": 45,
+    "max_job_minutes": 60,
     "stop_after_no_improvement_rounds": 2
   },
   "framing_tags": {

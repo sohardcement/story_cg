@@ -100,6 +100,34 @@ def boundary_check(base, composite, pixels, band=4, threshold=24):
     return {'passed':score<=threshold,'max_new_color_jump':score,'threshold':threshold,'edge_scores':checks}
 
 
+def mask_boundary_check(base, composite, mask, threshold=24):
+    import numpy as np
+    cfg=json.loads((Path(__file__).resolve().parents[2]/'config/repairs.json').read_text())['inpaint']['seam']
+    if base.size!=composite.size or mask.size!=base.size:raise ValueError('boundary images/mask sizes differ')
+    before=np.asarray(base.convert('RGB'),dtype=float)
+    after=np.asarray(composite.convert('RGB'),dtype=float)
+    inside=np.asarray(mask.convert('L'))>=cfg['support_alpha']
+    samples=[];scores=[]
+    for axis in (0,1):
+        cross=np.diff(inside.astype('int8'),axis=axis)!=0
+        increment=np.maximum(0,np.abs(np.diff(after,axis=axis))-np.abs(np.diff(before,axis=axis))).max(axis=2)
+        values=increment[cross];samples.extend(values.tolist())
+        scores.append(float(np.percentile(values,cfg['percentile'])) if len(values) else 0.)
+    score=float(np.percentile(samples,cfg['percentile'])) if samples else 0.
+    return {'passed':score<=threshold,'max_new_color_jump':score,'threshold':threshold,
+            'edge_scores':scores,'sampled_edges':len(samples),'support_alpha':cfg['support_alpha'],
+            'percentile':cfg['percentile'],'method':'positive RGB gradient magnitude increment across outer mask support, one-pixel narrow band'}
+
+
+def add_noise_mask(workflow, uploaded_image):
+    # Use unused node IDs: L1's character LoRA already occupies node 30.
+    available=max(80,max(map(int,workflow))+1)
+    loader,noise=str(available),str(available+1)
+    workflow[loader]={'class_type':'LoadImageMask','inputs':{'image':uploaded_image,'channel':'red'}}
+    workflow[noise]={'class_type':'SetLatentNoiseMask','inputs':{'samples':workflow['7']['inputs']['latent_image'],'mask':[loader,0]}}
+    workflow['7']['inputs']['latent_image']=[noise,0]
+
+
 def feather_mask(size, pixels, feather):
     if feather<0: raise ValueError('negative feather')
     mask=Image.new('L',size,0); x0,y0,x1,y1=pixels
@@ -115,6 +143,21 @@ def composite_region(base, patch, pixels, feather):
     x0,y0,x1,y1=pixels
     layer=base.convert('RGB').copy();layer.paste(patch.convert('RGB').resize((x1-x0,y1-y0),Image.Resampling.LANCZOS),(x0,y0))
     return Image.composite(layer,base.convert('RGB'),feather_mask(base.size,pixels,feather))
+
+
+def composite_masked(base, patch, pixels, mask):
+    if mask.size != base.size:raise ValueError('mask must match source image size')
+    x0,y0,x1,y1=pixels
+    layer=base.convert('RGB').copy()
+    layer.paste(patch.convert('RGB').resize((x1-x0,y1-y0),Image.Resampling.LANCZOS),(x0,y0))
+    # Context pixels are read for generation but only detector-selected pixels change.
+    from PIL import ImageChops
+    mask=ImageChops.multiply(mask.convert('L'),feather_mask(base.size,pixels,0))
+    return Image.composite(layer,base.convert('RGB'),mask)
+
+
+def background_removal_prompt(entry):
+    return ', '.join([*entry['scene'].get('tags',[]),'empty background, continuous environment']), 'person, people, girl, boy, human, face, body'
 
 
 def fork_repair_job(source, destination):
@@ -145,13 +188,13 @@ def fork_repair_job(source, destination):
 
 
 def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region_source=None,
-           prop_ids=None, denoise=None, seed=None, revised_entry=None, repair_id='repair1', operation=None, edit=None, source_attempt=None):
+           prop_ids=None, denoise=None, seed=None, revised_entry=None, repair_id='repair1', operation=None, edit=None, source_attempt=None, mask_path=None, mask_sha256=None):
     """Resume by repair_id; changing an existing request is rejected, never reposted."""
     validate_diagnosis(diagnosis)
     if primitive not in ('inpaint','face_detail','relayout','seed','instruction_edit'): raise ValueError('unknown primitive')
     if primitive=='seed' and seed is None: raise ValueError('seed repair requires a seed')
     root=Path(root).resolve();shot_id=f'shot{shot_number:02d}'
-    request={'primitive':primitive,'shot':shot_number,'diagnosis':diagnosis,'bbox':bbox,'region_source':region_source,'prop_ids':prop_ids,'denoise':denoise,'seed':seed,'revised_entry':revised_entry, **({'operation':operation} if operation else {}), **({'edit':edit} if edit else {}), **({'source_attempt':source_attempt} if source_attempt is not None else {})}
+    request={'primitive':primitive,'shot':shot_number,'diagnosis':diagnosis,'bbox':bbox,'region_source':region_source,'prop_ids':prop_ids,'denoise':denoise,'seed':seed,'revised_entry':revised_entry, **({'operation':operation} if operation else {}), **({'edit':edit} if edit else {}), **({'source_attempt':source_attempt} if source_attempt is not None else {}), **({'mask_path':str(mask_path),'mask_sha256':mask_sha256} if mask_path else {})}
     with _job_lock(root):
         state=load_state(root);config=copy.deepcopy(state['config'])
         board=json.loads((root/'storyboard.json').read_text());identity=json.loads((root/'identity.json').read_text());portrait=json.loads((root/'portrait.json').read_text())
@@ -193,7 +236,9 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
                 primitive='relayout';rec['transfer_reason']=plan['transfer_reason'];_save(root,state)
         parts=assemble_prompt(identity,entry,props=board['props'],config=config)
         negative=None
-        face=portrait_reference(root,portrait,'face',client,'ipadapter',config['identity_control']['ipadapter_strength'])
+        removal=bool(operation and operation.get('type')=='remove_person')
+        face=None if removal else portrait_reference(root,portrait,'face',client,'ipadapter',config['identity_control']['ipadapter_strength'])
+        if removal:config.pop('character_lora',None)
         if seed is not None: config['generation_seed']=seed
         if primitive=='face_detail' and settings['face_detail'].get('cfg') is not None: config['sampler']['cfg']=settings['face_detail']['cfg']
         assets=root/'repair_assets'/key;assets.mkdir(parents=True,exist_ok=True)
@@ -202,14 +247,34 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
             if not bbox or not region_source: raise ValueError('region and its provenance required')
             source_path=root/rec['source_image']['path']
             if digest(source_path)!=rec['source_image']['sha256']: raise ValueError('source hash mismatch')
+            if primitive=='face_detail' and mask_path is None:
+                from storycg.detection_review import repair_mask
+                from storycg.detect import detect_image
+                detected_region=repair_mask(source_path,detect_image(source_path),'face',assets/'detected')
+                bbox=detected_region['bbox'];mask_path=detected_region['mask_path'];mask_sha256=detected_region['mask_sha256']
+                region_source=detected_region['provenance']
             with Image.open(source_path) as im:
+                full_mask=None
+                if mask_path:
+                    provided=Path(mask_path).resolve()
+                    if not provided.is_relative_to(root):raise ValueError('detection mask outside repair job')
+                    if not mask_sha256 or digest(provided)!=mask_sha256:raise ValueError('detection mask hash mismatch')
+                    if region_source.get('source_sha256') != rec['source_image']['sha256']:
+                        raise ValueError('detection mask source hash mismatch')
+                    with Image.open(provided) as supplied:full_mask=supplied.convert('L')
+                    if full_mask.size!=im.size or not full_mask.getbbox():raise ValueError('invalid detection mask geometry')
+                    bounds=full_mask.getbbox()
+                    bbox=[v/d for v,d in zip(bounds,[im.width,im.height,im.width,im.height])]
                 pixels=region_pixels(bbox,im.size,settings['face_detail']['bbox_expansion'] if primitive=='face_detail' else settings['inpaint'].get('context_margin',.12))
                 crop=im.convert('RGB').crop(pixels)
-                resolution=aspect_resolution(crop.size) if primitive=='inpaint' else settings[primitive]['resolution']
+                resolution=aspect_resolution(crop.size)
                 if not (assets/'input.png').exists():
                     crop.resize(tuple(resolution),Image.Resampling.LANCZOS).save(assets/'input.png')
                 if not (assets/'mask_full.png').exists():
-                    feather_mask(im.size,pixels,settings[primitive]['feather_pixels']).save(assets/'mask_full.png')
+                    (full_mask if full_mask is not None else feather_mask(im.size,pixels,settings[primitive]['feather_pixels'])).save(assets/'mask_full.png')
+                if not (assets/'mask.png').exists():
+                    with Image.open(assets/'mask_full.png') as stored_mask:
+                        stored_mask.crop(pixels).resize(tuple(resolution),Image.Resampling.LANCZOS).save(assets/'mask.png')
             if primitive=='face_detail':
                 tags=', '.join([parts['identity_block'],parts['outfit_block'],'face, head, portrait, '+entry['shot']['expression']]);strength=denoise if denoise is not None else settings['face_detail']['denoise']
             else:
@@ -217,7 +282,7 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
                 if prop_ids and set(prop_ids)-{p['prop_id'] for p in entry['shot']['key_props']}: raise ValueError('unknown region prop')
                 tags=assemble_prompt(identity,selected,props=board['props'],config=config)['positive_tags']
                 if operation:
-                    tags,operation_negative=region_prompt(identity,entry,board['props'],operation)
+                    tags,operation_negative=background_removal_prompt(entry) if removal else region_prompt(identity,entry,board['props'],operation)
                     negative=', '.join(filter(None,[config['negative_prompt'],parts['negative_tags'],operation_negative]))
                 strength=denoise if denoise is not None else settings['inpaint']['denoise']
                 # Latent noise is constrained by a feathered mask, in addition to final pixel compositing.
@@ -245,12 +310,10 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
                     a['workflow']=copy.deepcopy(original['workflow'])
                     a['workflow']['7']['inputs']['seed']=seed
                     a['workflow']['9']['inputs']['filename_prefix']=a['filename_prefix']
-                if primitive=='inpaint' and kind=='final':
+                if primitive in ('inpaint','face_detail') and kind=='final':
                     uploaded=upload_reference(root,assets/'mask.png',client)
                     rec['region']['noise_mask']={'path':str((assets/'mask.png').relative_to(root)),'sha256':digest(assets/'mask.png'),'uploaded_image':uploaded}
-                    a['workflow']['30']={'class_type':'LoadImageMask','inputs':{'image':uploaded,'channel':'red'}}
-                    a['workflow']['31']={'class_type':'SetLatentNoiseMask','inputs':{'samples':['12',0],'mask':['30',0]}}
-                    a['workflow']['7']['inputs']['latent_image']=['31',0]
+                    add_noise_mask(a['workflow'],uploaded)
                 rec['stages'].append(a['filename_prefix']);_save(root,state)
                 _process(root,state,a,client,recovering=False)
             else:
@@ -272,10 +335,12 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
         final=stage(shot_id,tags,reference,'final')
         if pixels and not final.get('raw_image'):
             final['raw_image']=copy.deepcopy(final['image']);output=root/(final['filename_prefix']+'_composite.png')
-            with Image.open(root/rec['source_image']['path']) as base, Image.open(root/final['raw_image']['path']) as patch: composite_region(base,patch,pixels,settings[primitive]['feather_pixels']).save(output)
-            if primitive=='inpaint':
-                with Image.open(root/rec['source_image']['path']) as base, Image.open(output) as merged:
-                    rec['boundary_check']=boundary_check(base,merged,pixels,settings['inpaint'].get('boundary_band',4),settings['inpaint'].get('boundary_threshold',24))
+            with Image.open(root/rec['source_image']['path']) as base, Image.open(root/final['raw_image']['path']) as patch, Image.open(assets/'mask_full.png') as mask:
+                composite_masked(base,patch,pixels,mask).save(output)
+            if primitive in ('inpaint','face_detail'):
+                with Image.open(root/rec['source_image']['path']) as base, Image.open(output) as merged, Image.open(assets/'mask_full.png') as mask:
+                    rec['context_boundary_check']=boundary_check(base,merged,pixels,settings['inpaint'].get('boundary_band',4),settings['inpaint'].get('boundary_threshold',24))
+                    rec['boundary_check']=mask_boundary_check(base,merged,mask,settings['inpaint'].get('boundary_threshold',24))
             with Image.open(output) as im: w,h=im.size
             final['image']={'path':output.name,'sha256':digest(output),'width':w,'height':h}
         rec['output']=copy.deepcopy(final['image'])

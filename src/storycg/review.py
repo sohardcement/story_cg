@@ -438,36 +438,36 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
         reference_note = '参考=已审核定妆图'
         reference_full = artifacts/'reference_portrait.png'
         reference_face = artifacts/'reference_face.png'
-        for key, output in [('image', reference_full), ('face', reference_face)]:
-            with Image.open(job_dir/portrait[key]['path']) as source:
-                source.convert('RGB').save(output)
+        with Image.open(job_dir/portrait['image']['path']) as source:
+            source.convert('RGB').save(reference_full)
+        from storycg.detection_review import detect_face_record
+        reference_detection,reference_crop=detect_face_record(reference_full,reference_face)
     report = {'version': 1, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
               'inputs': inputs, 'single': [], 'faces': [], 'consistency': [],
               'rule': 'any fail/unknown/missing/error => 未通过; otherwise any minor => 有瑕疵但可选; all pass => 通过'}
+    if portrait:
+        report['reference_face_detection'] = reference_detection
     statuses = []
     try:
         for number, (path, entry) in enumerate(zip(paths, board['shots']), 1):
             result = audit_single(vlm, path, entry, board.get('props', []), config, f'single_{number:02d}')
             report['single'].append({'shot': number, **result})
             statuses.extend(result_statuses(result))
-        for number, path in enumerate(paths, 1):
-            result = vlm.call(f'face_bbox_{number:02d}', messages(
-                'Locate the main foreground protagonist face only, not a background person. '
-                'Return normalized [left, top, right, bottom] relative to image width/height. '
-                'Include forehead, eyes, nose, mouth, chin and visible ears with a small margin. '
-                'If no identifiable face is visible return found=false, bbox=[0,0,0,0].', [path]),
-                BBOX_SCHEMA, [path])
-            face = {'shot': number, 'detection': result, 'status': 'fail'}
-            if result['status'] == 'pass' and result['data']['found']:
-                try:
-                    output = artifacts / f'face_{number:02d}.png'
-                    face.update(crop_face(path, result['data']['bbox'], output), status='pass')
-                    face['path'] = str(output.relative_to(job_dir))
-                except ValueError as exc:
-                    face['error'] = str(exc)
+        from storycg.detection_review import detect_face_record, audit_detection, blind_thumbnails
+        report['detection_items'] = []
+        for number, (path, entry) in enumerate(zip(paths,board['shots']), 1):
+            result,crop = detect_face_record(path,artifacts/f'face_{number:02d}.png')
+            face = {'shot':number,'detection':result,'status':'pass',
+                    'face_status':'detected' if crop else 'face_not_detected'}
+            if crop:
+                face.update(crop)
+                face['path'] = str(Path(crop['path']).relative_to(job_dir))
             else:
-                face['error'] = result.get('error', 'no face found')
+                face['error'] = 'face_not_detected'
             report['faces'].append(face)
+            report['detection_items'].append({'shot':number,**audit_detection(path,identity,entry,
+                reference_path=reference_full if portrait else paths[0])})
+            # A face-free back view is an observation, not an extra visual failure.
             statuses.append(face['status'])
         for number, (path, entry, face) in enumerate(zip(paths, board['shots'], report['faces']), 1):
             checklist = identity_checklist(identity, entry['outfit'])
@@ -477,7 +477,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                                                        'current': entry['scene']}, 'source': 'storyboard.json:scene'}}
             compare_paths = [reference_full if portrait else paths[0], path]
             pair = None
-            if face['status'] == 'pass' and (portrait or report['faces'][0]['status'] == 'pass'):
+            if face.get('path') and (bool(reference_crop) if portrait else bool(report['faces'][0].get('path'))):
                 pair = artifacts / f'face_pair_{number:02d}.png'
                 face_pair(reference_face if portrait else job_dir / report['faces'][0]['path'],
                           job_dir / face['path'], pair)
@@ -487,7 +487,11 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                 result['face_pair'] = str(pair.relative_to(job_dir))
             report['consistency'].append({'shot': number, 'checklist': checks, **result})
             statuses.extend(result_statuses(result))
-        blind = vlm.call('narrative_blind', blind_messages(paths), BLIND_SCHEMA, paths)
+        blind_paths,thumbnail_records = blind_thumbnails(paths,artifacts/'blind',
+            long_edge=config.get('blind_long_edge'))
+        report['blind_thumbnails'] = thumbnail_records
+        vlm.log({'event':'blind_thumbnail','records':thumbnail_records})
+        blind = vlm.call('narrative_blind', blind_messages(blind_paths), BLIND_SCHEMA, blind_paths)
         report['narrative_blind'] = blind
         statuses.append(blind['status'])
         if blind['status'] == 'pass':
@@ -527,6 +531,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
               'conclusion': report['conclusion'], 'layer_conclusions': report['layer_conclusions'],
               'reference_note': reference_note, 'reference': portrait, 'usage': report['usage'],
               'visibility': report['visibility'], 'reliability': report['reliability'],
+              'detection_items': report['detection_items'], 'blind_thumbnails': report['blind_thumbnails'],
               'item_reviews': {layer: report[layer] for layer in ['single', 'consistency']}}
     # Preserve prior records and snapshot on repeat rather than silently replace evidence.
     archive = artifacts / f'review_{vlm.session_id}.json'
@@ -564,6 +569,10 @@ def write_review_md(job_dir, report):
     for item in report['consistency']:
         if item.get('face_pair'):
             lines.append(f"- 第 {item['shot']} 镜 [面部对照]({item['face_pair']})")
+    lines.extend(['', '## 本机检测审核项（未校准）', ''])
+    for item in report.get('detection_items',[]):
+        values='; '.join(key+'='+str(item[key]['status']) for key in ('eye_color_sampled','accessory_color_sampled','protagonist_count'))
+        lines.append(f"- 第 {item['shot']} 镜: {values}; 主体数={item['protagonist_count']['protagonist_count']}; 未校准")
     for key in ['narrative_blind', 'narrative_compare']:
         lines.extend(['', f'## {key}', '', '```json',
                       json.dumps(report[key], ensure_ascii=False, indent=2), '```'])
