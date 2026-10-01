@@ -230,6 +230,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P9-03 第二轮校准样本 | 通过 | 1（监工条文措辞） | 01a0f62a-50d9-79e3-b075-8fd83988a6eb | `review/P9-03-samples.jpg`、`verify/P9-labels.json` |
 | P9-02 检测接入流程 | 通过（瞳色采样覆盖率低，待校准） | 1 | 01a0f5f7-d475-74f0-bd70-7a97649cc3c4 | `review/P9-02-inpaint.jpg`、`review/P9-02-eyes.jpg`、`verify/p9-02_d1_after.jpg` |
 | P9-01 本机检测基础设施 | 通过 | 0 | 01a0f5e9-f168-7022-8877-0f661a6dbd72 | `review/P9-01-detect.jpg`、`calibration/detect/results.json` |
 | P8-03 分镜规则冲突修复+L3 整组 | 通过（效果有瑕疵） | 0 | 01a0f597-28be-7762-9296-a34cedc23c8b | `review/白雪姬-面包店打工.jpg`、`reports/P8-03.md` |
@@ -283,6 +284,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | P8-03 | 10 | 55 | 217 |
 | P9-01 | 0 | 0 | 217 |
 | P9-02（含返工） | 3 | 4 | 220 |
+| P9-03（含返工） | 3 | 0 | 223 |
 
 ## 审核器校准结果（P4-02，监工独立复算确认）
 
