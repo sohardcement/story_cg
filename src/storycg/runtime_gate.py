@@ -46,7 +46,120 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
         if result.get('status')!='pass':raise ValueError('count diagnostic LLM failed: '+str(result.get('error')))
         Draft202012Validator(count_diagnosis_schema(entry)).validate(result['data'])
         return frozen.validate_decision(result['data'],number,audit,entry,board,identity,cycle)
-    return frozen.diagnose(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
+    return diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
+
+
+def prop_edit_diagnosis(edit,state):
+    if edit['target'].startswith('props.'):
+        prop=state['props'][int(edit['target'].split('.')[1])]
+    else:
+        ref=state['entry']['shot']['key_props'][int(edit['target'].split('.')[3])]
+        prop=next(p for p in state['props'] if p['id']==ref['prop_id'])
+    if edit['operation']=='change_prop_state':
+        return f"Visible state/attribute mismatch of registered object {prop['id']}; correct to its registered description without removing instances."
+    if edit['operation']=='remove_surplus':
+        return f"Surplus instances of registered object {prop['id']}; remove extra instances without removing or changing a registered attribute."
+    return f"Placement mismatch of registered object {prop['id']}; correct only its registered placement."
+
+
+def prop_edit_choices(state):
+    choices=[]
+    for target,description in state_descriptions(state).items():
+        if target.startswith('props.') and '.description_tags.' in target:
+            operations=('change_prop_state','remove_surplus')
+        elif target.startswith('entry.shot.key_props.') and target.endswith('.position'):
+            operations=('place',)
+        else:continue
+        for operation in operations:
+            edit={'operation':operation,'target':target,'description':description}
+            try:instruction=grounded_instruction(edit,state)
+            except ValueError:continue
+            choices.append({'edit':edit,'changes':instruction,'diagnosis':prop_edit_diagnosis(edit,state)})
+    return choices
+
+
+def diagnosis_schema(cfg, *, state=None, problems=None):
+    from storycg.planning import production_schema
+    schema=frozen.diagnosis_schema(cfg,state=state,problems=problems)
+    schema['properties']['shot']={'anyOf':[
+        production_schema()['properties']['shots']['items']['properties']['shot'], {'type':'null'}]}
+    if state:
+        # Bind operation, exact target/value and executable prose as a single choice.
+        choices=[{'properties':{key:{'const':value} for key,value in choice.items()}}
+            for choice in prop_edit_choices(state)]
+        schema['allOf']=[{'if':{'properties':{'problem':{'const':'props'},'primitive':{'const':'instruction_edit'}}},
+            'then':{'anyOf':choices} if choices else {'not':{}}}]
+    return schema
+
+
+def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):
+    if decision['primitive']=='instruction_edit':
+        state={'identity':identity,'entry':entry,'props':board['props']}
+        instruction=grounded_instruction(decision['edit'],state)
+        if decision['problem']=='props':
+            if decision['edit']['operation'] not in ('change_prop_state','remove_surplus','place'):
+                raise ValueError('props require an explicit state, instance removal or placement operation')
+            if decision['diagnosis']!=prop_edit_diagnosis(decision['edit'],state):
+                raise ValueError('diagnosis text does not match compiled operation; copy the script-generated diagnosis')
+            if decision['changes']!=instruction:
+                raise ValueError('changes text does not match compiled operation; use the script-generated instruction exactly')
+        slot=cycle['shots'][str(number)]
+        for previous in slot['history']:
+            old=previous['decision']
+            same_source=previous.get('source_attempt')==slot['best_attempt'] or (
+                previous.get('source_sha256') is not None and previous['source_sha256']==slot.get('best_audit',{}).get('image',{}).get('sha256'))
+            if same_source and old['primitive']=='instruction_edit':
+                prior=grounded_instruction(old['edit'],state)
+                if prior==instruction:raise ValueError('cannot repeat identical instruction edit on the same source')
+    return frozen.validate_decision(decision,number,audit,entry,board,identity,cycle,narrative=narrative)
+
+
+def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
+    from storycg.shot_contract import RULE_PROMPT
+    cfg=cycle['config'];slot=cycle['shots'][str(number)]
+    state={'identity':identity,'entry':entry,'props':board['props']}
+    problems={problem_key(i['key']) for i in issues(audit) if i['status']=='fail'}
+    if any(i['key']=='signature_features' and i['status']=='fail' for i in issues(audit)):problems.add('accessories')
+    if narrative:problems.add('narrative')
+    problems=sorted(problems & cfg['problem_methods'].keys())
+    if not problems:raise ValueError('no mapped actionable FAIL item')
+    schema=diagnosis_schema(cfg,state=state,problems=problems)
+    choices=prop_edit_choices(state)
+    content={'issues':issues(audit),'state':state,
+        'allowed_methods':{key:permitted_methods(key,cycle,number) for key in problems},
+        'exact_edit_descriptions':state_descriptions(state),'prop_edit_choices':choices,
+        'previous_repairs':slot['history']}
+    if narrative:content.update(blind_comparison=narrative,storyboard=board)
+    prompt=('Interpret actual FAIL findings. Give a diagnosis, causal hypothesis and corrective change. '
+        'Choose ONLY allowed_methods for the observed problem; target_shot must equal '+str(number)+'. '
+        'For instruction_edit supply exact registered target/description and shot=null. '
+        'For props choose one prop_edit_choices pair and copy its edit, diagnosis AND changes exactly. Explain the observed evidence in hypothesis. '
+        'change_prop_state changes visible attributes/state to the complete registered description, retaining instances. '
+        'remove_surplus removes extra object instances, retaining the required registered count; it never removes a property or tag. place corrects registered placement only. '
+        'Your diagnosis and hypothesis must describe the chosen operation. If an attribute is wrong, use change_prop_state; '
+        'never use remove_surplus to remove an attribute. Do not repeat an identical edit on the same source. '
+        'relayout: edit=null, return the complete revised shot, preserve the event and registered prop IDs. '
+        'Return ALL fields, including pose, action, description, tags, reflection, protagonist_instances, '
+        'subject_visibility, other_people, hand_owners, and ALL key_props fields including detached, owner, state, '
+        'establishes_ownership and distinguishing_features_visible. action and description equal pose; tags contain only pose/expression. '
+        'face_detail/inpaint: edit=null and shot=null; regions are detected locally. '
+        'Do not merely change seed or synonyms. '+RULE_PROMPT.replace(
+            'The script derives action, description and shot.tags from pose/expression; do not return these derived fields.',
+            'For relayout return action and description equal to pose and tags containing pose and expression.')+
+        json.dumps(content,ensure_ascii=False))
+    label=f'decision_{number}_{len(slot["history"])+1}'+('_narrative' if narrative else '')+'_contract4'
+    feedback=''
+    for revision in range(cfg.get('diagnosis_validation_retries',1)+1):
+        name=label if revision==0 else label+f'_validation{revision}'
+        result=cached_call(root,name,vlm,'cycle_llm_'+name,review.messages(prompt+feedback),schema)
+        try:
+            if result.get('status')!='pass':raise ValueError('diagnostic LLM failed: '+str(result.get('error')))
+            Draft202012Validator(schema).validate(result['data'])
+            return validate_decision(result['data'],number,audit,entry,board,identity,cycle,narrative=narrative)
+        except (ValueError, __import__('jsonschema').ValidationError) as exc:
+            save_json_atomic(root/'cycle_artifacts'/f'{name}_rejected.json',{'error':str(exc),'original_response_file':f'{name}.json'})
+            feedback='\nScript rejected previous output: '+str(exc)+'. Correct the specific field; retain registered state. Previous output: '+json.dumps(result.get('data'),ensure_ascii=False)
+            if revision==cfg.get('diagnosis_validation_retries',1):raise
 
 def deliver(root,cycle,config,client):
     state=frozen.deliver(root,cycle,config,client)
@@ -150,7 +263,7 @@ def run_repair_cycle(job_dir,config,client):
                     if usage(root)['elapsed_seconds']>=(cfg['max_minutes']-cfg.get('final_review_reserve_minutes',8))*60:
                         slot['stop']='final_review_time_reserved';persist();break
                     if quota(cost,reserve_vision=7+3*len(board['shots'])+2):slot['stop']=quota(cost,reserve_vision=7+3*len(board['shots'])+2);persist();break
-                    pending={'round':len(slot['history'])+1,'decision':decision,'status':'prepared','source_attempt':slot['best_attempt']}
+                    pending={'round':len(slot['history'])+1,'decision':decision,'status':'prepared','source_attempt':slot['best_attempt'],'source_sha256':slot['best_audit']['image']['sha256']}
                     slot['history'].append(pending);persist()
                 try:
                     apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
@@ -185,7 +298,7 @@ def run_repair_cycle(job_dir,config,client):
                             cycle['narrative_rejected']={'diagnosis':choose['data'],'hypothesis':'visible cue correction must satisfy existing storyboard rules','changes':None,'result':str(exc)}
                             decision=None;persist()
                         if decision is not None:
-                            pending={'round':len(slot['history'])+1,'decision':decision,'status':'prepared','source_attempt':slot['best_attempt'],'narrative':True}
+                            pending={'round':len(slot['history'])+1,'decision':decision,'status':'prepared','source_attempt':slot['best_attempt'],'source_sha256':slot['best_audit']['image']['sha256'],'narrative':True}
                             cycle['narrative_attempted']=True;slot['history'].append(pending);persist()
                             apply_round(root,n,slot,pending,board,identity,cycle,config,client,vlm);persist()
                             deliver(root,cycle,config,client)
