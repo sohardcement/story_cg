@@ -66,8 +66,8 @@ def plan_job(job_dir: str | Path, config: dict) -> dict:
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before planning")
     return plan_story(job_dir, job["story"], identity, job["shot_count"],
-                      config["model_service_url"], max_calls=config.get("planning", {}).get("max_calls", 25),
-                      retries=config.get("planning", {}).get("retries", 10), config=config)
+                      config["model_service_url"], max_calls=config.get("planning", {}).get("max_calls", 5),
+                      retries=config.get("planning", {}).get("retries", config.get("planning", {}).get("max_calls", 5)), config=config)
 
 
 def _model_manifest(config: dict, client) -> dict:

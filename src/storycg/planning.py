@@ -55,7 +55,7 @@ SHOT['properties'].update({
     'subject_visibility':{'enum':['clear','obscured']},
     'other_people':{'type':'array','items':{'enum':['passerby','back_view','offscreen','partial']}},
     'hand_owners':{'type':'array','items':{'enum':['subject','anonymous_other']}}})
-PROP['properties']['detached']={'type':'boolean'}
+PROP['properties']['detached']={'type':'boolean', 'description': 'True only at the instant an object is airborne, flying away, falling or departing from the subject. False for placed/set-down props resting on a surface or at a location, even when separated from the subject.'}
 
 
 def production_schema():
@@ -154,7 +154,7 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
 
 
 def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
-               model_url: str, *, max_calls: int = 20, retries: int = 3,
+               model_url: str, *, max_calls: int = 5, retries: int = 5,
                client: httpx.Client | None = None, config: dict | None = None,
                tag_registry=None, feedback: str | None = None) -> dict:
     job_dir = Path(job_dir)
@@ -216,7 +216,11 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                               ". Use these in clothing_state unless the story changes clothes.")
     if feedback:
         base_user_content += "\nDiagnosis from actual generated images; rewrite to address it:\n" + feedback
-    for _ in range(retries):
+    streak_rule = None
+    streak = 0
+    attempts = 0
+    for _ in range(min(retries, max(0, max_calls-len(log['calls'])))):
+        attempts += 1
         if len(log["calls"]) >= max_calls:
             raise ValueError("LLM call budget exhausted")
         gate=None
@@ -273,11 +277,22 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         except (ValueError, KeyError, IndexError, httpx.HTTPError) as exc:
             call["status"] = "invalid"
             call["error"] = f"{type(exc).__name__}: {exc}"
+            from storycg.story_rules import StoryRuleViolation
+            rule_id = exc.rule_id if isinstance(exc, StoryRuleViolation) else None
+            call['rule_id'] = rule_id
+            if rule_id:
+                streak = streak + 1 if rule_id == streak_rule else 1
+            else:
+                streak = 0
+            streak_rule = rule_id
+            call['consecutive_rule_rejections'] = streak
             save_json_atomic(log_path, log)
+            if streak >= 3:
+                raise ValueError(f"分镜连续 3 次违反同一规则 {rule_id}，已停止；{exc}；日志：{log_path}") from exc
             continue
         call["status"] = "valid"
         save_json_atomic(log_path, log)
         save_json_atomic(plan_path, board)
         save_json_atomic(job_dir / "props.json", board["props"])
         return board
-    raise ValueError(f"storyboard failed validation after {retries} calls; see {log_path}")
+    raise ValueError(f"storyboard failed validation after {attempts} calls (limit {max_calls}); last error: {log['calls'][-1].get('error', 'no call available') if log['calls'] else 'no call available'}; see {log_path}")

@@ -18,3 +18,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/storycg"]
+
+[tool.pytest.ini_options]
+addopts = "--basetemp=.pytest-tmp"
+
+[tool.uv]
+cache-dir = ".uv-cache"
