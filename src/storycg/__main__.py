@@ -34,6 +34,9 @@ def _summary(state: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
+    if argv and argv[0] == 'detect':
+        from storycg.detect import cli
+        return cli(argv[1:])
     # Preserve P6's positional make alias for pre-facade jobs.
     if (argv and argv[0] == "make" and len(argv) > 1 and not argv[1].startswith("-")
             and (Path(argv[1]) / "job.json").exists()
