@@ -230,6 +230,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P9-06 四项修复+在线回归 | 部分完成（月城柳去重成功；约尔回到 L2 出图；芙莉莲规划失败） | 2（资源阻塞续做） | 01a0f931-b055-7ba0-b661-4c77eb3d2f19 | `review/P9-06-月城柳-前后.jpg`、`review/P9-06-约尔-前后.jpg` |
 | P9-05 分镜规则+门禁+回归 | 部分完成 | 0 | 01a0f8c2-d9d0-7e31-82f5-7203c65713d3 | `review/P9-05-*.jpg`、`reports/P9-05.md` |
 | P9-04 审核器 v2 冻结与校准 | 通过（D14 未解决） | 1（主机挂起续跑） | 01a0f639-1644-7800-9347-e6380df6d6d9 | `calibration/v2/summary.md`、`config/review_reliability.json`、`verify/p9_04_recompute.txt` |
 | P9-03 第二轮校准样本 | 通过 | 1（监工条文措辞） | 01a0f62a-50d9-79e3-b075-8fd83988a6eb | `review/P9-03-samples.jpg`、`verify/P9-labels.json` |
@@ -289,6 +290,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | P9-03（含返工） | 3 | 0 | 223 |
 | P9-04（含续跑） | 0 | 192 | 223 |
 | P9-05 | 28 | 88 | 251 |
+| P9-06 | 12 | 52 | 263 |
 
 ## 审核器校准结果（P4-02，监工独立复算确认）
 
