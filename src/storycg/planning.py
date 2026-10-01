@@ -25,11 +25,13 @@ OUTFIT = {"type": "object", "additionalProperties": False,
 PROP_STATE = {"type": "object", "additionalProperties": False,
               "required": ["id", "kind", "description_tags"],
               "properties": {"id": TEXT, "kind": TEXT,
+                             "role": {"enum": ["key", "group"], "description": "key is an individually tracked story object. group is homogeneous background/display items with no individual holder, owner or state distinction; otherwise register separate key objects."},
                              "description_tags": {**TAGS, "minItems": 1}}}
 PROP = {"type": "object", "additionalProperties": False,
         "required": ["prop_id", "held_by", "position", "relation_tags", "location_tags"],
         "properties": {"prop_id": TEXT, "held_by": {"enum": ["subject", "other", "none", "offscreen"]},
-                       "position": TEXT, "relation_tags": TAGS, "location_tags": TAGS}}
+                       "position": TEXT, "owner": TEXT, "state": TEXT,
+                       "relation_tags": TAGS, "location_tags": TAGS}}
 SHOT = {"type": "object", "additionalProperties": False,
         "required": ["narrative_role", "description", "action", "expression", "key_props", "tags",
                      "spatial_relation", "framing", "camera_angle", "change_from_previous", "composition_reason"],
@@ -63,6 +65,8 @@ def production_schema():
     shot=schema['properties']['shots']['items']['properties']['shot']
     shot['required'] += ['subject_visibility','other_people','hand_owners']
     shot['properties']['key_props']['items']['required'].append('detached')
+    shot['properties']['key_props']['items']['required'] += ['owner', 'state']
+    schema['properties']['props']['items']['required'].append('role')
     return schema
 
 
@@ -101,23 +105,8 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
     props = {p['id']: p for p in board['props']}
     if len(props) != len(board['props']):
         raise ValueError("prop ids must be unique")
-    signatures = set()
     visual_attributes = re.compile(r"(?:^|_)(red|blue|green|yellow|orange|purple|pink|white|black|grey|gray|brown|silver|gold|multicolored|rainbow|striped|plaid|checkered|polka_dot|floral|argyle|camouflage|patterned)(?:_|$)")
-    kind_counts = {}
     for prop in board['props']:
-        kind = canonical_tag(prop['kind'])
-        kind_counts[kind] = kind_counts.get(kind, 0) + 1
-    for prop in board['props']:
-        kind = canonical_tag(prop['kind'])
-        attributes = frozenset(match.group(1) for tag in prop['description_tags']
-                               for match in visual_attributes.finditer(canonical_tag(tag)))
-        if kind_counts[kind] > 1 and not attributes:
-            raise ValueError("same-kind props require distinct color or pattern tags")
-        signature = (kind, attributes if kind_counts[kind] > 1 else
-                     frozenset(canonical_tag(t) for t in prop['description_tags']))
-        if signature in signatures:
-            raise ValueError("same-kind props require distinct visual descriptions")
-        signatures.add(signature)
         for value in prop['description_tags']:
             if APPEARANCE_EN.search(value.replace('_', ' ')) or APPEARANCE_ZH.search(value):
                 raise ValueError(f"appearance description is forbidden in props: {value}")
@@ -135,6 +124,31 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
                 raise ValueError(f"unknown prop reference: {ref['prop_id']}")
             if ref['held_by'] in ('subject', 'other') and not ref['relation_tags']:
                 raise ValueError("held props need hand/object relation tags")
+            if props[ref['prop_id']].get('role') == 'group' and (
+                    ref['held_by'] not in ('none', 'offscreen') or ref.get('detached')
+                    or ref.get('owner', 'none') != 'none'):
+                raise ValueError("display group cannot have an individual holder/owner or detached state; register key props")
+        if len({ref['prop_id'] for ref in shot['key_props']}) != len(shot['key_props']):
+            raise ValueError("each prop may be referenced only once per shot")
+        visible = [ref for ref in shot['key_props'] if ref['held_by'] != 'offscreen'
+                   and props[ref['prop_id']].get('role', 'key') == 'key']
+        for index, ref in enumerate(visible):
+            for other in visible[index + 1:]:
+                left, right = props[ref['prop_id']], props[other['prop_id']]
+                if canonical_tag(left['kind']) != canonical_tag(right['kind']):
+                    continue
+                # Legacy boards use placement/contact as the state fallback.
+                def relation_state(item):
+                    return (item['held_by'], item.get('owner', 'none'),
+                            item.get('state', item['position']), item.get('detached', False))
+                if relation_state(ref) == relation_state(other):
+                    continue
+                def attributes(prop):
+                    return frozenset(match.group(1) for tag in prop['description_tags']
+                                     for match in visual_attributes.finditer(canonical_tag(tag)))
+                a, b = attributes(left), attributes(right)
+                if not a or not b or a == b:
+                    raise ValueError("same-kind props in one shot with different holder/owner/state require distinct color or pattern tags")
         changed = entry["outfit"]["change_at_shot"]
         if changed is not None and changed != entry["number"]:
             raise ValueError("outfit change_at_shot must name the current shot")
@@ -193,10 +207,17 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "between adjacent shots; identical pairs require a meaningful composition_reason. "
         "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
         "Register every key prop at top-level props with unique id, kind (a real object tag), "
-        "description_tags containing kind plus concrete color/pattern object tags. Same-kind props "
-        "that must be distinguished MUST have conspicuously different colors or patterns. "
+        "role key for individually tracked story objects; use role group for homogeneous scene/display "
+        "collections without individual ownership/state, or leave decoration in scene.tags. Groups "
+        "must have held_by none, owner none and detached false. description_tags contain the object "
+        "tag and concrete color/pattern tags. If a color-object compound tag does not exist, use "
+        "separate REAL color and object tags; both must exist. Same-kind key props visible in the "
+        "SAME shot with different holder, owner or state MUST have conspicuously different colors "
+        "or patterns. Other same-kind objects do not require distinction. "
         "Each shot references prop_id with held_by and position, AND real relation_tags/location_tags "
-        "that visually express contact and placement. held_by subject means the main person. "
+        "that visually express contact and placement. Include owner (subject/other/none or stable "
+        "anonymous owner id) and state (stable concise object state, identical for equivalent states). "
+        "held_by subject means the main person. "
         "Use tags for holding/contact, pose, gesture and expression; omit irrelevant props per shot. "
         "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
         "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
