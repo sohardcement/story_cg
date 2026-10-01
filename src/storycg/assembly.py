@@ -10,6 +10,9 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
     config = config or load_config('config/default.json')
     identity_block = spaces(identity['identity_block'])
     outfit, scene, shot = entry['outfit'], entry['scene'], entry['shot']
+    if 'pose' in shot:
+        from storycg.shot_contract import moment
+        moment(shot, '$.shot')
     registry = {p['id']: p for p in (props or [])}
     prop_blocks, bindings = [], []
     for ref in shot['key_props']:
@@ -34,6 +37,8 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
         if tag not in supplied:
             action_tags.append(tag)
             supplied.add(tag)
+    if shot.get('reflection') is True:
+        action_tags.append('reflection')
     shot_block = ', '.join([*(spaces(t) for t in composition), *action_tags, *prop_blocks])
     return {'identity_block': identity_block, 'outfit_block': outfit_block,
             'scene_block': scene_block, 'shot_block': shot_block, 'prop_bindings': bindings,

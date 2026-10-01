@@ -22,8 +22,10 @@ from storycg.planning import plan_story, validate_storyboard
 from storycg.state import save_json_atomic
 
 PROJECT = Path(__file__).resolve().parents[2]
-RELIABILITY_NOTE = ('层级判定与身份审核的可靠依据只有发色等标为 reliable 的项目。'
+V1_RELIABILITY_NOTE = ('层级判定与身份审核的可靠依据只有发色等标为 reliable 的项目。'
                     '瞳色、配饰、整体角色：该项未经可靠审核，建议用户看图确认。')
+RELIABILITY_NOTE = ('发色、视觉瞳色等身份审核以逐项 reliability 配置为准。检测项仅 reliable 的可否决；'
+                    '检测弃权标注未经审核；未可靠校准的项目标注“该项未经可靠审核”，建议用户看图确认。')
 TEXT = {'type': 'string'}
 INTAKE_SCHEMA = {'type': 'object', 'additionalProperties': False,
                  'required': ['named_characters', 'conflict'], 'properties': {
@@ -247,12 +249,21 @@ def deliver(root):
     manifest.setdefault('identity_file', 'identity.json')
     manifest.setdefault('storyboard_file', 'storyboard.json')
     manifest.setdefault('models', {'status': 'unavailable', 'reason': 'no persisted model snapshot; offline delivery does not query models'})
+    final_review = cycle.get('final_review')
+    if final_review:
+        from storycg.review_gate import persist_group_gate
+        gate = persist_group_gate(root, final_review, read(root, 'job.json').get('generation_config'))
+        manifest['review_gate'] = gate
     manifest['reliability_note'] = RELIABILITY_NOTE
     save_json_atomic(root/'manifest.json', manifest)
     result = root/'result.md'
     existing = result.read_text() if result.exists() else '# 结果说明\n\n未保存可靠审核结论，建议用户看图确认。\n'
+    existing = existing.replace(V1_RELIABILITY_NOTE, RELIABILITY_NOTE)
     if RELIABILITY_NOTE not in existing:
         existing += '\n'+RELIABILITY_NOTE+'\n'
+    if final_review:
+        existing = existing.split('\n正式整组门禁（P9-05）：',1)[0]
+        existing += '\n正式整组门禁（P9-05）：'+gate['conclusion']+'；冻结原始结论：'+str(gate['raw_conclusion'])+'\n'+'\n'.join(gate['notes'])+'\n'
     result.write_text(existing)
 
 
@@ -286,7 +297,7 @@ def status(root):
             'repair_stops': {n: s.get('stop') for n, s in cycle.get('shots', {}).items()},
             'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
             'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
-            'repair_blocked': cycle.get('blocked'), 'artifacts': paths,
+            'repair_blocked': cycle.get('blocked'), 'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
             'attempts': [{k: a.get(k) for k in ('shot_id', 'attempt_number', 'status', 'prompt_id', 'image', 'error')}
                          for a in state.get('attempts', [])]}
 

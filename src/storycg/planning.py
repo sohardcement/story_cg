@@ -61,6 +61,10 @@ SHOT['properties'].update({
 PROP['properties']['detached']={'type':'boolean', 'description': 'True only at the instant an object is airborne, flying away, falling or departing from the subject. False for placed/set-down props resting on a surface or at a location, even when separated from the subject.'}
 
 
+from storycg.shot_contract import extend_schema, validate_contract, RULE_PROMPT as CONTRACT_PROMPT
+extend_schema(STORYBOARD_SCHEMA)
+
+
 def production_schema():
     schema=copy.deepcopy(STORYBOARD_SCHEMA)
     shot=schema['properties']['shots']['items']['properties']['shot']
@@ -68,7 +72,7 @@ def production_schema():
     shot['properties']['key_props']['items']['required'].append('detached')
     shot['properties']['key_props']['items']['required'] += ['owner', 'state']
     schema['properties']['props']['items']['required'].append('role')
-    return schema
+    return extend_schema(schema, required=True)
 
 
 APPEARANCE_EN = re.compile(
@@ -94,7 +98,8 @@ def _strings(value):
 
 
 def validate_storyboard(board: dict, shot_count: int, identity: dict | None = None) -> dict:
-    errors = list(Draft202012Validator(STORYBOARD_SCHEMA).iter_errors(board))
+    validate_contract(board)
+    errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(board))
     if errors:
         first = sorted(errors, key=lambda error: str(error.path))[0]
         raise ValueError(f"storyboard schema: {first.json_path}: {first.message}")
@@ -227,8 +232,9 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "v1 has one main person; others only anonymous backs, cropped parts or offscreen."
     )
     from storycg.story_rules import RULE_PROMPT
-    instructions += RULE_PROMPT
-    schema=production_schema() if (config or {}).get("repair_cycle_enabled") else STORYBOARD_SCHEMA
+    instructions += RULE_PROMPT + CONTRACT_PROMPT
+    from storycg.shot_contract import planner_schema, materialize
+    schema=planner_schema(production_schema())
     outfit_tags = [item["tag"].replace("_", " ") for item in
                    identity.get("default_outfit_tags", [])]
     base_user_content = story
@@ -250,7 +256,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             from storycg.budget import Budget
             from storycg.cycle import settings
             gate=Budget(job_dir,settings());gate.check(llm=1)
-        call = {"model": model, "status": "started"}
+        call = {"model": model, "status": "started", "planning_contract": "single_moment_compiled_v2"}
         log["calls"].append(call)
         save_json_atomic(log_path, log)
         try:
@@ -274,9 +280,10 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             content = response.json()["choices"][0]["message"]["content"]
             call["raw"] = content
             board = json.loads(content)
-            schema_errors = list(Draft202012Validator(STORYBOARD_SCHEMA).iter_errors(board))
+            schema_errors = list(Draft202012Validator(schema).iter_errors(board))
             if schema_errors:
-                raise ValueError(f"storyboard schema: {schema_errors[0].message}")
+                raise ValueError(f"storyboard schema: {schema_errors[0].json_path}: {schema_errors[0].message}")
+            board = materialize(board)
             # Reject appearance/identity additions before discarding unknown tags.
             validate_storyboard(board, shot_count, identity)
             from storycg.tags import TagRegistry, validate_tag_lists
