@@ -177,12 +177,13 @@
     "seed": 60101,
     "max_tests": 1,
     "max_vision_calls": 6,
-    "max_seconds": 600
+    "max_seconds": 600,
+    "input_policy": "character tag + work tag + neutral composition; L1 adds matched LoRA and triggers only"
   },
   "tier_review": {
-    "version": 2,
+    "version": 3,
     "tier_scope": "appearance_only",
-    "outfit_policy": "diagnostic only; applicable when reference covers selected default outfit subject",
+    "outfit_policy": "diagnostic only for L1/L2; setting portrait separately validates applicable clothing",
     "image_order": [
       "generated_test",
       "danbooru_reference"
@@ -190,10 +191,30 @@
     "required_observations": [
       "test_observation",
       "reference_observation"
-    ]
+    ],
+    "confirmation_policy": "all reliable appearance items pass; any appearance fail vetoes; not_visible neither vetoes nor confirms",
+    "aggregation_policy": "D8b",
+    "l1_protocol": "matched dedicated LoRA plus sourced identity tags",
+    "l2_protocol": "canonical character and work tags plus neutral composition only"
   },
   "generation_identity_control": {
     "mechanism": "ipadapter",
     "ipadapter_strength": 0.4
+  },
+  "l3": {
+    "max_attempts": 3,
+    "weights": [
+      0.55,
+      0.65,
+      0.75
+    ],
+    "diagnosis_reason": "Knowledge probe vetoed by sourced feature comparison; strengthen face reference only for diagnosed appearance failures, and reinforce sourced clothing for outfit failures. No seed-only retries.",
+    "max_seconds": 900,
+    "max_vision_calls": 18,
+    "outfit_weights": [
+      1.0,
+      1.2,
+      1.4
+    ]
   }
 }

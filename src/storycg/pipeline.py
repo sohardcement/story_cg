@@ -53,7 +53,7 @@ def resolve_job(job_dir: str | Path, *, work=None, character_tag=None) -> dict:
         if existing.get("status") == "locked":
             raise ValueError("identity already locked; use a new job for a different selection")
     job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
-    options = {k: v for k, v in {"work": work, "character_tag": character_tag}.items() if v}
+    options = {k: v for k, v in {"work": work or job.get('generation_options',{}).get('work'), "character_tag": character_tag or job.get('generation_options',{}).get('character_tag')}.items() if v}
     identity = resolve_identity(job["character"], job_dir / "cache" / "danbooru", **options)
     save_json_atomic(path, identity)
     return identity
@@ -216,6 +216,8 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         from storycg.cycle import run_repair_cycle
         return run_repair_cycle(job_dir, load_state(job_dir)['config'], client)
     identity = resolve_job(job_dir)
+    if identity.get("status")=="needs_user":
+        return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[],"tier_evidence":identity.get("tier_evidence",{})}
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before generation")
     if config.get("repair_cycle_enabled"):
@@ -226,13 +228,14 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     from storycg.tiers import ensure_identity_tier, tier_generation_config
     if config.get("repair_cycle_enabled"):
         from storycg.budget import CycleClient
-        tier_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
+        tier_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=24,max_seconds=gate.remaining_seconds())
         try:identity=ensure_identity_tier(job_dir,identity,config,client,vlm=tier_vlm)
         finally:tier_vlm.close()
     else:
         identity = ensure_identity_tier(job_dir, identity, config, client)
-    if identity.get('identity_tier') not in ('L1', 'L2'):
-        return {'job_id': job_dir.name, 'status': identity.get('identity_tier'),
+    if identity.get('identity_tier') not in ('L1', 'L2', 'L3'):
+        return {'job_id': job_dir.name, 'status': 'needs_user' if identity.get('identity_tier')=='L4' else identity.get('identity_tier'),
+                'needs_user':identity.get('identity_tier')=='L4','reason':identity.get('reason'),'question':identity.get('question'),
                 'attempts': [], 'tier_evidence': identity.get('tier_evidence', {})}
     config = tier_generation_config(config, identity)
     from storycg.reference import ensure_portrait

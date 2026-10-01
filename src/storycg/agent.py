@@ -118,28 +118,34 @@ def present(root, config, board):
 
 
 def check_resources(config):
-    with httpx.Client(base_url=config['comfyui_url'], timeout=10, trust_env=False) as client:
-        response = client.get('/object_info'); response.raise_for_status()
-        nodes = response.json()
+    """Check health and only the node classes needed by the configured pipeline."""
     required = [('CheckpointLoaderSimple', 'ckpt_name', config['checkpoint'])]
     for item in config['style_loras'] + ([config['character_lora']] if config.get('character_lora') else []):
         required.append(('LoraLoader', 'lora_name', item['name']))
     reference = config.get('reference_models', {})
+    node_only = []
     if config.get('identity_control', {}).get('mechanism') == 'ipadapter':
         required.extend([('IPAdapterModelLoader', 'ipadapter_file', reference['ipadapter']),
                          ('CLIPVisionLoader', 'clip_name', reference['clip_vision'])])
-        if 'IPAdapterAdvanced' not in nodes:
-            raise ResourceUnavailable('所需节点缺失：IPAdapterAdvanced')
+        node_only.extend(('IPAdapterAdvanced', 'LoadImage'))
     if config.get('layout_mode') == 'qwen' or config.get('repair_cycle_enabled'):
         required.extend([('UnetLoaderGGUF', 'unet_name', reference['qwen_unet']),
                          ('LoraLoaderModelOnly', 'lora_name', reference['qwen_lightning']),
                          ('CLIPLoader', 'clip_name', reference['qwen_clip']),
                          ('VAELoader', 'vae_name', reference['qwen_vae'])])
-        for name in ('TextEncodeQwenImageEditPlus', 'ModelSamplingAuraFlow', 'EmptySD3LatentImage'):
-            if name not in nodes:
+        node_only.extend(('TextEncodeQwenImageEditPlus', 'ModelSamplingAuraFlow', 'EmptySD3LatentImage'))
+    nodes = {}
+    with httpx.Client(base_url=config['comfyui_url'],
+                      timeout=config['http_timeout_seconds'], trust_env=False) as client:
+        response = client.get('/system_stats'); response.raise_for_status()
+        for name in dict.fromkeys([row[0] for row in required] + node_only):
+            response = client.get('/object_info/'+name); response.raise_for_status()
+            info = response.json()
+            if name not in info:
                 raise ResourceUnavailable('所需节点缺失：'+name)
+            nodes[name] = info[name]
     for node, field, filename in required:
-        available = nodes.get(node, {}).get('input', {}).get('required', {}).get(field, [[]])[0]
+        available = nodes[node].get('input', {}).get('required', {}).get(field, [[]])[0]
         if filename not in available:
             raise ResourceUnavailable(f'所需模型或节点缺失：{node}/{filename}')
 
@@ -152,6 +158,9 @@ def generate(root, config):
         state = run_story_job(root, config, client, review_dir=root/'delivery')
     finally:
         client.close()
+    if state.get('status')=='needs_user':
+        question(root,state.get('reason','identity_unsupported'),state['question'])
+        return
     if state.get('status', '').startswith('tier_pending'):
         raise ResourceUnavailable('身份控制所需资源或层级实现不可用：'+state['status'])
     if (root/'manifest.json').exists():
@@ -181,6 +190,9 @@ def execute(root):
             update(root, intake=intake, notices=notices)
         update(root, phase='resolving_identity')
         identity = resolve_job(root)
+        if identity.get('status')=='needs_user':
+            question(root,identity['reason'],identity['question'])
+            return
         if identity.get('status') != 'locked':
             question(root, 'identity_ambiguous', '角色身份无法确定，请选择候选或提供作品名／角色 tag。', identity.get('candidates', []))
             return
@@ -317,6 +329,10 @@ def main(argv):
             command.add_argument('--identity-control', choices=['none', 'ipadapter'])
             command.add_argument('--layout-mode', choices=['none', 'qwen'])
             command.add_argument('--seed', type=int)
+        if name in ('make','resume'):
+            command.add_argument('--reference-path',type=Path)
+            command.add_argument('--tag')
+            command.add_argument('--work')
         if name == 'approve':
             command.add_argument('--edit')
     args = parser.parse_args(argv)
@@ -326,7 +342,7 @@ def main(argv):
         if not root.is_relative_to(PROJECT):
             raise ValueError('agent job paths must be inside the project workspace')
         if args.command == 'make':
-            options = {k: v for k, v in {'identity_control': args.identity_control, 'layout_mode': args.layout_mode, 'generation_seed': args.seed}.items() if v is not None}
+            options = {k: v for k, v in {'identity_control': args.identity_control, 'layout_mode': args.layout_mode, 'generation_seed': args.seed,'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v is not None}
             config = apply_options(load_config(args.config), options); config['repair_cycle_enabled'] = True
             if (root/'agent.json').exists():
                 raise ValueError('job already exists; use status/resume/approve')
@@ -342,6 +358,37 @@ def main(argv):
                     raise ValueError('job worker is already active; poll status')
                 if args.command != '_worker' and worker_alive(root):
                     raise ValueError('job worker is starting or active; poll status')
+                if args.command=='resume' and any((args.reference_path,args.tag,args.work)):
+                    if read(root,'state.json').get('attempts'):
+                        raise ValueError('cannot change identity inputs after story submission')
+                    job=read(root,'job.json');opts=job.get('generation_options',{})
+                    old=read(root,'identity.json')
+                    if old.get('identity_tier') in ('L1','L2','L3') and (
+                            (args.tag and args.tag!=old.get('character_tag')) or
+                            (args.work and args.work!=old.get('work_tag')) or
+                            (args.reference_path and str(args.reference_path.resolve())!=opts.get('reference_path'))):
+                        raise ValueError('identity already verified; create a new job for different identity inputs')
+                    opts=job.setdefault('generation_options',{})
+                    opts.update({k:v for k,v in {'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v})
+                    save_json_atomic(root/'job.json',job)
+                    old=read(root,'identity.json')
+                    if old.get('identity_tier')=='L4':
+                        save_json_atomic(root/'identity-before-user-input.json',old)
+                        if args.tag or args.work:
+                            from storycg.identity import resolve_identity
+                            prior=old
+                            old=resolve_identity(job['character'],root/'cache/danbooru',character_tag=args.tag,work=args.work)
+                            if any(prior.get(key)!=old.get(key) for key in ('character_tag','identity_block','default_outfit_tags')):
+                                import hashlib,shutil
+                                digest=hashlib.sha256(json.dumps(prior,sort_keys=True).encode()).hexdigest()[:16]
+                                archive=root/'edits'/('identity-'+digest);archive.mkdir(parents=True,exist_ok=True)
+                                for name in ('storyboard.json','plan_log.json'):
+                                    if (root/name).exists():shutil.move(root/name,archive/name)
+                                update(root,storyboard=[],approved=False)
+                        elif old.get('character_tag'):
+                            old.update(status='locked',identity_tier='tier_pending_L3_L4',needs_user=False)
+                            old['tier_evidence']['validation_completed']=False
+                        save_json_atomic(root/'identity.json',old)
                 if args.command == 'deliver':
                     deliver(root)
                 elif args.command == 'approve':

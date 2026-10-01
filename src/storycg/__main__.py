@@ -18,7 +18,7 @@ from storycg.controls import apply_options
 def _summary(state: dict) -> dict:
     return {
         "job_id": state["job_id"],
-        **({"status":state["status"],"tier_evidence":state.get("tier_evidence",{})} if state.get("status") else {}),
+        **({"status":state["status"],"tier_evidence":state.get("tier_evidence",{}),"needs_user":state.get("needs_user",False),"reason":state.get("reason"),"question":state.get("question")} if state.get("status") else {}),
         "stats": state.get("stats", {}),
         "attempts": [{
             "shot_id": attempt["shot_id"],
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
                     generation_options=options,generation_config=config)
         identity=resolve_and_validate_job(args.job_dir,config)
         print(json.dumps({**job,'identity':identity},ensure_ascii=False,indent=2))
-        return 0 if identity.get('identity_tier') in ('L1','L2') else 2
+        return 0 if identity.get('identity_tier') in ('L1','L2','L3') else 2
     if args.command == "resolve":
         if (args.job_dir / "job.json").exists():
             result = resolve_job(args.job_dir, work=args.work, character_tag=args.tag)
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             client.close()
     print(json.dumps(_summary(state), ensure_ascii=False, indent=2))
-    if state.get("status", "").startswith("tier_pending"):
+    if state.get("status")=="needs_user" or state.get("status", "").startswith("tier_pending"):
         return 2
     return 0 if all(a["status"] == "completed" for a in state["attempts"]) else 2
 
