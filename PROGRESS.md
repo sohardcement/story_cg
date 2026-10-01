@@ -213,6 +213,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P8-02 定妆修复+补跑 | 部分完成（芙莉莲睡衣已出；白雪姬分镜失败） | 0 | 01a0f56c-907d-7332-943a-ac101287e18f | `review/芙莉莲-试穿睡衣.jpg`、`reports/P8-02.md` |
 | P8-01 矩阵补齐 | 部分完成（芙莉莲定妆被拦、约尔降为 L4） | 0 | 01a0f556-1e2e-7b82-841a-591e08c1a2a5 | `reports/P8-01.md`、`review/芙莉莲-拿错伞.jpg` 等 |
 | P6-02 L3/L4 + 层级规则 D8/D8b | 通过 | 2 | 01a0f4c5-a346-7580-900a-21a02b887cbf | `review/P6-02-L3-*.jpg`、`runs/p6_02/l4/*/needs-user.json`、`reports/P6-02.md` |
 | P7-02 Hermes 实测问题修复 | 通过 | 0 | 01a0f4bb-deca-79e1-8e44-fd627e54136e | `reports/P7-02.md` |
@@ -258,6 +259,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | Hermes T3（中止，监工） | 6（层级探针与 L3 定妆尝试） | — | 179 |
 | Hermes T3b（监工） | 9 | 40（LLM 7） | 188 |
 | P8-01 | 7 | 20 | 195 |
+| P8-02 | 12 | 约 55 | 207 |
 
 ## 审核器校准结果（P4-02，监工独立复算确认）
 

@@ -38,6 +38,8 @@ def read(root, name, default=None):
 def update(root, **fields):
     record = read(root, 'agent.json')
     prior_phase = record.get('phase')
+    if fields.get('phase') in ('stopped','needs_user','completed','awaiting_approval'):
+        fields.setdefault('finished_at',datetime.now(timezone.utc).isoformat())
     record.update(fields)
     save_json_atomic(root/'agent.json', record)
     if fields.get('phase') and fields['phase'] != prior_phase:
@@ -52,9 +54,17 @@ def question(root, reason, message, options=None):
 
 def end_wait(root):
     record = read(root, 'agent.json')
+    stopped=record.get('finished_at')
+    if 'finished_at' not in record and record.get('phase') in ('stopped','needs_user','completed','awaiting_approval'):
+        stopped=record.get('waiting_since') or datetime.fromtimestamp((root/'agent.json').stat().st_mtime,timezone.utc).isoformat()
+    if stopped and not record.get('waiting_since'):
+        duration=max(0,(datetime.now(timezone.utc)-datetime.fromisoformat(stopped)).total_seconds())
+        update(root,paused_seconds=record.get('paused_seconds',0)+duration)
     if record.get('waiting_since'):
         duration = max(0, (datetime.now(timezone.utc)-datetime.fromisoformat(record['waiting_since'])).total_seconds())
         update(root, waiting_since=None, paused_seconds=record.get('paused_seconds', 0)+duration)
+    if stopped:
+        update(root,finished_at=None)
 
 
 def worker_alive(root):
@@ -174,7 +184,7 @@ def execute(root):
     config['repair_cycle_enabled'] = True
     try:
         end_wait(root)
-        update(root, needs_user=False, reason=None, question=None, options=[], error=None)
+        update(root, finished_at=None, needs_user=False, reason=None, question=None, options=[], error=None)
         if not read(root, 'agent.json').get('intake'):
             update(root, phase='checking_requirements')
             job = read(root, 'job.json')

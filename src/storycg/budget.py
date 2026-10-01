@@ -33,7 +33,13 @@ def count_usage(root):
         path=root/name
         if path.exists():
             record=read(path)
-            if record.get('finished_at'):ended=datetime.fromisoformat(record['finished_at'])
+            if name=='agent.json' and record.get('phase') not in ('stopped','needs_user','completed','awaiting_approval'):
+                ended=None
+            elif record.get('finished_at'):ended=datetime.fromisoformat(record['finished_at'])
+            elif name=='agent.json' and record.get('phase') in ('stopped','needs_user','completed','awaiting_approval'):
+                # Legacy jobs have no terminal timestamp: use their persisted state time, never now.
+                stamp=record.get('waiting_since')
+                ended=datetime.fromisoformat(stamp) if stamp else datetime.fromtimestamp(path.stat().st_mtime,timezone.utc)
     elapsed=((ended or datetime.now(timezone.utc))-datetime.fromisoformat(job['created_at'])).total_seconds()
     execution_path=root/'execution.json'
     paused=json.loads(execution_path.read_text()).get('supervisor_wait_seconds',0) if execution_path.exists() else 0
