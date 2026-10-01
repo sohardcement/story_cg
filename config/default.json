@@ -85,8 +85,8 @@
     ]
   },
   "planning": {
-    "max_calls": 15,
-    "retries": 10
+    "max_calls": 5,
+    "retries": 5
   },
   "framing_negative_tags": {
     "wide": [],
