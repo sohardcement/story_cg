@@ -98,6 +98,11 @@ def _strings(value):
 
 
 def validate_storyboard(board: dict, shot_count: int, identity: dict | None = None) -> dict:
+    if board.get('scope_version')==1:
+        if type(board.get('prop_dependent')) is not bool or not str(board.get('prop_dependency_reason','')).strip():
+            raise ValueError('scope requires prop_dependent boolean and prop_dependency_reason')
+        if not board.get('prop_dependent') and board.get('prop_only_narrative_items'):
+            raise ValueError('nondependent story cannot declare prop-only narrative items')
     validate_contract(board)
     errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(board))
     if errors:
@@ -124,6 +129,11 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         shot = entry['shot']
         if previous and (shot['framing'], shot['camera_angle']) == (previous['framing'], previous['camera_angle']) and not shot['composition_reason'].strip():
             raise ValueError("adjacent shots need different framing/angle or a composition_reason")
+        if board.get('scope_version')==1:
+            if sum(props.get(r['prop_id'],{}).get('role','key')=='key' for r in shot['key_props'])>1:
+                raise ValueError('each shot permits at most one key prop')
+            if previous and (shot['expression'],shot['action'])==(previous['expression'],previous['action']) and not shot.get('unchanged_person_reason','').strip():
+                raise ValueError('adjacent shots need expression/action change or unchanged_person_reason')
         previous = shot
         for ref in shot['key_props']:
             if ref['prop_id'] not in props:
@@ -158,7 +168,11 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         changed = entry["outfit"]["change_at_shot"]
         if changed is not None and changed != entry["number"]:
             raise ValueError("outfit change_at_shot must name the current shot")
-        for value in _strings({key: entry[key] for key in ("scene", "outfit", "shot")}):
+        from storycg.identity_enrichment import category_for, load_rules
+        rules=load_rules()
+        clothing_for_check=copy.deepcopy(entry['outfit'])
+        clothing_for_check['tags']=[tag for tag in entry['outfit']['tags'] if (category_for(canonical_tag(tag),rules) or {}).get('name') not in ('accessories','accessory_color')]
+        for value in _strings({'scene':entry['scene'],'outfit':clothing_for_check,'shot':entry['shot']}):
             normalized = re.sub(r"[_-]", " ", value)
             normalized = re.sub(r"\beye[ -]level\b", "", normalized, flags=re.I)
             if APPEARANCE_EN.search(normalized) or APPEARANCE_ZH.search(value):
@@ -183,6 +197,8 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         board = json.loads(plan_path.read_text(encoding="utf-8"))
         intake_path=job_dir/'agent.json'
         intake=json.loads(intake_path.read_text()).get('intake',{}) if intake_path.exists() else {}
+        for field in ('prop_dependent','prop_dependency_reason','prop_only_narrative_items'):
+            if field in intake and board.get(field)!=intake[field]:raise ValueError('storyboard '+field+' differs from locked intake')
         if 'possession_swap' in intake and board.get('possession_swap') is not intake['possession_swap']:
             raise ValueError('storyboard possession_swap differs from locked intake')
         validate_storyboard(board,shot_count,identity)
@@ -212,7 +228,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "composition_reason or spatial_relation. Say reaction closeup or surprised instead. "
         "Do not describe hair, eyes, ears, skin, body shape, height or facial anatomy. "
         "Use emotions such as surprised, confused, smile in shot.tags. "
-        "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. "
+        "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
         "First shot MUST be wide with narrative_role establishing. Vary framing and camera_angle "
         "between adjacent shots; identical pairs require a meaningful composition_reason. "
         "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
@@ -236,7 +252,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "v1 has one main person; others only anonymous backs, cropped parts or offscreen."
     )
     from storycg.story_rules import RULE_PROMPT
-    instructions += RULE_PROMPT + CONTRACT_PROMPT
+    instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=1. Key story changes must be expressed in expression/action. Each shot references at most ONE role=key prop, including offscreen references. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason. Set prop_dependent and a one-sentence prop_dependency_reason from the input meaning, not keywords. prop_only_narrative_items lists ONLY narrative comparison items key_events/changes/ending whose complete expected requirement is object ownership/state/count/contact; keep mixed expression/action requirements out, use [] if uncertain or not dependent. Ownership/state dependence is a known limitation; continue without asking.')
     from storycg.shot_contract import planner_schema, materialize
     schema=planner_schema(production_schema())
     outfit_tags = [item["tag"].replace("_", " ") for item in
@@ -244,6 +260,10 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     base_user_content = story
     intake_path=job_dir/'agent.json'
     intake=json.loads(intake_path.read_text()).get('intake',{}) if intake_path.exists() else {}
+    for field in ('prop_dependent','prop_dependency_reason','prop_only_narrative_items'):
+        if field in intake:
+            schema['properties'][field]={'const':intake[field]}
+            base_user_content += '\nLocked intake '+field+'='+json.dumps(intake[field],ensure_ascii=False)
     if 'possession_swap' in intake:
         schema['properties']['possession_swap']={'const':intake['possession_swap']}
         if 'possession_swap' not in schema['required']:schema['required'].append('possession_swap')

@@ -12,6 +12,8 @@ def load_rules(path=None):
 
 
 def category_for(tag, rules):
+    if re.fullmatch(r'(?:hair_(?:flower|ornament|ribbon|bow|clip)|(?:gold|silver|white|black|red|blue|green|yellow|pink|purple)_(?:hair_ornament|hair_flower|hairclip|headband|necklace|choker))',tag):
+        return {'name':'accessories','exclusive':False}
     for category in rules['categories']:
         if re.search(category['pattern'], tag):
             return category
@@ -133,6 +135,8 @@ def enrich_identity(identity, related, url, rules):
               or (wiki_supported and not cat.get('outfit') and not item.get('variant'))))
         if cat.get('outfit') and item.get('variant'):
             lock=False
+        if cat['name'] in ('accessories','accessory_color'):
+            lock=(tag not in blocked and accessory_is_fixed(tag,identity.get('wiki_body',''),identity.get('wiki_url',''),rules))
         item['locked']=lock
         item['decision']='locked' if lock else ('conflict' if tag in blocked else 'variant or below threshold')
         if lock:
@@ -145,6 +149,28 @@ def enrich_identity(identity, related, url, rules):
     from storycg.outfits import select_default_outfit
     result.update(select_default_outfit(identity.get('wiki_body',''), identity.get('wiki_url',''),
                                        related, url, rules))
+    clothing_accessories={x['tag'] for x in result['default_outfit_tags']} | {x['tag'] for e in result['alternate_outfits'] for x in e['tags']}
+    result['appearance_candidates']=[x for x in app_candidates if x['tag'] not in clothing_accessories]
+    result['unassigned_accessories']=[x for x in app_candidates if x['category'] in ('accessories','accessory_color') and x['tag'] not in clothing_accessories]
     selected = {x['tag'] for x in result['default_outfit_tags']}
     result['outfit_candidates'] = [x for x in out_candidates if x['tag'] not in selected]
     return result
+
+
+def accessory_is_fixed(tag, body, url, rules):
+    """Only explicit wiki character-wide evidence can lock an accessory.
+
+    Clothing-context occurrences override co-occurrence frequency. The outfit
+    extractor owns those occurrences and preserves their ensemble provenance.
+    """
+    from storycg.outfits import wiki_ensembles
+    clothing={x['tag'] for ensemble in wiki_ensembles(body,url,rules) for x in ensemble['tags']}
+    def family(value):
+        return re.sub(r'^(?:black|white|red|blue|green|yellow|purple|pink|gold|silver)_','',value)
+    if tag in clothing or any(family(t)==family(tag) for t in clothing):return False
+    for item in wiki_descriptors(body,url,rules):
+        if item['tag']==tag and not item['variant']:
+            sentence=item['source']['evidence']
+            if re.search(r'\b(?:always|usually|normally|signature|characteristic|trademark|permanent|has|features)\b',sentence,re.I):
+                return True
+    return False

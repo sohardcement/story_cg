@@ -1,16 +1,17 @@
 """P9-05 orchestration outside the frozen reviewer.
 
 The scheduling loop is derived from this repository's frozen cycle.py;
-all visual audits, repair execution, budgets and candidate selection are reused.
+Visual audits and repair primitives are reused; D24 filters runtime candidate metrics.
 Only detection findings routing and delivery gates differ. Raw results remain intact.
 """
 from storycg.cycle import *
 from storycg import cycle as frozen
 from storycg.review_gate import detection_gate, persist_group_gate
+from storycg.v1_scope import person_findings, scope_context, narrative_repair_needed, render_delivery
 
 
 def repair_findings(audit):
-    results=[audit['single'],audit['consistency']]
+    results=[person_findings(audit['single']),person_findings(audit['consistency'])]
     observations=audit.get('detection_items',{})
     statuses,notes=detection_gate(observations)
     if 'fail' in statuses:
@@ -49,60 +50,29 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     return diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
 
 
-def prop_edit_diagnosis(edit,state):
-    if edit['target'].startswith('props.'):
-        prop=state['props'][int(edit['target'].split('.')[1])]
-    else:
-        ref=state['entry']['shot']['key_props'][int(edit['target'].split('.')[3])]
-        prop=next(p for p in state['props'] if p['id']==ref['prop_id'])
-    if edit['operation']=='change_prop_state':
-        return f"Visible state/attribute mismatch of registered object {prop['id']}; correct to its registered description without removing instances."
-    if edit['operation']=='remove_surplus':
-        return f"Surplus instances of registered object {prop['id']}; remove extra instances without removing or changing a registered attribute."
-    return f"Placement mismatch of registered object {prop['id']}; correct only its registered placement."
-
-
-def prop_edit_choices(state):
-    choices=[]
-    for target,description in state_descriptions(state).items():
-        if target.startswith('props.') and '.description_tags.' in target:
-            operations=('change_prop_state','remove_surplus')
-        elif target.startswith('entry.shot.key_props.') and target.endswith('.position'):
-            operations=('place',)
-        else:continue
-        for operation in operations:
-            edit={'operation':operation,'target':target,'description':description}
-            try:instruction=grounded_instruction(edit,state)
-            except ValueError:continue
-            choices.append({'edit':edit,'changes':instruction,'diagnosis':prop_edit_diagnosis(edit,state)})
-    return choices
-
-
 def diagnosis_schema(cfg, *, state=None, problems=None):
     from storycg.planning import production_schema
+    cfg=copy.deepcopy(cfg);cfg['problem_methods'].pop('props',None)
+    if problems is not None:
+        problems=[p for p in problems if p!='props']
+        if not problems:raise ValueError('no mapped actionable FAIL item')
     schema=frozen.diagnosis_schema(cfg,state=state,problems=problems)
     schema['properties']['shot']={'anyOf':[
         production_schema()['properties']['shots']['items']['properties']['shot'], {'type':'null'}]}
-    if state:
-        # Bind operation, exact target/value and executable prose as a single choice.
-        choices=[{'properties':{key:{'const':value} for key,value in choice.items()}}
-            for choice in prop_edit_choices(state)]
-        schema['allOf']=[{'if':{'properties':{'problem':{'const':'props'},'primitive':{'const':'instruction_edit'}}},
-            'then':{'anyOf':choices} if choices else {'not':{}}}]
     return schema
 
 
 def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):
+    if decision['problem']=='props':raise ValueError('D24 props cannot trigger repair')
+    if decision['primitive']=='relayout' and (decision.get('shot') or {}).get('key_props')!=entry['shot']['key_props']:
+        raise ValueError('D24 narrative repair cannot target props' if narrative else 'D24 relayout cannot target props')
+    if narrative:
+        revised=decision.get('shot') or {}
+        if (revised.get('action'),revised.get('expression'))==(entry['shot']['action'],entry['shot']['expression']):raise ValueError('narrative repair must change expression/action')
     if decision['primitive']=='instruction_edit':
+        if decision.get('edit',{}).get('target','').startswith(('props.','entry.shot.key_props.')):raise ValueError('D24 props cannot be repair targets')
         state={'identity':identity,'entry':entry,'props':board['props']}
         instruction=grounded_instruction(decision['edit'],state)
-        if decision['problem']=='props':
-            if decision['edit']['operation'] not in ('change_prop_state','remove_surplus','place'):
-                raise ValueError('props require an explicit state, instance removal or placement operation')
-            if decision['diagnosis']!=prop_edit_diagnosis(decision['edit'],state):
-                raise ValueError('diagnosis text does not match compiled operation; copy the script-generated diagnosis')
-            if decision['changes']!=instruction:
-                raise ValueError('changes text does not match compiled operation; use the script-generated instruction exactly')
         slot=cycle['shots'][str(number)]
         for previous in slot['history']:
             old=previous['decision']
@@ -116,29 +86,24 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
 
 def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     from storycg.shot_contract import RULE_PROMPT
-    cfg=cycle['config'];slot=cycle['shots'][str(number)]
+    cfg=copy.deepcopy(cycle['config']);cfg['problem_methods'].pop('props',None);slot=cycle['shots'][str(number)]
     state={'identity':identity,'entry':entry,'props':board['props']}
+    audit=[person_findings(r) for r in audit]
     problems={problem_key(i['key']) for i in issues(audit) if i['status']=='fail'}
     if any(i['key']=='signature_features' and i['status']=='fail' for i in issues(audit)):problems.add('accessories')
     if narrative:problems.add('narrative')
     problems=sorted(problems & cfg['problem_methods'].keys())
     if not problems:raise ValueError('no mapped actionable FAIL item')
     schema=diagnosis_schema(cfg,state=state,problems=problems)
-    choices=prop_edit_choices(state)
     content={'issues':issues(audit),'state':state,
         'allowed_methods':{key:permitted_methods(key,cycle,number) for key in problems},
-        'exact_edit_descriptions':state_descriptions(state),'prop_edit_choices':choices,
+        'exact_edit_descriptions':{k:v for k,v in state_descriptions(state).items() if not k.startswith(('props.','entry.shot.key_props.'))},
         'previous_repairs':slot['history']}
     if narrative:content.update(blind_comparison=narrative,storyboard=board)
     prompt=('Interpret actual FAIL findings. Give a diagnosis, causal hypothesis and corrective change. '
         'Choose ONLY allowed_methods for the observed problem; target_shot must equal '+str(number)+'. '
         'For instruction_edit supply exact registered target/description and shot=null. '
-        'For props choose one prop_edit_choices pair and copy its edit, diagnosis AND changes exactly. Explain the observed evidence in hypothesis. '
-        'change_prop_state changes visible attributes/state to the complete registered description, retaining instances. '
-        'remove_surplus removes extra object instances, retaining the required registered count; it never removes a property or tag. place corrects registered placement only. '
-        'Your diagnosis and hypothesis must describe the chosen operation. If an attribute is wrong, use change_prop_state; '
-        'never use remove_surplus to remove an attribute. Do not repeat an identical edit on the same source. '
-        'relayout: edit=null, return the complete revised shot, preserve the event and registered prop IDs. '
+        'relayout: edit=null, return the complete revised shot, preserve key_props exactly; changes must target expression/action, never object state, count, ownership or contact. '
         'Return ALL fields, including pose, action, description, tags, reflection, protagonist_instances, '
         'subject_visibility, other_people, hand_owners, and ALL key_props fields including detached, owner, state, '
         'establishes_ownership and distinguishing_features_visible. action and description equal pose; tags contain only pose/expression. '
@@ -167,6 +132,7 @@ def deliver(root,cycle,config,client):
         gate=persist_group_gate(root,cycle['final_review'],config)
         manifest=read(root/'manifest.json');manifest['review_gate']=gate
         save_json_atomic(root/'manifest.json',manifest)
+        render_delivery(root,cycle['final_review'],gate)
     return state
 
 
@@ -199,6 +165,7 @@ def run_repair_cycle(job_dir,config,client):
         'allow_obscured':config.get('allow_obscured_protagonist',False)}
     if not (root/'initial_storyboard.json').exists():save_json_atomic(root/'initial_storyboard.json',board)
     cfg=cycle['config']
+    cfg['problem_methods'].pop('props',None)
     recovered=False
     for n,slot in cycle['shots'].items():
         label=f'decision_{n}_{len(slot["history"])+1}_validation1.json'
@@ -249,6 +216,9 @@ def run_repair_cycle(job_dir,config,client):
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
                 before=slot['best_audit'];results=repair_findings(before)
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
+                if pending and pending['decision'].get('problem')=='props':
+                    pending.update(status='completed',skipped=True,error='D24 pending prop repair disabled before submission')
+                    slot['stop']='v1_prop_repair_disabled';persist();break
                 if not pending:
                     actionable=[i for i in issues(results) if i['status']=='fail' and i['key']!='audit_error']
                     if not actionable:slot['stop']='no_actionable_fail';persist();break
@@ -282,11 +252,11 @@ def run_repair_cycle(job_dir,config,client):
                 report=full_review(root,config,budget);save_json_atomic(final_path,report)
             cycle['final_review']=report;persist()
             narrative=report.get('narrative_compare',{})
-            bad=narrative.get('status')!='pass' or any(narrative.get('data',{}).get(k,{}).get('status')=='fail' for k in ('key_events','ending'))
+            bad=narrative_repair_needed(narrative,scope_context(root))
             if bad and not cycle.get('repair_scope') and not cycle.get('narrative_attempted') and not quota(2,reserve_vision=3*len(board['shots'])+7,reserve_llm=2):
                 # Runtime identifies the missing visible cue and target, within the same mapping.
                 choose=cached_call(root,'narrative_target',vlm,'cycle_llm_narrative_target',review.messages(
-                    'Identify one shot missing a visible causal cue for the key event/ending that the image-only retelling failed to read. Choose its number; do not claim it passed. '+json.dumps({'comparison':narrative,'board':board},ensure_ascii=False)),review.object_schema({'target_shot':{'type':'integer','minimum':1,'maximum':len(board['shots'])},'missing_cue':review.TEXT}))
+                    'Identify one shot missing a PERSON expression/action cue for the key event/ending. Do not target object ownership/state/count/contact that the image-only retelling failed to read. Choose its number; do not claim it passed. '+json.dumps({'comparison':narrative,'board':board},ensure_ascii=False)),review.object_schema({'target_shot':{'type':'integer','minimum':1,'maximum':len(board['shots'])},'missing_cue':review.TEXT}))
                 if choose['status']=='pass':
                     n=choose['data']['target_shot'];slot=cycle['shots'][str(n)]
                     if len(slot['history'])<cfg['max_rounds_per_shot'] and slot['stagnant']<cfg['max_consecutive_no_improvement']:
@@ -317,3 +287,74 @@ def run_repair_cycle(job_dir,config,client):
         raise
     finally:vlm.close()
     return deliver(root,cycle,config,client)
+
+
+def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm):
+    from storycg.repairs import repair,record_result
+    decision=pending['decision'];entry=slot['entry']
+    # Prepared decisions from older policy must pass the scope guard before any IO.
+    if decision.get('problem')=='props':raise ValueError('D24 props cannot trigger repair')
+    if decision.get('edit') and decision['edit'].get('target','').startswith(('props.','entry.shot.key_props.')):
+        raise ValueError('D24 props cannot be repair targets')
+    if decision.get('shot') is not None and decision['shot'].get('key_props')!=entry['shot']['key_props']:
+        raise ValueError('D24 relayout cannot target props')
+    candidate=copy.deepcopy(entry)
+    if decision['shot'] is not None:candidate['shot']=decision['shot']
+    diagnosis={k:decision[k] for k in ('diagnosis','hypothesis','changes')};diagnosis['result']={'status':'pending'}
+    kwargs={'repair_id':f'cycle{pending["round"]}', 'source_attempt':pending['source_attempt']}
+    if decision['primitive']=='instruction_edit':kwargs['edit']=decision['edit']
+    if decision['primitive']=='relayout':kwargs['revised_entry']=candidate
+    if decision['primitive'] in ('face_detail','inpaint'):
+        from storycg.detection_review import repair_mask
+        from storycg.detect import detect_image
+        source=root/slot['best_audit']['image']['path']
+        purpose='remove_person' if decision['problem']=='protagonist_count' else 'face'
+        region=repair_mask(source,None,purpose,root/'cycle_artifacts'/f'mask_{number}_{pending["round"]}')
+        if region['provenance']['uncertain']:
+            raise ValueError('non_subject_mask_ambiguous: merged segmentation requires experimental review')
+        kwargs.update(bbox=region['bbox'],mask_path=region['mask_path'],mask_sha256=region['mask_sha256'],
+            region_source=region['provenance'])
+        if purpose=='remove_person':kwargs['operation']={'type':'remove_person'}
+    label=f'repair_{number}_{pending["round"]}'
+    before_neighbors=neighbors(root,number,slot['best_audit']['image'],entry,board,cycle,config,vlm,label+'_before')
+    rec=repair(root,number,decision['primitive'],diagnosis,client,**kwargs)
+    label=f'repair_{number}_{pending["round"]}'
+    audited=audit_candidate(root,number,rec['output'],candidate,board,identity,config,vlm,label)
+    adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
+    before=[slot['best_audit']['single'],slot['best_audit']['consistency'],*before_neighbors];after=[audited['single'],audited['consistency'],*adjacent]
+    visual_better=candidate_improved(before,after)
+    count_better=decision['problem']=='protagonist_count' and detection_improved(slot['best_audit'],audited)
+    better=(visual_better or count_better) and rec.get("boundary_check",{"passed":True})["passed"]
+    if decision['problem']=='protagonist_count':
+        recheck=audited.get('detection_items',{}).get('protagonist_count',{})
+        better=better and recheck.get('status')=='ok'
+        pending['count_recheck']=recheck
+        pending['fallback_required']=recheck.get('status')=='duplicate'
+    # Reliability of adjacent scene checks is unverified; retain all observations, never call them improvement.
+    pending.update(status='completed',output=rec['output'],audit=audited,neighbors=adjacent,before_neighbors=before_neighbors,
+        result={'reliable_fails_before':reliable_failures(before),'reliable_fails_after':reliable_failures(after),
+                'improved':better,'improvement_basis':'uncalibrated_detection' if count_better else 'reliable_visual_metric','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
+    key=f'shot{number:02d}_cycle{pending["round"]}'
+    record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
+    if better:
+        state=load_state(root);a=next(a for a in state['attempts'] if a.get('repair_key')==key and a.get('repair_stage')=='final')
+        slot.update(best_attempt=a['attempt_number'],best_audit=audited,entry=candidate,stagnant=0)
+        board['shots'][number-1]=candidate
+        save_json_atomic(root/'storyboard.json',board)
+    else:slot['stagnant']+=1
+
+
+def candidate_improved(before,after):
+    return frozen.candidate_improved([person_findings(r) for r in before], [person_findings(r) for r in after])
+
+
+def reliable_failures(results):
+    return frozen.reliable_failures([person_findings(r) for r in results])
+
+
+def detection_improved(before,after):
+    previous=copy.deepcopy(before);current=copy.deepcopy(after)
+    for item in (previous,current):
+        for layer in ('single','consistency'):
+            item[layer]=person_findings(item[layer])
+    return frozen.detection_improved(previous,current)

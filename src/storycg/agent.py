@@ -28,9 +28,9 @@ RELIABILITY_NOTE = ('发色、视觉瞳色等身份审核以逐项 reliability �
                     '检测弃权标注未经审核；未可靠校准的项目标注“该项未经可靠审核”，建议用户看图确认。')
 TEXT = {'type': 'string'}
 INTAKE_SCHEMA = {'type': 'object', 'additionalProperties': False,
-                 'required': ['named_characters', 'conflict', 'possession_swap'], 'properties': {
+                 'required': ['named_characters', 'conflict', 'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items'], 'properties': {
                      'named_characters': {'type': 'array', 'items': TEXT}, 'conflict': TEXT,
-                     'possession_swap': {'type':'boolean'}}}
+                     'possession_swap': {'type':'boolean'}, 'prop_dependent': {'type':'boolean'}, 'prop_dependency_reason': {'type':'string','minLength':1}, 'prop_only_narrative_items': {'type':'array','uniqueItems':True,'items':{'enum':['key_events','changes','ending']}}}}
 
 
 def read(root, name, default=None):
@@ -192,7 +192,7 @@ def execute(root):
             update(root, phase='checking_requirements')
             job = read(root, 'job.json')
             intake = runtime_json(root, config, 'intake',
-                'Identify explicitly named people in this input. Set possession_swap true when the story involves the protagonist mistakenly taking/holding an object belonging to another owner or an exchange of ownership-distinguished objects; otherwise false. Infer this from the meaning, not a keyword list. Return an empty conflict unless the user explicitly demands mutually incompatible outcomes or constraints; ordinary creative choices are not conflicts. Multiple named people are not a conflict; v1 keeps the supplied protagonist. Give conflicts in Chinese.\n'+json.dumps({'character': job['character'], 'story': job['story']}, ensure_ascii=False), INTAKE_SCHEMA)
+                'Identify explicitly named people in this input. Set prop_dependent true if the core event depends on object ownership or state, and give a one-sentence semantic reason in prop_dependency_reason; otherwise false and explain the person-driven change. In prop_only_narrative_items list only key_events/changes/ending whose entire expected requirement is object ownership/state/count/contact. Leave mixed person emotions/actions out; use [] when uncertain or prop_dependent=false. Do not use keyword matching. Do not ask the user about prop dependency. Set possession_swap true when the story involves the protagonist mistakenly taking/holding an object belonging to another owner or an exchange of ownership-distinguished objects; otherwise false. Infer this from the meaning, not a keyword list. Return an empty conflict unless the user explicitly demands mutually incompatible outcomes or constraints; ordinary creative choices are not conflicts. Multiple named people are not a conflict; v1 keeps the supplied protagonist. Give conflicts in Chinese.\n'+json.dumps({'character': job['character'], 'story': job['story']}, ensure_ascii=False), INTAKE_SCHEMA)
             validate(intake, INTAKE_SCHEMA)
             if intake['conflict']:
                 question(root, 'requirements_conflict', intake['conflict']+' 请说明采用哪项要求。')
@@ -200,6 +200,9 @@ def execute(root):
             notices = []
             if len(set(intake['named_characters'])) > 1:
                 notices.append('v1 只保证一个具名主角；按指定主角处理，其他人物以背影、路人、画面外或局部入镜表现。')
+            if intake['prop_dependent']:
+                from storycg.v1_scope import PROP_NOTICE
+                notices.append(PROP_NOTICE)
             update(root, intake=intake, notices=notices)
         update(root, phase='resolving_identity')
         identity = resolve_job(root)
@@ -263,9 +266,10 @@ def deliver(root):
     if RELIABILITY_NOTE not in existing:
         existing += '\n'+RELIABILITY_NOTE+'\n'
     if final_review:
-        existing = existing.split('\n正式整组门禁（P9-05）：',1)[0]
-        existing += '\n正式整组门禁（P9-05）：'+gate['conclusion']+'；冻结原始结论：'+str(gate['raw_conclusion'])+'\n'+'\n'.join(gate['notes'])+'\n'
-    result.write_text(existing)
+        from storycg.v1_scope import render_delivery
+        render_delivery(root, final_review, gate)
+    else:
+        result.write_text(existing)
 
 
 def status(root):

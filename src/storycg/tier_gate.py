@@ -10,13 +10,15 @@ def evaluate_l2(checklist,comparisons,reliability):
     raw=frozen.evaluate_l2(checklist,comparisons,reliability)
     gate=copy.deepcopy(raw)
     def can_veto(item):
+        if item in ('accessories','hair_ornaments'):return False
         policy=reliability.get('items',{}).get(item,{})
         return policy.get('status')=='reliable' or (policy.get('status')=='unreliable' and policy.get('false_positive_rate')==0)
     gate['vetoes']=[x for x in raw['vetoes'] if can_veto(x['item'])]
     gate['ignored_vetoes']=[x for x in raw['vetoes'] if not can_veto(x['item'])]
+    gate['reliable']=[x for x in gate['reliable'] if x['item'] not in ('accessories','hair_ornaments')]
     gate['identity_tier']='L2' if gate['reliable'] and all(x['passed'] for x in gate['reliable']) and not gate['vetoes'] else 'tier_pending_L3_L4'
     gate['raw_aggregation']=raw
-    gate['limitations']='D18: unverified cannot veto; unreliable with calibrated zero false positives may veto; all reliable appearance items must pass; outfit diagnostic for L2'
+    gate['limitations']='D20: accessories/hair_ornaments cannot veto or confirm; D18: unverified cannot veto; unreliable with calibrated zero false positives may veto; all reliable appearance items must pass; outfit diagnostic for L2'
     return gate
 
 
@@ -30,8 +32,8 @@ def aggregate_comparison(root,identity,raw,reliability,*,character_lora=None,art
     output['identity_tier']=gate['identity_tier']
     output['tier_gate']=gate
     output['tier_evidence'].update({k:gate[k] for k in ('reliable','unverified','outfit_comparisons','vetoes','not_visible','limitations')})
-    output['tier_evidence']['tier_gate_policy']='D18'
-    save_json_atomic(Path(root)/artifact,{'policy':'D18','raw_result':raw,'gate':gate})
+    output['tier_evidence']['tier_gate_policy']='D18/D20'
+    save_json_atomic(Path(root)/artifact,{'policy':'D18/D20','raw_result':raw,'gate':gate})
     return output
 
 
