@@ -1,10 +1,6 @@
 {
   "enabled": true,
   "problem_methods": {
-    "props": [
-      "instruction_edit",
-      "relayout"
-    ],
     "eye_color": [
       "face_detail",
       "instruction_edit"

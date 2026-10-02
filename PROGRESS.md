@@ -269,6 +269,7 @@ Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 
 | 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
 |---|---|---|---|---|
 | P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P10-01 v1 范围调整落地 | 通过 | 0 | 01a0f9f7-fb99-75a1-aad9-93d6f25e7b7a | `reports/P10-01.md`、`skill/story-cg-v1/SKILL.md` |
 | P9-07 规划/诊断语义修复+重跑 | 部分完成（芙莉莲仍不可读且漏检小号重复；约尔回到 L4） | 0 | 01a0f97a-5f4d-7cb3-8226-7ab2cb880d08 | `review/P9-07-芙莉莲-前后.jpg`、`reports/P9-07.md` |
 | P9-06 四项修复+在线回归 | 部分完成（月城柳去重成功；约尔回到 L2 出图；芙莉莲规划失败） | 2（资源阻塞续做） | 01a0f931-b055-7ba0-b661-4c77eb3d2f19 | `review/P9-06-月城柳-前后.jpg`、`review/P9-06-约尔-前后.jpg` |
 | P9-05 分镜规则+门禁+回归 | 部分完成 | 0 | 01a0f8c2-d9d0-7e31-82f5-7203c65713d3 | `review/P9-05-*.jpg`、`reports/P9-05.md` |

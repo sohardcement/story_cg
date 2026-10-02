@@ -17,13 +17,15 @@ def wiki_ensembles(body, url, rules):
     for paragraph in re.split(r'\r?\n\s*\r?\n', body):
         current = None
         for sentence in re.split(r'(?<=[.!?])\s+', paragraph):
-            if not re.search(config['description_pattern'], sentence, re.I):
-                continue
             tags = []
+            sentence_tags=[re.sub(r'\s+','_',m.group(1).strip().lower()) for m in re.finditer(r'\[\[([^]|]+)(?:\|[^]]*)?\]\]',sentence)]
+            if not re.search(config['description_pattern'],sentence,re.I) and not (current and any(category_for(t,rules) and category_for(t,rules)['name'] in ('accessories','accessory_color') for t in sentence_tags)):
+                continue
+            clothing_context=any(category_for(t,rules) and category_for(t,rules).get('outfit') for t in sentence_tags) or bool(re.search(config['new_ensemble_pattern'],sentence,re.I)) or current is not None
             for match in re.finditer(r'\[\[([^]|]+)(?:\|[^]]*)?\]\]', sentence):
                 tag = re.sub(r'\s+', '_', match.group(1).strip().lower())
                 category = category_for(tag, rules)
-                if category and category.get('outfit'):
+                if category and (category.get('outfit') or (clothing_context and category['name'] in ('accessories','accessory_color'))):
                     tags.append({'tag':tag, 'category':category['name'],
                                  'source':{'url':url, 'method':'linked tag in wiki clothing ensemble',
                                            'frequency':None, 'evidence':sentence}})
