@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "items": {
     "character": {
       "status": "unreliable",
@@ -26,7 +26,9 @@
       "unstable_pairs": 0,
       "total_pairs": 19,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
     },
     "hair_color": {
       "status": "reliable",
@@ -50,7 +52,9 @@
       "unstable_pairs": 0,
       "total_pairs": 19,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
     },
     "hairstyle": {
       "status": "unverified",
@@ -77,12 +81,14 @@
       "unstable_pairs": 0,
       "total_pairs": 22,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 2,
+      "not_visible_pass_rate": 1.0
     },
     "eye_color": {
       "status": "reliable",
       "error_samples": 9,
-      "ok_samples": 22,
+      "ok_samples": 21,
       "not_visible_samples": 6,
       "counts": {
         "error": {
@@ -90,7 +96,7 @@
           "not_visible": 4
         },
         "ok": {
-          "pass": 36,
+          "pass": 34,
           "not_visible": 8
         },
         "not_visible": {
@@ -103,9 +109,11 @@
       "invisible_fail": 0,
       "invisible_total": 12,
       "unstable_pairs": 0,
-      "total_pairs": 37,
+      "total_pairs": 36,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": 0.0
     },
     "accessories": {
       "status": "unreliable",
@@ -134,7 +142,9 @@
       "unstable_pairs": 0,
       "total_pairs": 23,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": 0.0
     },
     "outfit": {
       "status": "reliable",
@@ -159,7 +169,9 @@
       "unstable_pairs": 0,
       "total_pairs": 19,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
     },
     "props": {
       "status": "reliable",
@@ -184,7 +196,9 @@
       "unstable_pairs": 0,
       "total_pairs": 12,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
     },
     "action": {
       "status": "reliable",
@@ -208,7 +222,9 @@
       "unstable_pairs": 0,
       "total_pairs": 10,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
     },
     "hair_ornaments": {
       "status": "unverified",
@@ -233,7 +249,9 @@
       "unstable_pairs": 0,
       "total_pairs": 4,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
     },
     "footwear": {
       "status": "unverified",
@@ -255,7 +273,9 @@
       "unstable_pairs": 0,
       "total_pairs": 1,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "invisible_pass": 2,
+      "not_visible_pass_rate": 1.0
     },
     "eye_color_sampled": {
       "status": "unreliable",
@@ -284,7 +304,9 @@
       "unstable_pairs": 0,
       "total_pairs": 0,
       "unstable_rate": null,
-      "deterministic": true
+      "deterministic": true,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": 0.0
     },
     "accessory_color_sampled": {
       "status": "unreliable",
@@ -311,7 +333,9 @@
       "unstable_pairs": 0,
       "total_pairs": 0,
       "unstable_rate": null,
-      "deterministic": true
+      "deterministic": true,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": 0.0
     },
     "protagonist_count": {
       "status": "reliable",
@@ -335,27 +359,180 @@
       "unstable_pairs": 0,
       "total_pairs": 0,
       "unstable_rate": null,
-      "deterministic": true
+      "deterministic": true,
+      "invisible_pass": 0,
+      "not_visible_pass_rate": null
+    },
+    "extra_protagonist": {
+      "status": "unreliable",
+      "error_samples": 5,
+      "ok_samples": 7,
+      "not_visible_samples": 0,
+      "counts": {
+        "error": {
+          "pass": 8,
+          "fail": 2
+        },
+        "ok": {
+          "pass": 14
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 0.2,
+      "false_positive_rate": 0.0,
+      "invisible_total": 0,
+      "invisible_fail": 0,
+      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "not_visible_pass_rate": null,
+      "unstable_pairs": 0,
+      "total_pairs": 12,
+      "unstable_rate": 0.0,
+      "deterministic": false
+    },
+    "outfit_detail_vs_portrait": {
+      "status": "reliable",
+      "error_samples": 4,
+      "ok_samples": 6,
+      "not_visible_samples": 0,
+      "counts": {
+        "error": {
+          "fail": 8
+        },
+        "ok": {
+          "pass": 10,
+          "fail": 2
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 1.0,
+      "false_positive_rate": 0.16666666666666666,
+      "invisible_total": 0,
+      "invisible_fail": 0,
+      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "not_visible_pass_rate": null,
+      "unstable_pairs": 0,
+      "total_pairs": 10,
+      "unstable_rate": 0.0,
+      "deterministic": false
+    },
+    "accessories_zoom": {
+      "status": "unreliable",
+      "error_samples": 4,
+      "ok_samples": 18,
+      "not_visible_samples": 1,
+      "counts": {
+        "error": {
+          "fail": 4,
+          "pass": 4
+        },
+        "ok": {
+          "pass": 22,
+          "fail": 14
+        },
+        "not_visible": {
+          "fail": 2
+        }
+      },
+      "fail_detection_rate": 0.5,
+      "false_positive_rate": 0.3888888888888889,
+      "invisible_total": 2,
+      "invisible_fail": 2,
+      "invisible_pass": 0,
+      "not_visible_fail_rate": 1.0,
+      "not_visible_pass_rate": 0.0,
+      "unstable_pairs": 0,
+      "total_pairs": 23,
+      "unstable_rate": 0.0,
+      "deterministic": false,
+      "decision": "D22 转 (a)：配饰继续标注未经可靠审核"
+    },
+    "hair_ornaments_zoom": {
+      "status": "unverified",
+      "error_samples": 1,
+      "ok_samples": 3,
+      "not_visible_samples": 0,
+      "counts": {
+        "error": {
+          "fail": 2
+        },
+        "ok": {
+          "pass": 2,
+          "fail": 4
+        },
+        "not_visible": {}
+      },
+      "fail_detection_rate": 1.0,
+      "false_positive_rate": 0.6666666666666666,
+      "invisible_total": 0,
+      "invisible_fail": 0,
+      "invisible_pass": 0,
+      "not_visible_fail_rate": null,
+      "not_visible_pass_rate": null,
+      "unstable_pairs": 0,
+      "total_pairs": 4,
+      "unstable_rate": 0.0,
+      "deterministic": false
     }
   },
   "rule": "error_samples>=3 and ok_samples>=3; fail_detection>=0.75 and false_positive<=0.20 => reliable; insufficient => unverified; otherwise unreliable",
   "freeze": {
-    "src/storycg/review.py": "3efed19f968731bfddf5e61c227f24210e0ab448fa7506b9b2ec60e649b4e6e5",
-    "src/storycg/reference.py": "0c2b955e8553c74a75746367ebf924483195dda89821ea3533173be998a70035",
-    "src/storycg/tiers.py": "2ac6f53a30c61664adb1f5a9f5cf49581f27288ff74d8f5bfd12621f739567a4",
-    "src/storycg/cycle.py": "c5f9f0abd3f40039a8928e028b0ad68369359844dcec3b5cd3a4c29a002e7815",
-    "src/storycg/detection_review.py": "2df4c287ca1fb6641aee187bdaf333f083586a24c1cc5ec83a379d5e0ad15c7f",
-    "src/storycg/eye_sampling.py": "47672b25afa94146207fad2d6c30528f5ba1ebff7120dad5e055cda3c9c82991",
-    "src/storycg/detect.py": "af5be5d2a1c70ec177c888e1fe886bdc368ca52b82cbe67df3e4c85d20c87e60",
+    "src/storycg/__init__.py": "542a35dd4a0b4e039263d16342b05d0073e031212ce78774dcaaac2d7c1e7ecd",
+    "src/storycg/__main__.py": "ee90210ae40d97c4cc0100c9231c6e89b211b00874b9acae4750457c316b77a5",
+    "src/storycg/agent.py": "3faf35347a4d79cdff1fb37abe15ba21c047666516f5d88f75d7e0bea5a1508d",
+    "src/storycg/assembly.py": "097903dcd0f6490c7f67dc7a8dd17a5601a5cb7445ce76c9a1ffbe95d176974f",
+    "src/storycg/budget.py": "580efd94b58aa268bd1004f372f4a3addbfcdb94db06368147788a14bc9fe6c1",
     "src/storycg/calibration.py": "37474975c67ec6751aa147c009168f8208a33e6a2a72a2891a8769d3d6983b76",
     "src/storycg/calibration_v2.py": "73f89a8c8ba0627c63fb07567f3574e96db135984ea8002e4a0f125f13f9755d",
+    "src/storycg/calibration_v3.py": "f1a4caa50d024d42d6024b1df892ab99ab64f5e7e902ce13d21191d74bf7cee5",
+    "src/storycg/comfy.py": "76e72a973498279ac6c224c326c0cc433585bf31da56ba6d3c4b83277f404608",
+    "src/storycg/config.py": "c62a6292370b8b2801deac28ca1a16dc33a43fd99ac3fadd27eca48dd20df33f",
+    "src/storycg/controls.py": "312873314eaec5c3cff62d6d80ec89bdadf1bb680aabc2db97657d89e76428e8",
+    "src/storycg/cycle.py": "c5f9f0abd3f40039a8928e028b0ad68369359844dcec3b5cd3a4c29a002e7815",
+    "src/storycg/detect.py": "af5be5d2a1c70ec177c888e1fe886bdc368ca52b82cbe67df3e4c85d20c87e60",
+    "src/storycg/detection_review.py": "2df4c287ca1fb6641aee187bdaf333f083586a24c1cc5ec83a379d5e0ad15c7f",
+    "src/storycg/editing.py": "a2539c0c4a8a66e070f602eaeb5ee8db4bb185333bb25d1e29d7897670dbcd1a",
+    "src/storycg/eye_sampling.py": "47672b25afa94146207fad2d6c30528f5ba1ebff7120dad5e055cda3c9c82991",
+    "src/storycg/fallback.py": "4e9946ed7022a5cb6071242e0d9991d0a15bda5a86393cea93a9b28003fc0b0f",
+    "src/storycg/identity.py": "103b77acb8e998ecde7354fc5c6f13ecaba01f61600fbe86b817f80c3b4c658f",
+    "src/storycg/identity_enrichment.py": "4260019af78f2b43453864e0f2c90320ee1b829a3c381d3ce0f6d86b61930f6d",
+    "src/storycg/model_metadata.py": "48e63feac7eb4fc969e1daf7a2a9db82a27ac80a602a82869df9a17119fad759",
+    "src/storycg/outfits.py": "63e825b0c5034254d52874c8687cd5ee0b2834625fc8e0b2cbd6d09b4f3b132a",
+    "src/storycg/pipeline.py": "d9002b498dd972e3ef90c4f58753276f2a12dd1555c74284e78ff6e6bbefc4db",
+    "src/storycg/planning.py": "e2f6fc96e06b93f4c2175c7f27317b08f9146345b2841e2e0e0c88e29cfba1e0",
+    "src/storycg/portrait_gate.py": "5bec37d32a2f595489074db6e22ad8a7860dc017bfbae3ac018e30d08d97d947",
+    "src/storycg/posture_tags.py": "7ad7074b3132b71005e95ba9a536d71705379d8a399ec677e84500f8b34d2c0d",
+    "src/storycg/reconcile.py": "a83170d8dcc31c5b99ba45d1dc2841b08eeca34699e7f84a74cbacae6409bfc2",
+    "src/storycg/reference.py": "0c2b955e8553c74a75746367ebf924483195dda89821ea3533173be998a70035",
+    "src/storycg/repairs.py": "c410fff48cf8caec1d61c2b67ba512b68fca32c1f14407844a70f489460a9f5b",
+    "src/storycg/review.py": "4eb2bc9b7b330266ee8bf5e75c98d24fea7b3e298a1cfce4e6bfad9ff5940624",
+    "src/storycg/review_gate.py": "ab3a5074db074659f09928d7490f228fdc1928359874a40efe68aa47f0292738",
+    "src/storycg/review_v3.py": "4ebc5bfda241464ed4c0eb4837950c4ca935ce2f00c0d6b1437d26e316e3344e",
+    "src/storycg/runner.py": "ce105e1840de80f165a7787e9682f0d08ff01d90805323de7338ffc554852137",
+    "src/storycg/runtime_gate.py": "0186af217880b9395a3a6b0e3044e1f733688d2b506e8eaeadef61a6cf48330d",
+    "src/storycg/shot_contract.py": "70eb14fb4d1c7729026cfa04dc54603b7c1301e2d2e36e975bbf3c074bb03903",
+    "src/storycg/state.py": "7039fea564d4cc4ccf5f02da586a94aace53679297c5a3453658db3d46ccab67",
+    "src/storycg/story_rules.py": "533badf4d161ca52ca37f8cb77a5db18d918d245b0139dff1a33b49791e36ece",
+    "src/storycg/tags.py": "87b467ad3f6d7d8ae26eb19a5ac1132a6c04d102e1077664c2e9128d3449e33e",
+    "src/storycg/tier_gate.py": "f968ea6b38bdc2b8306fb7e455bc8126f91302136b9b913ff65e418964af9e9f",
+    "src/storycg/tiers.py": "2ac6f53a30c61664adb1f5a9f5cf49581f27288ff74d8f5bfd12621f739567a4",
+    "src/storycg/v1_scope.py": "f9b0cca70712d3ea29c96007775a788356d26c089a6b687fdbe7d96b6c0c98a0",
+    "src/storycg/workflow.py": "501ce0b4ed32afbbefe81f2a6862a2534a61bca273a47c05f042746f722dd831",
+    "tools/p10_02_calibrate.py": "926dfe9f7db7ee9d7c6c605bec887e9b8d3572582aeec8b8edba735ba129f00c",
+    "tools/test_p10_02.py": "d8a893e96f1175da0f28596ba7dd67e1fad3f06c09041fd57b75a67f1b504f9b",
+    "tests/test_review.py": "1dd9441ccaacfc417363d6552b74cc3a59939b3b4399cf9f5ed4f836e19bf92b",
+    "tests/test_p3_02.py": "26b0a20a47b7eece824966aa29c54c1f2947df361c3724f66b070979e94996c5",
+    "tools/p9_04_calibrate.py": "cd5bca0e776fd3655e4a190d33b8c1b04a1e7cbb39fbeb12b0b5a5ee709beabd",
+    "tools/p9_04_continue.py": "9e34aa203ceb68d1b812331c7103d42d0fd4b65d2dd077c9fa29f0f39f655d20",
+    "tools/p9_04_execute.py": "c881be3efe49cafe28d1067dc31ac61560a70aa7c98d69a91f38b4b779c870fa",
+    "tools/p9_04_resume.py": "54dc503539877a384991e921534a3eb0a3e18d5deeea23a6b1b1c66e591bbfb7",
     "config/default.json": "c4b3726e9c4d4ea8e3cc2138d85b36fdbbe4d86b46039ee3947979d5442965f0",
-    "config/detection_review.json": "d65f70e653a57b93b92ce8ca6f54f6404c22dde5267ee3355d550fa116483813",
     "config/detect.json": "9f13bfceaa0b8e7a2fdd15939d0c6d83741b426c385e435cf29ff894ae0c7629",
+    "config/detection_review.json": "d65f70e653a57b93b92ce8ca6f54f6404c22dde5267ee3355d550fa116483813",
     "config/identity_rules.json": "53a4459104e0d9b78490a0ded0d5afb9ad0c37b1010a3f3417ef2c0a32cb8707",
     "models/detect/face_yolov8s.pt": "c7237eff25787377de196961140ceaed324d859ee8de5a775d93d33a0e3fab78",
-    "models/detect/person_yolov8s-seg.pt": "53c54aec2239355faffc6c5b70d0f3d05042f386f956cbec39cec46ad456f050",
-    "tools/p9_04_calibrate.py": "cd5bca0e776fd3655e4a190d33b8c1b04a1e7cbb39fbeb12b0b5a5ee709beabd"
+    "models/detect/person_yolov8s-seg.pt": "53c54aec2239355faffc6c5b70d0f3d05042f386f956cbec39cec46ad456f050"
   },
-  "calibration_results": "calibration/v2/results.json"
+  "calibration_results": "calibration/v3/results.json"
 }
