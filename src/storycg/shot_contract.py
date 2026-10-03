@@ -18,7 +18,8 @@ def extend_schema(schema, *, required=False):
     schema['properties']['prop_only_narrative_items']={'type':'array','uniqueItems':True,'items':{'enum':['key_events','changes','ending']}}
     shot=schema['properties']['shots']['items']['properties']['shot']
     shot['properties']['unchanged_person_reason']={'type':'string'}
-    shot['properties'].update(pose=ATOMIC_TAG, protagonist_instances={'type':'integer','minimum':1,'maximum':2})
+    shot['properties'].update(pose=ATOMIC_TAG, protagonist_instances={'type':'integer','minimum':1,'maximum':2},
+                              pose_tag_omitted={'type':'boolean'})
     prop=schema['properties']['props']['items']
     prop['properties'].update(owner={'type':'string','minLength':1},distinguish_ownership={'type':'boolean'})
     ref=shot['properties']['key_props']['items']
@@ -45,8 +46,9 @@ def moment(shot, path):
         if shot[field]!=shot['pose']:
             raise StoryRuleViolation('single_moment',[path+'.'+field,path+'.pose'],
                 'must name the same single instant', 'copy pose exactly; place the next instant in another shot')
-    allowed={shot['pose'],shot['expression']}
-    if not shot.get('tags') or any(t not in allowed for t in shot['tags']) or shot['pose'] not in shot['tags']:
+    omitted=shot.get('pose_tag_omitted',False)
+    allowed={shot['expression']} if omitted else {shot['pose'],shot['expression']}
+    if not shot.get('tags') or any(t not in allowed for t in shot['tags']) or (not omitted and shot['pose'] not in shot['tags']):
         raise StoryRuleViolation('single_moment',[path+'.tags',path+'.pose',path+'.expression'],
             'conditioning may contain only the one pose and expression', 'use pose and expression; object contact belongs in key_props')
     count=shot.get('protagonist_instances')
@@ -90,6 +92,8 @@ def planner_schema(schema):
         if field not in schema['required']:schema['required'].append(field)
     schema['properties']['shots']['items']['properties']['shot']['required'].append('unchanged_person_reason')
     shot=schema['properties']['shots']['items']['properties']['shot']
+    # Only exact registry validation may mark an action as unconditioned.
+    del shot['properties']['pose_tag_omitted']
     for field in ('description','action','tags'):
         shot['required'].remove(field)
         del shot['properties'][field]
@@ -102,6 +106,7 @@ def materialize(board):
     compiled=copy.deepcopy(board)
     for entry in compiled['shots']:
         shot=entry['shot']
+        if 'pose_tag_omitted' in shot:raise ValueError('planner supplied derived field: shot.pose_tag_omitted')
         for field in ('action','description','tags'):
             if field in shot:raise ValueError('planner supplied derived field: shot.'+field)
         shot.update(action=shot['pose'],description=shot['pose'],

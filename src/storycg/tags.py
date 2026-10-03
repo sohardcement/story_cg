@@ -64,7 +64,6 @@ def validate_tag_lists(board, registry, config=None, *, drop_unknown=False):
             for key, tags in config.get(mapping, {}).items():
                 lists.append((f'config.{mapping}.{key}', tags))
     missing = []
-    pose_feedback = []
     for path, tags in lists:
         for tag in list(tags):
             if not registry.exists(tag):
@@ -84,43 +83,70 @@ def validate_tag_lists(board, registry, config=None, *, drop_unknown=False):
                 if drop_unknown and not path.startswith('config.') and not path.endswith('.kind'):
                     tags.remove(tag)
                     record['action'] = 'discarded'
-                    # A discarded conditioning pose is not recoverable by generic
-                    # single-moment feedback. Preserve its field and real alternatives.
+                    # Resolve against the current state, never ask the planner to
+                    # replace the action with a merely similar body-part tag.
                     if path.endswith('.shot.tags'):
                         entry = next(e for e in board['shots'] if str(e['number']) == path.split('.')[0])
                         if canonical_tag(tag) == canonical_tag(entry['shot'].get('pose', '')):
-                            candidates, evidence = pose_candidates(tag, registry)
+                            shot = entry['shot']
+                            context = {key: shot.get(key, '') for key in
+                                       ('action', 'spatial_relation', 'change_from_previous')}
+                            candidates, evidence = pose_candidates(tag, registry, context=context)
                             field = f"$.shots[{board['shots'].index(entry)}].shot.pose"
-                            record.update(pose_field=field, candidates=candidates, candidate_evidence=evidence)
-                            pose_feedback.append(f"{field}: {tag}: 该 tag 在 Danbooru 不存在; "
-                                f"verified candidates: {', '.join(candidates) or 'none available'}; "
-                                "select one real instantaneous pose; action/description/shot.tags are derived from pose")
+                            record.update(pose_field=field, candidates=candidates,
+                                          candidate_evidence=evidence, semantic_context=context)
+                            if candidates:
+                                replacement = candidates[0]
+                                shot.update(pose=replacement, action=replacement, description=replacement)
+                                shot.pop('pose_tag_omitted', None)
+                                tags.insert(0, replacement)
+                                record.update(action='pose_replaced', replacement=replacement,
+                                              reason='complete action tokens supported by every relevant context field')
+                            else:
+                                shot['pose_tag_omitted'] = True
+                                record.update(action='pose_omitted', replacement=None,
+                                              reason='no verified candidate preserves the complete action and spatial/change context')
                 else:
                     record['action'] = 'rewrite_required'
                     missing.append(f'{path}: {tag}')
             else:
                 registry.records[-1]['action'] = 'accepted'
                 registry.records[-1]['field'] = path
-    if pose_feedback:
-        from storycg.story_rules import StoryRuleViolation
-        raise StoryRuleViolation('single_moment', [r['pose_field'] for r in registry.records if r.get('pose_field')],
-            '; '.join(pose_feedback), 'replace the nonexistent pose with a verified candidate; do not repeat the rejected tag')
     if missing:
         raise ValueError('nonexistent Danbooru tags; rewrite these: ' + '; '.join(missing))
 
 
-def pose_candidates(value, registry, limit=5):
-    """Rank sourced group members, then verify each through the exact tag API."""
-    from difflib import SequenceMatcher
+def pose_candidates(value, registry, limit=5, *, context=None):
+    """Conservative lexical proof, followed by exact API verification.
+
+    Require the complete action vocabulary, rather than partial body-part or
+    string similarity. Any prose field mentioning that action must support all
+    its tokens. Unsupported paraphrases are deliberately omitted.
+    """
     from storycg.posture_tags import posture_tags
     tag = canonical_tag(value)
-    tokens = set(tag.split('_'))
-    def rank(candidate):
-        overlap = len(tokens & set(candidate.split('_'))) / max(1, len(tokens))
-        return overlap + SequenceMatcher(None, tag, candidate).ratio()
-    ranked = sorted(posture_tags(), key=lambda t: (-rank(t), t))
+    def tokens(text):
+        return set(re.findall(r'[a-z0-9]+', text.lower().replace('_', ' ')))
+    requested = tokens(tag)
+    def compatible(candidate):
+        required = tokens(candidate)
+        if required != requested:
+            return False
+        # Prepositions bind actor to target. A bag of words cannot establish
+        # their direction, so never reorder a relational pose to invent one.
+        relations = {'on','over','behind','under','in','at','to','from','against',
+                     'below','above','beneath','between','around','through'}
+        if required & relations and candidate != tag:
+            return False
+        for text in (context or {}).values():
+            words = tokens(text)
+            if required & words:
+                if not required <= words or words & {'not', 'never', 'without', 'no'}:
+                    return False
+        return True
+    ranked = sorted(t for t in posture_tags() if compatible(t))
     found, evidence = [], []
-    for candidate in ranked[:max(limit * 3, limit)]:
+    for candidate in ranked:
         if registry.exists(candidate):
             found.append(candidate)
             evidence.append(dict(registry.records[-1]))
