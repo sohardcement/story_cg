@@ -85,6 +85,33 @@ APPEARANCE_ZH = re.compile(
     r"刘海|马尾|辫子|瞳色|瞳孔|眼睛|蓝眸|绿眸|红眸|眉毛|耳朵|肤色|皮肤|脸型|面容|体型|身高|精灵耳|尾巴|角"
 )
 
+# A body part can be an action target without describing its appearance.
+# Match the direct object only; attributes such as color/shape still hit the
+# unchanged appearance filter, as do all mentions in scene/outfit/props.
+BODY_ACTION = re.compile(
+    r'\b(?:cover(?:s|ed|ing)?|shield(?:s|ed|ing)?|touch(?:es|ed|ing)?|'
+    r'rub(?:s|bed|bing)?|press(?:es|ed|ing)?|hold(?:s|ing)?|'
+    r'rais(?:e|es|ed|ing)|lower(?:s|ed|ing)?|tilt(?:s|ed|ing)?|turn(?:s|ed|ing)?)'
+    r'\s+(?:(?:the|own|their|her|his)\s+)?(?:face|eyes?|mouth|ears?|lips?|nose)\b|'
+    r'\b(?:hands?|fingers?|palms?)\s+(?:on|over|against)\s+'
+    r'(?:(?:the|own|their|her|his)\s+)?(?:face|eyes?|mouth|ears?|lips?|nose)\b', re.I)
+
+
+def appearance_forbidden(value, *, body_action=False):
+    normalized = re.sub(r'[_-]', ' ', value)
+    normalized = re.sub(r'\beye[ -]level\b', '', normalized, flags=re.I)
+    if body_action:
+        # Exempt a complete plain action, never remove a body noun from a
+        # larger sentence: trailing/elliptical attributes would then escape the
+        # unchanged appearance filter. Unsupported compound prose is rejected.
+        plain_action = re.fullmatch(
+            r'(?:(?:subject|person|character|hands?|fingers?|palms?)\s+)?'
+            r'(?:(?:move(?:s|d|ing)?|reach(?:es|ed|ing)?)\s+to\s+)?'
+            r'(?:' + BODY_ACTION.pattern + r')[.!]?', normalized.strip(), re.I)
+        if plain_action:
+            normalized = ''
+    return bool(APPEARANCE_EN.search(normalized) or APPEARANCE_ZH.search(value))
+
 
 def _strings(value):
     if isinstance(value, str):
@@ -172,10 +199,11 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         rules=load_rules()
         clothing_for_check=copy.deepcopy(entry['outfit'])
         clothing_for_check['tags']=[tag for tag in entry['outfit']['tags'] if (category_for(canonical_tag(tag),rules) or {}).get('name') not in ('accessories','accessory_color')]
-        for value in _strings({'scene':entry['scene'],'outfit':clothing_for_check,'shot':entry['shot']}):
-            normalized = re.sub(r"[_-]", " ", value)
-            normalized = re.sub(r"\beye[ -]level\b", "", normalized, flags=re.I)
-            if APPEARANCE_EN.search(normalized) or APPEARANCE_ZH.search(value):
+        action_fields = {'pose','action','description','spatial_relation','change_from_previous','tags'}
+        values = [(v, False) for v in _strings({'scene':entry['scene'],'outfit':clothing_for_check})]
+        values += [(v, key in action_fields) for key, field in entry['shot'].items() for v in _strings(field)]
+        for value, body_action in values:
+            if appearance_forbidden(value, body_action=body_action):
                 raise ValueError(f"appearance description is forbidden in storyboard: {value}")
             if identity:
                 forbidden = [identity.get("character_tag"), identity.get("work_tag"),
@@ -224,9 +252,11 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "Descriptions/action/expression/position are concise English for display and audit ONLY. "
         "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
         "No character names, franchises or physical appearance tags in any state. "
-        "Never use the words face, eyes, mouth, hair, ears anywhere, even in description, "
-        "composition_reason or spatial_relation. Say reaction closeup or surprised instead. "
-        "Do not describe hair, eyes, ears, skin, body shape, height or facial anatomy. "
+        "Body parts may occur only as direct targets of the current physical action in pose, "
+        "spatial_relation and change_from_previous. Preserve the action's contact and direction. "
+        "Keep each body-target field as one plain action clause; place no other clauses or "
+        "appearance adjectives in that field. "
+        "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
         "Use emotions such as surprised, confused, smile in shot.tags. "
         "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
         "First shot MUST be wide with narrative_role establishing. Vary framing and camera_angle "
@@ -295,8 +325,10 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             if previous and previous.get("error"):
                 user_content += ("\nThe previous storyboard was rejected: " + previous["error"] +
                                  f"\nRewrite all {shot_count} shots to satisfy the schema and remove every "
-                                 "appearance/anatomy description. Never use the words face, eyes, mouth, hair, ears "
-                                 "anywhere in descriptions/action/spatial_relation/composition_reason. "
+                                 "appearance attributes. Preserve physical actions and their body-part targets, "
+                                 "contact and direction; never replace an action to avoid an anatomy word. "
+                                 "Keep each body-target field as one plain action clause; place no other clauses "
+                                 "or appearance adjectives in that field. "
                                  "Use emotion words only for expression. "
                                  "Do not copy an invalid field unchanged. Previous invalid JSON:\n" + previous.get("raw", ""))
             response = client.post("/chat/completions", timeout=min(180,gate.remaining_seconds()) if gate else 180, json={
@@ -314,6 +346,28 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             if schema_errors:
                 raise ValueError(f"storyboard schema: {schema_errors[0].json_path}: {schema_errors[0].message}")
             board = materialize(board)
+            # Later HTTP/schema checks may trigger a retry after the current
+            # action has already been resolved safely. Keep that action and its
+            # context, rather than let a new model response replace its meaning.
+            anchors = {}
+            for prior in log['calls'][:-1]:
+                for record in prior.get('tag_validation', []):
+                    if record.get('action') not in ('pose_omitted', 'pose_replaced'):
+                        continue
+                    match = re.fullmatch(r'\$\.shots\[(\d+)\]\.shot\.pose', record.get('pose_field', ''))
+                    if match:
+                        anchors.setdefault(int(match[1]), record)
+            for index, anchor in anchors.items():
+                shot = board['shots'][index]['shot']
+                from storycg.tags import canonical_tag
+                preserved = anchor.get('replacement') or canonical_tag(anchor['input'])
+                call.setdefault('pose_anchors', []).append({'shot': index + 1,
+                    'input_pose': shot['pose'], 'preserved_pose': preserved,
+                    'reason': 'preserve previously resolved action across a planning retry'})
+                shot.update(pose=preserved, action=preserved, description=preserved,
+                            tags=list(dict.fromkeys([preserved, shot['expression']])))
+                for key in ('spatial_relation','change_from_previous'):
+                    shot[key] = anchor['semantic_context'][key]
             # Reject appearance/identity additions before discarding unknown tags.
             validate_storyboard(board, shot_count, identity)
             from storycg.tags import TagRegistry, validate_tag_lists

@@ -12,8 +12,12 @@ from storycg.editing import EDIT_SCHEMA, state_descriptions, grounded_instructio
 from storycg.planning import SHOT, validate_storyboard
 from storycg.story_rules import validate_story_rules
 from storycg.budget import Budget, BudgetExceeded, CycleClient, GuardedComfy, count_usage
+from storycg.v1_scope import is_prop_item
 
 CONFIG_PATH=Path(__file__).resolve().parents[2]/'config/cycle.json'
+# Calibration keys stay distinct; repair routing groups findings by the state to fix.
+REPAIR_PROBLEM_ALIASES={'outfit_detail_vs_portrait':'outfit'}
+DIAGNOSIS_POLICY_REVISION=4
 
 
 def settings():return json.loads(CONFIG_PATH.read_text())
@@ -101,6 +105,7 @@ def issues(results):
 
 
 def problem_key(key):
+    if key in REPAIR_PROBLEM_ALIASES:return REPAIR_PROBLEM_ALIASES[key]
     mapped=review.reliability_key(key)
     if key.startswith('scene_'):return 'scene'
     if key=='body':return 'hands'
@@ -108,10 +113,37 @@ def problem_key(key):
     return mapped
 
 
+def actionable_issues(audit):
+    return [i for i in issues([r for r in audit if r.get('status')=='pass'])
+            if i['status']=='fail' and i.get('reliability')=='reliable' and not is_prop_item(i['key'])]
+
+
+def actionable_problems(audit,cfg,*,narrative=False):
+    findings=actionable_issues(audit)
+    problems={problem_key(i['key']) for i in findings}
+    if any(i['key']=='signature_features' for i in findings):problems.add('accessories')
+    if narrative:problems.add('narrative')
+    missing={i['key'] for i in findings if not cfg['problem_methods'].get(problem_key(i['key']))}
+    if narrative and not cfg['problem_methods'].get('narrative'):missing.add('narrative')
+    if missing:raise ValueError('unmapped reliable FAIL items: '+', '.join(sorted(missing)))
+    return sorted(problems)
+
+
+def attempted_problems(slot):
+    return {problem_key(h['decision']['problem']) for h in slot['history'] if not h.get('skipped')}
+
+
+def preferred_problems(audit,cycle,number,*,narrative=False):
+    observed=actionable_problems(audit,cycle['config'],narrative=narrative)
+    untried=set(observed)-attempted_problems(cycle['shots'][str(number)])
+    return sorted(untried) if untried else observed
+
+
 def validate_problem(problem,audit,narrative=False):
     if narrative and problem=='narrative':return
-    observed={problem_key(i['key']) for i in issues(audit) if i['status']=='fail'}
-    if any(i['key']=='signature_features' and i['status']=='fail' for i in issues(audit)):observed.add('accessories')
+    findings=actionable_issues(audit)
+    observed={problem_key(i['key']) for i in findings}
+    if any(i['key']=='signature_features' for i in findings):observed.add('accessories')
     if problem not in observed:raise ValueError('diagnosis problem does not match observed failures')
 
 
@@ -120,7 +152,7 @@ def candidate_improved(before,after):
     for old,new in zip(before,after):
         for k,item in new.get('data',{}).items():
             if item.get('reliability')=='reliable' and item.get('status')=='not_visible' and old.get('data',{}).get(k,{}).get('status')!='not_visible':return False
-            if review.reliability_key(k) in ('hair_color','outfit') and item.get('status')=='fail' and old.get('data',{}).get(k,{}).get('status')!='fail':return False
+            if problem_key(k) in ('hair_color','outfit') and item.get('reliability')=='reliable' and item.get('status')=='fail' and old.get('data',{}).get(k,{}).get('status')!='fail':return False
     return True
 
 
@@ -143,19 +175,45 @@ def validate_edit_target(problem,edit,state):
     if description in allowed and target.startswith(('identity.appearance_tags.','identity.default_outfit_tags.','entry.outfit.tags.')):return
     raise ValueError('edit target does not match diagnosed item')
 
+
+def diagnosis_state(identity,entry,props):
+    locked={k:identity[k] for k in ('identity_block','outfit_block','locked_tags') if k in identity}
+    for key in ('appearance_tags','default_outfit_tags'):
+        locked[key]=[{k:v for k,v in item.items() if k in ('tag','category')} for item in identity.get(key,[])]
+    return {'identity':locked,'entry':entry,'props':props}
+
+
+def edit_choices(problem,state):
+    choices=[]
+    for target,description in state_descriptions(state).items():
+        for operation in EDIT_SCHEMA['properties']['operation']['enum']:
+            edit={'operation':operation,'target':target,'description':description}
+            try:validate_edit_target(problem,edit,state)
+            except (ValueError,__import__('jsonschema').ValidationError):continue
+            choices.append(edit)
+    return choices
+
+
 def diagnosis_schema(cfg,*,state=None,problems=None):
     edit_schema=copy.deepcopy(EDIT_SCHEMA)
     if state is not None:
         descriptions=state_descriptions(state)
         edit_schema['properties']['target']={'enum':list(descriptions)}
         edit_schema['properties']['description']={'enum':list(dict.fromkeys(descriptions.values()))}
-    return review.object_schema({
+    schema=review.object_schema({
         'diagnosis':review.TEXT,'hypothesis':review.TEXT,'changes':review.TEXT,
         'problem':{'enum':problems or list(cfg['problem_methods'])},
         'primitive':{'enum':sorted({p for values in cfg['problem_methods'].values() for p in values})},
         'edit':{'anyOf':[edit_schema,{'type':'null'}]},
         'shot':{'anyOf':[SHOT,{'type':'null'}]},
         'target_shot':{'type':'integer','minimum':1}})
+    if state is not None:
+        schema['allOf']=[]
+        for problem in problems or list(cfg['problem_methods']):
+            choices=[{'const':edit} for edit in edit_choices(problem,state)]
+            schema['allOf'].append({'if':{'properties':{'problem':{'const':problem}}},
+                'then':{'properties':{'edit':{'anyOf':[{'type':'null'},*choices]}}}})
+    return schema
 
 
 def cached_call(root,name,vlm,purpose,messages,schema,paths=()):
@@ -168,18 +226,14 @@ def cached_call(root,name,vlm,purpose,messages,schema,paths=()):
 
 def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     cfg=cycle['config'];slot=cycle['shots'][str(number)]
-    label=f'decision_{number}_{len(slot["history"])+1}'+('_narrative' if narrative else '')+'_constraints2'
-    locked_identity={k:identity[k] for k in ('identity_block','outfit_block','locked_tags') if k in identity}
-    for key in ('appearance_tags','default_outfit_tags'):
-        locked_identity[key]=[{k:v for k,v in item.items() if k in ('tag','category')} for item in identity.get(key,[])]
-    state={'identity':locked_identity,'entry':entry,'props':board['props']}
-    problems={problem_key(i['key']) for i in issues(audit) if i['status']=='fail'}
-    if any(i['key']=='signature_features' and i['status']=='fail' for i in issues(audit)):problems.add('accessories')
-    if narrative:problems.add('narrative')
-    problems=sorted(problems & cfg['problem_methods'].keys())
+    label=f'decision_{number}_{len(slot["history"])+1}'+('_narrative' if narrative else '')+'_contract6'
+    state=diagnosis_state(identity,entry,board['props'])
+    problems=preferred_problems(audit,cycle,number,narrative=bool(narrative))
     if not problems:raise ValueError('no mapped actionable FAIL item')
-    content={'issues':issues(audit),'state':state,'allowed_methods':{key:permitted_methods(key,cycle,number) for key in problems},
-             'exact_edit_descriptions':state_descriptions(state),'previous_repairs':[{'primitive':h['decision']['primitive'],'diagnosis':h['decision']['diagnosis'],'hypothesis':h['decision']['hypothesis'],'changes':h['decision']['changes'],'edit':h['decision'].get('edit'),'source_attempt':h['source_attempt'],'result':{k:h.get('result',{}).get(k) for k in ('improved','reliable_fails_before','reliable_fails_after','conclusion')}} for h in slot['history']]}
+    choices={key:edit_choices(key,state) for key in problems}
+    content={'issues':actionable_issues(audit),'state':state,'allowed_methods':{key:permitted_methods(key,cycle,number) for key in problems},
+             'exact_edit_descriptions':{edit['target']:edit['description'] for values in choices.values() for edit in values},
+             'allowed_edits':choices,'previous_repairs':[{'primitive':h['decision']['primitive'],'diagnosis':h['decision']['diagnosis'],'hypothesis':h['decision']['hypothesis'],'changes':h['decision']['changes'],'edit':h['decision'].get('edit'),'source_attempt':h['source_attempt'],'result':{k:h.get('result',{}).get(k) for k in ('improved','reliable_fails_before','reliable_fails_after','conclusion')}} for h in slot['history']]}
     if narrative:content['blind_comparison']=narrative;content['storyboard']=board
     base_message=(
         'Interpret actual review findings. Output one diagnosis and testable causal hypothesis, and one concrete corrective change. '
@@ -215,6 +269,8 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
     allowed_decision(decision,cfg)
     if decision['primitive'] not in permitted_methods(decision['problem'],cycle,number):raise ValueError('D6 method priority requires primary instruction editing before fallback')
     validate_problem(decision['problem'],audit,bool(narrative))
+    if decision['problem'] not in preferred_problems(audit,cycle,number,narrative=bool(narrative)):
+        raise ValueError('diagnosis problem does not match untried actionable priority')
     if decision['target_shot']!=number:raise ValueError('diagnostic target mismatch')
     if decision['primitive']=='instruction_edit':validate_edit_target(decision['problem'],decision['edit'],state)
     elif decision['edit'] is not None:raise ValueError('only instruction_edit accepts edit')
@@ -257,6 +313,23 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
             review.face_pair(ref_path,face_path,pair);paths.append(pair)
     detection_items=audit_detection(source,identity,entry,reference_path=paths[0], review_config=config)
     consistency=review.audit_consistency(vlm,paths,review.identity_checklist(identity,entry['outfit']),config,label+'_identity_outfit')
+    # Use the same supplementary reviewer as delivery before selecting a repair.
+    # Otherwise a reliable detailed clothing failure first appears after the loop.
+    from storycg import review_v3
+    if review_v3.enabled(config):
+        if entry['outfit'].get('change_at_shot') is None:
+            outfit_ref=paths[0]
+        else:
+            state=load_state(root)
+            selected_paths=[root/selected_attempt(state,e['number'])['image']['path'] for e in board['shots']]
+            selected_paths[number-1]=source
+            outfit_ref=review_v3.outfit_reference(number-1,board['shots'],selected_paths,paths[0])
+        prepared=review_v3.prepare(source,outfit_ref,identity,entry,root/'cycle_artifacts'/f'{label}_v3')
+        supplementary=review_v3.audit(vlm,prepared,config,label+'_v3')
+        consistency['v3']=supplementary
+        if supplementary['status']!='pass':
+            consistency['status']='fail';consistency['error']=supplementary.get('error','v3 audit failed')
+        else:consistency.setdefault('data',{}).update(supplementary['data'])
     result={'image':image,'single':single,'consistency':consistency,'detection':detected,'face':face,'detection_items':detection_items,
             'conclusion':review.conclude([*review.result_statuses(single),*review.result_statuses(consistency),*review.result_statuses(detection_items['review'])])}
     save_json_atomic(path,result);return result
@@ -342,6 +415,41 @@ def full_review(root,config,budget):
     try:return review.review_job(root,config,client=owned)
     finally:owned.close()
 
+
+def recover_failed_diagnoses(cycle,findings=None):
+    recovered=False;findings=findings or repair_findings
+    for slot in cycle['shots'].values():
+        if slot.get('stop')=='diagnosis_rejected' and slot.get('validation_policy_revision',0)<DIAGNOSIS_POLICY_REVISION and actionable_issues(findings(slot['best_audit'])):
+            slot.setdefault('rejected_decisions',[]).append({'stop':slot['stop'],'error':slot.get('diagnosis_error')})
+            slot.pop('stop',None);slot.pop('diagnosis_error',None)
+            slot['diagnosis_validation_resume']=True;slot['validation_policy_revision']=DIAGNOSIS_POLICY_REVISION;recovered=True
+    if recovered:cycle['phase']='repairing'
+    return recovered
+
+
+def repair_schedule(cycle):
+    """Resume prepared work first, then give every eligible shot one round per pass."""
+    while True:
+        eligible=[(n,s) for n,s in cycle['shots'].items()
+            if (not cycle.get('repair_scope') or int(n) in cycle['repair_scope']['shots'])
+            and (not s.get('stop') or (s['history'] and s['history'][-1].get('status')!='completed'))]
+        if not eligible:return
+        prepared=[item for item in eligible if item[1]['history'] and item[1]['history'][-1].get('status')!='completed']
+        if prepared:current=prepared
+        else:
+            # A different repair problem on this shot still deserves its first attempt.
+            untried=[]
+            for item in eligible:
+                slot=item[1]
+                observed={problem_key(i['key']) for i in actionable_issues(repair_findings(slot['best_audit']))}
+                attempted=attempted_problems(slot)
+                if observed-attempted:untried.append(item)
+            pool=untried or eligible
+            first=min(len(s['history']) for n,s in pool)
+            current=[item for item in pool if len(item[1]['history'])==first]
+        yield from sorted(current,key=lambda item:int(item[0]))
+
+
 def run_repair_cycle(job_dir,config,client):
     root=Path(job_dir).resolve();path=root/'cycle.json'
     identity=read(root/'identity.json');board=read(root/'storyboard.json')
@@ -349,15 +457,7 @@ def run_repair_cycle(job_dir,config,client):
         'allow_obscured':config.get('allow_obscured_protagonist',False)}
     if not (root/'initial_storyboard.json').exists():save_json_atomic(root/'initial_storyboard.json',board)
     cfg=cycle['config']
-    recovered=False
-    for n,slot in cycle['shots'].items():
-        label=f'decision_{n}_{len(slot["history"])+1}_validation1.json'
-        modern=root/'cycle_artifacts'/f'decision_{n}_{len(slot["history"])+1}_constraints2.json'
-        if slot.get('stop')=='diagnosis_rejected' and modern.exists():
-            slot['validation_policy_revision']=2
-        if slot.get('stop')=='diagnosis_rejected' and slot.get('validation_policy_revision',0)<2:
-            slot.setdefault('rejected_decisions',[]).append({'stop':slot['stop'],'error':slot.get('diagnosis_error')})
-            slot.pop('stop',None);slot.pop('diagnosis_error',None);slot['diagnosis_validation_resume']=True;slot['validation_policy_revision']=2;recovered=True
+    recovered=recover_failed_diagnoses(cycle)
     if recovered:cycle['phase']='repairing';save_json_atomic(path,cycle)
     budget=Budget(root,cfg)
     client=GuardedComfy(client,budget)
@@ -393,13 +493,13 @@ def run_repair_cycle(job_dir,config,client):
                 audit=audit_candidate(root,number,a['image'],e,board,identity,config,vlm,f'initial_{number}')
                 cycle['shots'][str(number)]={'best_attempt':a['attempt_number'],'best_audit':audit,'entry':e,'history':[],'stagnant':0};persist()
         cycle['phase']='repairing';persist()
-        for number_text,slot in cycle['shots'].items():
+        for number_text,slot in repair_schedule(cycle):
             number=int(number_text)
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
                 before=slot['best_audit'];results=repair_findings(before)
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
                 if not pending:
-                    actionable=[i for i in issues(results) if i['status']=='fail' and i['key']!='audit_error']
+                    actionable=actionable_issues(results)
                     if not actionable:slot['stop']='no_actionable_fail';persist();break
                     u=usage(root);reason=stop_reason(len(slot['history']),slot['stagnant'],u['submission_attempts'],u['elapsed_seconds'],cfg=cfg) or quota(reserve_vision=7+3*len(board['shots'])+2,reserve_llm=1)
                     if u['elapsed_seconds']>=(cfg['max_minutes']-cfg.get('final_review_reserve_minutes',3))*60:reason='final_review_time_reserved'
@@ -407,7 +507,7 @@ def run_repair_cycle(job_dir,config,client):
                     try:
                         decision=diagnose(root,number,results,slot['entry'],board,identity,cycle,vlm)
                     except (ValueError, __import__('jsonschema').ValidationError) as exc:
-                        slot['stop']='diagnosis_rejected';slot['diagnosis_error']=str(exc);slot['validation_policy_revision']=2;persist();break
+                        slot['stop']='diagnosis_rejected';slot['diagnosis_error']=str(exc);slot['validation_policy_revision']=DIAGNOSIS_POLICY_REVISION;persist();break
                     cost=2 if decision['primitive']=='relayout' else 1
                     if usage(root)['elapsed_seconds']>=(cfg['max_minutes']-cfg.get('final_review_reserve_minutes',8))*60:
                         slot['stop']='final_review_time_reserved';persist();break
@@ -421,6 +521,7 @@ def run_repair_cycle(job_dir,config,client):
                     pending.update(status='completed',skipped=True,error=str(exc))
                     slot['stop']='non_subject_mask_ambiguous'
                 persist()
+                break  # Next eligible shot receives its round before this shot retries.
         if not quota(reserve_vision=3*len(board['shots'])+2):
             cycle['phase']='final_review';persist()
             fingerprint=hashlib.sha256(json.dumps([(n,slot['best_audit']['image']['sha256'],slot['entry']) for n,slot in cycle['shots'].items()],sort_keys=True).encode()).hexdigest()[:16]
@@ -471,6 +572,7 @@ def run_repair_cycle(job_dir,config,client):
 def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm):
     from storycg.repairs import repair,record_result
     decision=pending['decision'];entry=slot['entry'];candidate=copy.deepcopy(entry)
+    validate_problem(decision['problem'],repair_findings(slot['best_audit']),bool(pending.get('narrative')))
     if decision['shot'] is not None:candidate['shot']=decision['shot']
     diagnosis={k:decision[k] for k in ('diagnosis','hypothesis','changes')};diagnosis['result']={'status':'pending'}
     kwargs={'repair_id':f'cycle{pending["round"]}', 'source_attempt':pending['source_attempt']}

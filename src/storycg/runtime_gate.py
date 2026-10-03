@@ -20,7 +20,7 @@ def repair_findings(audit):
         data={k:v for k,v in review.get('data',{}).items()
               if review.get('status')=='pass' and v.get('status') in ('fail','duplicate')
               and frozen.review.load_reliability({}).get(k,{}).get('status')=='reliable'}
-        if data:results.append({'status':'pass','data':{k:{**v,'status':'fail'} for k,v in data.items()}})
+        if data:results.append({'status':'pass','data':{k:{**v,'status':'fail','reliability':'reliable'} for k,v in data.items()}})
     return results
 
 
@@ -35,14 +35,14 @@ def count_diagnosis_schema(entry):
 
 
 def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
-    count=any(i['key']=='protagonist_count' and i['status']=='fail' for i in issues(audit))
+    count='protagonist_count' in preferred_problems(audit,cycle,number,narrative=bool(narrative))
     methods=permitted_methods('protagonist_count',cycle,number)
     if count and methods==['instruction_edit'] and not narrative:
-        label=f'decision_{number}_{len(cycle["shots"][str(number)]["history"])+1}_count_schema3'
+        label=f'decision_{number}_{len(cycle["shots"][str(number)]["history"])+1}_count_schema4'
         prompt=('Reliable local detection found duplicate protagonist instances. Diagnose this observed count failure, '
             'give a causal hypothesis and use the existing remove_duplicate_protagonist instruction edit. '
             'The edit retains the protagonist matching the registered action and removes the extra instance. '
-            'Do not edit any object or invent state. '+json.dumps({'issues':issues(audit),'entry':entry},ensure_ascii=False))
+            'Do not edit any object or invent state. '+json.dumps({'issues':actionable_issues(audit),'entry':entry},ensure_ascii=False))
         result=cached_call(root,label,vlm,'cycle_llm_'+label,review.messages(prompt),count_diagnosis_schema(entry))
         if result.get('status')!='pass':raise ValueError('count diagnostic LLM failed: '+str(result.get('error')))
         Draft202012Validator(count_diagnosis_schema(entry)).validate(result['data'])
@@ -87,18 +87,20 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
 def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     from storycg.shot_contract import RULE_PROMPT
     cfg=copy.deepcopy(cycle['config']);cfg['problem_methods'].pop('props',None);slot=cycle['shots'][str(number)]
-    state={'identity':identity,'entry':entry,'props':board['props']}
+    state=diagnosis_state(identity,entry,board['props'])
     audit=[person_findings(r) for r in audit]
-    problems={problem_key(i['key']) for i in issues(audit) if i['status']=='fail'}
-    if any(i['key']=='signature_features' and i['status']=='fail' for i in issues(audit)):problems.add('accessories')
-    if narrative:problems.add('narrative')
-    problems=sorted(problems & cfg['problem_methods'].keys())
+    problems=preferred_problems(audit,cycle,number,narrative=bool(narrative))
     if not problems:raise ValueError('no mapped actionable FAIL item')
     schema=diagnosis_schema(cfg,state=state,problems=problems)
-    content={'issues':issues(audit),'state':state,
+    choices={key:edit_choices(key,state) for key in problems}
+    content={'issues':actionable_issues(audit),'state':state,
         'allowed_methods':{key:permitted_methods(key,cycle,number) for key in problems},
-        'exact_edit_descriptions':{k:v for k,v in state_descriptions(state).items() if not k.startswith(('props.','entry.shot.key_props.'))},
-        'previous_repairs':slot['history']}
+        'exact_edit_descriptions':{edit['target']:edit['description'] for values in choices.values() for edit in values},
+        'allowed_edits':choices,
+        'previous_repairs':[{'primitive':h['decision']['primitive'],'diagnosis':h['decision']['diagnosis'],
+            'hypothesis':h['decision']['hypothesis'],'changes':h['decision']['changes'],'edit':h['decision'].get('edit'),
+            'source_attempt':h['source_attempt'],'result':{k:h.get('result',{}).get(k) for k in
+                ('improved','reliable_fails_before','reliable_fails_after','conclusion')}} for h in slot['history']]}
     if narrative:content.update(blind_comparison=narrative,storyboard=board)
     prompt=('Interpret actual FAIL findings. Give a diagnosis, causal hypothesis and corrective change. '
         'Choose ONLY allowed_methods for the observed problem; target_shot must equal '+str(number)+'. '
@@ -112,7 +114,7 @@ def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrati
             'The script derives action, description and shot.tags from pose/expression; do not return these derived fields.',
             'For relayout return action and description equal to pose and tags containing pose and expression.')+
         json.dumps(content,ensure_ascii=False))
-    label=f'decision_{number}_{len(slot["history"])+1}'+('_narrative' if narrative else '')+'_contract4'
+    label=f'decision_{number}_{len(slot["history"])+1}'+('_narrative' if narrative else '')+'_contract6'
     feedback=''
     for revision in range(cfg.get('diagnosis_validation_retries',1)+1):
         name=label if revision==0 else label+f'_validation{revision}'
@@ -166,15 +168,7 @@ def run_repair_cycle(job_dir,config,client):
     if not (root/'initial_storyboard.json').exists():save_json_atomic(root/'initial_storyboard.json',board)
     cfg=cycle['config']
     cfg['problem_methods'].pop('props',None)
-    recovered=False
-    for n,slot in cycle['shots'].items():
-        label=f'decision_{n}_{len(slot["history"])+1}_validation1.json'
-        modern=root/'cycle_artifacts'/f'decision_{n}_{len(slot["history"])+1}_constraints2.json'
-        if slot.get('stop')=='diagnosis_rejected' and modern.exists():
-            slot['validation_policy_revision']=2
-        if slot.get('stop')=='diagnosis_rejected' and slot.get('validation_policy_revision',0)<2:
-            slot.setdefault('rejected_decisions',[]).append({'stop':slot['stop'],'error':slot.get('diagnosis_error')})
-            slot.pop('stop',None);slot.pop('diagnosis_error',None);slot['diagnosis_validation_resume']=True;slot['validation_policy_revision']=2;recovered=True
+    recovered=recover_failed_diagnoses(cycle,repair_findings)
     if recovered:cycle['phase']='repairing';save_json_atomic(path,cycle)
     budget=Budget(root,cfg)
     client=GuardedComfy(client,budget)
@@ -210,7 +204,7 @@ def run_repair_cycle(job_dir,config,client):
                 audit=audit_candidate(root,number,a['image'],e,board,identity,config,vlm,f'initial_{number}')
                 cycle['shots'][str(number)]={'best_attempt':a['attempt_number'],'best_audit':audit,'entry':e,'history':[],'stagnant':0};persist()
         cycle['phase']='repairing';persist()
-        for number_text,slot in cycle['shots'].items():
+        for number_text,slot in repair_schedule(cycle):
             number=int(number_text)
             if cycle.get('repair_scope') and number not in cycle['repair_scope']['shots']:continue
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
@@ -220,7 +214,7 @@ def run_repair_cycle(job_dir,config,client):
                     pending.update(status='completed',skipped=True,error='D24 pending prop repair disabled before submission')
                     slot['stop']='v1_prop_repair_disabled';persist();break
                 if not pending:
-                    actionable=[i for i in issues(results) if i['status']=='fail' and i['key']!='audit_error']
+                    actionable=actionable_issues(results)
                     if not actionable:slot['stop']='no_actionable_fail';persist();break
                     u=usage(root);reason=stop_reason(len(slot['history']),slot['stagnant'],u['submission_attempts'],u['elapsed_seconds'],cfg=cfg) or quota(reserve_vision=7+3*len(board['shots'])+2,reserve_llm=1)
                     if u['elapsed_seconds']>=(cfg['max_minutes']-cfg.get('final_review_reserve_minutes',3))*60:reason='final_review_time_reserved'
@@ -228,7 +222,7 @@ def run_repair_cycle(job_dir,config,client):
                     try:
                         decision=diagnose(root,number,results,slot['entry'],board,identity,cycle,vlm)
                     except (ValueError, __import__('jsonschema').ValidationError) as exc:
-                        slot['stop']='diagnosis_rejected';slot['diagnosis_error']=str(exc);slot['validation_policy_revision']=2;persist();break
+                        slot['stop']='diagnosis_rejected';slot['diagnosis_error']=str(exc);slot['validation_policy_revision']=DIAGNOSIS_POLICY_REVISION;persist();break
                     cost=2 if decision['primitive']=='relayout' else 1
                     if usage(root)['elapsed_seconds']>=(cfg['max_minutes']-cfg.get('final_review_reserve_minutes',8))*60:
                         slot['stop']='final_review_time_reserved';persist();break
@@ -242,6 +236,7 @@ def run_repair_cycle(job_dir,config,client):
                     pending.update(status='completed',skipped=True,error=str(exc))
                     slot['stop']='non_subject_mask_ambiguous'
                 persist()
+                break  # Resume pending work, then share remaining rounds across shots.
         if not quota(reserve_vision=3*len(board['shots'])+2):
             cycle['phase']='final_review';persist()
             fingerprint=hashlib.sha256(json.dumps([(n,slot['best_audit']['image']['sha256'],slot['entry']) for n,slot in cycle['shots'].items()],sort_keys=True).encode()).hexdigest()[:16]
@@ -298,6 +293,7 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
         raise ValueError('D24 props cannot be repair targets')
     if decision.get('shot') is not None and decision['shot'].get('key_props')!=entry['shot']['key_props']:
         raise ValueError('D24 relayout cannot target props')
+    validate_problem(decision['problem'],repair_findings(slot['best_audit']),bool(pending.get('narrative')))
     candidate=copy.deepcopy(entry)
     if decision['shot'] is not None:candidate['shot']=decision['shot']
     diagnosis={k:decision[k] for k in ('diagnosis','hypothesis','changes')};diagnosis['result']={'status':'pending'}
