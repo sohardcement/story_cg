@@ -2,7 +2,7 @@
   "calibration": "uncalibrated",
   "blind_long_edge": 768,
   "count": {
-    "face_confidence": 0.6,
+    "face_confidence": 0.45,
     "relative_face_area": 0.3,
     "person_confidence": 0.5,
     "person_area": 0.08

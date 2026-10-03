@@ -18,6 +18,11 @@ CONFIG_PATH=Path(__file__).resolve().parents[2]/'config/cycle.json'
 # Calibration keys stay distinct; repair routing groups findings by the state to fix.
 REPAIR_PROBLEM_ALIASES={'outfit_detail_vs_portrait':'outfit'}
 DIAGNOSIS_POLICY_REVISION=4
+# D29: compare reliable failures lexicographically, never by weighted sums.
+REPAIR_FAILURE_TIER_NAMES=('protagonist_count','identity','outfit','action_composition_framing_scene_narrative')
+REPAIR_IDENTITY_ITEMS=frozenset(('character','hair_color','hairstyle','eye_color',
+    'signature_features','hair_ornaments','accessories','eye_color_sampled',
+    'accessory_color_sampled','accessories_zoom','hair_ornaments_zoom'))
 
 
 def settings():return json.loads(CONFIG_PATH.read_text())
@@ -28,12 +33,28 @@ def reliable_failures(results):
                for result in results for item in result.get('data',{}).values() if isinstance(item,dict))
 
 
+def failure_tier(key):
+    if key=='protagonist_count':return 0
+    if key in REPAIR_IDENTITY_ITEMS:return 1
+    if review.reliability_key(key)=='outfit' or key=='outfit_detail_vs_portrait':return 2
+    return 3
+
+
+def reliable_failure_vector(results):
+    counts=[0]*len(REPAIR_FAILURE_TIER_NAMES)
+    for result in results:
+        for key,item in result.get('data',{}).items():
+            if isinstance(item,dict) and item.get('status')=='fail' and item.get('reliability')=='reliable':
+                counts[failure_tier(key)]+=1
+    return tuple(counts)
+
+
 def improved(before,after):
     if not after or any(r.get('status')!='pass' or not r.get('data') for r in after):return False
     before_keys={(i,k) for i,r in enumerate(before) for k in r.get('data',{})}
     after_keys={(i,k) for i,r in enumerate(after) for k in r.get('data',{})}
     if not before_keys.issubset(after_keys):return False
-    return reliable_failures(after)<reliable_failures(before)
+    return reliable_failure_vector(after)<reliable_failure_vector(before)
 
 
 def repair_findings(audit):
@@ -48,6 +69,11 @@ def repair_findings(audit):
                   'reason':'local major face/person count; uncalibrated'}
         results.append({'status':'pass','data':{'protagonist_count':observed}})
     return results
+
+
+def comparison_findings(audit):
+    """Include calibrated local counts, including passes, in candidate selection."""
+    return repair_findings(audit)
 
 
 def detection_improved(before,after):
@@ -149,10 +175,13 @@ def validate_problem(problem,audit,narrative=False):
 
 def candidate_improved(before,after):
     if not improved(before,after):return False
+    old_vector=reliable_failure_vector(before);new_vector=reliable_failure_vector(after)
+    decisive=next(i for i,(old,new) in enumerate(zip(old_vector,new_vector)) if old!=new)
     for old,new in zip(before,after):
         for k,item in new.get('data',{}).items():
-            if item.get('reliability')=='reliable' and item.get('status')=='not_visible' and old.get('data',{}).get(k,{}).get('status')!='not_visible':return False
-            if problem_key(k) in ('hair_color','outfit') and item.get('reliability')=='reliable' and item.get('status')=='fail' and old.get('data',{}).get(k,{}).get('status')!='fail':return False
+            # Do not call hiding the decisive or a higher tier a repair. Lower
+            # tier abstentions, like lower tier failures, cannot veto a priority fix.
+            if isinstance(item,dict) and item.get('reliability')=='reliable' and item.get('status')=='not_visible' and failure_tier(k)<=decisive and old.get('data',{}).get(k,{}).get('status')!='not_visible':return False
     return True
 
 
@@ -595,10 +624,8 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     label=f'repair_{number}_{pending["round"]}'
     audited=audit_candidate(root,number,rec['output'],candidate,board,identity,config,vlm,label)
     adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
-    before=[slot['best_audit']['single'],slot['best_audit']['consistency'],*before_neighbors];after=[audited['single'],audited['consistency'],*adjacent]
-    visual_better=candidate_improved(before,after)
-    count_better=decision['problem']=='protagonist_count' and detection_improved(slot['best_audit'],audited)
-    better=(visual_better or count_better) and rec.get("boundary_check",{"passed":True})["passed"]
+    before=[*comparison_findings(slot['best_audit']),*before_neighbors];after=[*comparison_findings(audited),*adjacent]
+    better=candidate_improved(before,after) and rec.get("boundary_check",{"passed":True})["passed"]
     if decision['problem']=='protagonist_count':
         recheck=audited.get('detection_items',{}).get('protagonist_count',{})
         better=better and recheck.get('status')=='ok'
@@ -607,7 +634,10 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     # Reliability of adjacent scene checks is unverified; retain all observations, never call them improvement.
     pending.update(status='completed',output=rec['output'],audit=audited,neighbors=adjacent,before_neighbors=before_neighbors,
         result={'reliable_fails_before':reliable_failures(before),'reliable_fails_after':reliable_failures(after),
-                'improved':better,'improvement_basis':'uncalibrated_detection' if count_better else 'reliable_visual_metric','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
+                'reliable_failure_vector_before':list(reliable_failure_vector(before)),
+                'reliable_failure_vector_after':list(reliable_failure_vector(after)),
+                'failure_tiers':list(REPAIR_FAILURE_TIER_NAMES),
+                'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
     key=f'shot{number:02d}_cycle{pending["round"]}'
     record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
     if better:
