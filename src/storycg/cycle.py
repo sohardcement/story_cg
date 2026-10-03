@@ -285,6 +285,8 @@ def deliver(root,cycle,config,client):
     save_json_atomic(root/'storyboard.json',selected_board)
     manifest=write_story_manifest(root,config,client);state=load_state(root)
     manifest['images']=[];lines=['# 结果说明','']
+    notes=review.reliability_note_lines(cycle.get('final_review'),config)
+    if notes:lines.extend(['## 审核项说明','',*notes,''])
     human_path=root/'human_observations.json'
     human=read(human_path) if human_path.exists() else {}
     portrait_path=root/'portrait.json'

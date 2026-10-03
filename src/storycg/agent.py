@@ -270,6 +270,12 @@ def deliver(root):
         render_delivery(root, final_review, gate)
     else:
         result.write_text(existing)
+    from storycg.review import reliability_note_lines
+    notes = reliability_note_lines(final_review, read(root, 'job.json').get('generation_config'))
+    existing = result.read_text()
+    missing = [note for note in notes if note not in existing.splitlines()]
+    if missing:
+        result.write_text(existing + '\n## 审核项说明\n\n' + '\n'.join(missing) + '\n')
 
 
 def status(root):

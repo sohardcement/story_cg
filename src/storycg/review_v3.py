@@ -50,6 +50,12 @@ def extra_status(data, reflection):
     return 'duplicate' if 'duplicate' in statuses else 'not_visible' if 'not_visible' in statuses else 'ok'
 
 
+def _iou(a, b):
+    intersection=max(0,min(a[2],b[2])-max(a[0],b[0]))*max(0,min(a[3],b[3])-max(a[1],b[1]))
+    union=(a[2]-a[0])*(a[3]-a[1])+(b[2]-b[0])*(b[3]-b[1])-intersection
+    return intersection/union if union>0 else 0
+
+
 def extra_candidates(result, shot):
     faces,persons=result['faces'],result['persons']
     counts=detection_review.protagonist_count(faces,persons,shot)
@@ -62,7 +68,8 @@ def extra_candidates(result, shot):
                     max(eligible,key=lambda i:persons[i]['area_ratio'],default=None))
     candidates=[]
     for i in eligible:
-        if i==primary_person:continue
+        if i==primary_person or i in containing:continue
+        if primary_person is not None and _iou(persons[i]['bbox'],persons[primary_person]['bbox'])>=.5:continue
         candidates.append({'kind':'person','index':i,**{k:persons[i][k] for k in ('bbox','confidence','area_ratio')},
                            'below_count_threshold':i not in counts['major_person_indices']})
     for i,face in enumerate(faces):
@@ -150,13 +157,15 @@ def normalize(raw, prepared, config):
     result=copy.deepcopy(raw)
     if raw['status']!='pass':return result
     data=raw['data'];reflection=prepared['reflection'];candidates=data['candidates']
-    # Script validates duplicate evidence; ambiguous identity remains unconfirmed.
+    # Derive identity evidence without using the model's candidate-level verdict.
     candidates=copy.deepcopy(candidates)
     for item in candidates.values():
-        if item['status']=='duplicate' and (item['hair_color']['status']!='ok' or
-                item['hairstyle']['status']!='ok' or item['eye_color']['status']=='mismatch'):
+        hair=item['hair_color']['status'];hairstyle=item['hairstyle']['status'];eyes=item['eye_color']['status']
+        if hair=='ok' and hairstyle=='ok' and eyes!='mismatch' and not (reflection and item['is_reflection']):
+            item['status']='duplicate'
+        elif 'mismatch' not in (hair,hairstyle,eyes) and 'not_visible' in (hair,hairstyle):
             item['status']='not_visible'
-            item['reason']+='; duplicate lacks required matching hair evidence or has conflicting eyes'
+        else:item['status']='ok'
     mapping={'ok':'pass','duplicate':'fail','mismatch':'fail','not_visible':'not_visible'}
     verdicts={'extra_protagonist':extra_status(candidates,reflection),
               'outfit_detail_vs_portrait':combine(i['status'] for i in data['outfit_facets'].values()),

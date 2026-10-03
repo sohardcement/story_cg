@@ -365,30 +365,62 @@
     },
     "extra_protagonist": {
       "status": "unreliable",
-      "error_samples": 5,
-      "ok_samples": 7,
+      "error_samples": 4,
+      "ok_samples": 3,
       "not_visible_samples": 0,
       "counts": {
         "error": {
-          "pass": 8,
-          "fail": 2
+          "not_visible": 2,
+          "fail": 6
         },
         "ok": {
-          "pass": 14
+          "pass": 4,
+          "fail": 2
         },
         "not_visible": {}
       },
-      "fail_detection_rate": 0.2,
-      "false_positive_rate": 0.0,
-      "invisible_total": 0,
-      "invisible_fail": 0,
-      "invisible_pass": 0,
-      "not_visible_fail_rate": null,
-      "not_visible_pass_rate": null,
+      "fail_detection_rate": 0.75,
+      "false_positive_rate": 0.3333333333333333,
+      "error_runs": 8,
+      "ok_runs": 6,
+      "excluded_runs": 0,
+      "coverage_complete": true,
       "unstable_pairs": 0,
-      "total_pairs": 12,
+      "total_pairs": 7,
       "unstable_rate": 0.0,
-      "deterministic": false
+      "deterministic": false,
+      "calibration_version": "3.1",
+      "calibration_results": "calibration/v3.1/results.json",
+      "reviewer_freeze": "calibration/v3.1/reviewer_freeze.json",
+      "system_level": {
+        "status": "unreliable",
+        "error_samples": 7,
+        "ok_samples": 4,
+        "not_visible_samples": 0,
+        "counts": {
+          "error": {
+            "not_visible": 2,
+            "fail": 6,
+            "pass": 6
+          },
+          "ok": {
+            "pass": 6,
+            "fail": 2
+          },
+          "not_visible": {}
+        },
+        "fail_detection_rate": 0.42857142857142855,
+        "false_positive_rate": 0.25,
+        "error_runs": 14,
+        "ok_runs": 8,
+        "excluded_runs": 0,
+        "coverage_complete": true,
+        "unstable_pairs": 0,
+        "total_pairs": 11,
+        "unstable_rate": 0.0,
+        "deterministic": false
+      },
+      "note": "可靠性状态按检测器已给出候选的样本判定；系统层检出率 42.86%；检测器看不到的小号人物仍会漏。"
     },
     "outfit_detail_vs_portrait": {
       "status": "reliable",
