@@ -334,11 +334,26 @@ def load_reliability(config):
 
 def annotate_reliability(result, items):
     for key, item in result.get('data', {}).items():
-        status = items.get(key, items.get(reliability_key(key), {})).get('status', 'unverified')
+        calibrated = items.get(key, items.get(reliability_key(key), {}))
+        status = calibrated.get('status', 'unverified')
         item['reliability'] = status
         item['verified'] = status == 'reliable' and item.get('status') == 'pass'
-        item['reliability_note'] = '' if status == 'reliable' else '该项未经可靠审核'
+        note = calibrated.get('note', '')
+        notes = [] if status == 'reliable' else ['该项未经可靠审核']
+        if isinstance(note, str) and note.strip():
+            notes.append(note.strip())
+        item['reliability_note'] = '；'.join(notes)
     return result
+
+
+def reliability_note_lines(report=None, config=None):
+    """Render configured notes without inventing grades or calibration rates."""
+    items = dict(load_reliability(config or {}))
+    for key, item in (report or {}).get('reliability', {}).items():
+        if isinstance(item.get('note'), str) and item['note'].strip():
+            items[key] = item
+    return [f'- {key}: {item["note"].strip()}' for key, item in items.items()
+            if isinstance(item.get('note'), str) and item['note'].strip()]
 
 
 def audit_single(vlm, path, entry, props, config, purpose):
@@ -571,7 +586,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                        'review_call_seconds': round(vlm.call_seconds, 3),
                        'review_elapsed_seconds': round(time.monotonic() - started, 3)}
     save_json_atomic(job_dir / 'review.json', report)
-    write_review_md(job_dir, report)
+    write_review_md(job_dir, report, config)
     record = {'session_id': vlm.session_id, 'at': datetime.now(timezone.utc).isoformat(),
               'review_file': 'review.json', 'log_file': 'review_log.jsonl',
               'conclusion': report['conclusion'], 'layer_conclusions': report['layer_conclusions'],
@@ -592,10 +607,13 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
     return report
 
 
-def write_review_md(job_dir, report):
+def write_review_md(job_dir, report, config=None):
     lines = ['# 三层审核', '', f"结论：**{report['conclusion']}**", '', report['reference_note'], '',
              '规则：任何 fail、未知、缺项、超时或解析失败均未通过；无 fail 且有 minor 为有瑕疵但可选；全 pass 为通过。', '',
              '## 各层结论', '', *[f'- {key}: {value}' for key, value in report['layer_conclusions'].items()]]
+    notes = reliability_note_lines(report, config)
+    if notes:
+        lines.extend(['', '## 审核项说明', '', *notes])
     for layer in ['single', 'consistency']:
         lines.extend(['', f'## {layer}', ''])
         for result in report[layer]:
