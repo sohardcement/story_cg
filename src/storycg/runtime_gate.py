@@ -317,10 +317,8 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     label=f'repair_{number}_{pending["round"]}'
     audited=audit_candidate(root,number,rec['output'],candidate,board,identity,config,vlm,label)
     adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
-    before=[slot['best_audit']['single'],slot['best_audit']['consistency'],*before_neighbors];after=[audited['single'],audited['consistency'],*adjacent]
-    visual_better=candidate_improved(before,after)
-    count_better=decision['problem']=='protagonist_count' and detection_improved(slot['best_audit'],audited)
-    better=(visual_better or count_better) and rec.get("boundary_check",{"passed":True})["passed"]
+    before=[*comparison_findings(slot['best_audit']),*before_neighbors];after=[*comparison_findings(audited),*adjacent]
+    better=candidate_improved(before,after) and rec.get("boundary_check",{"passed":True})["passed"]
     if decision['problem']=='protagonist_count':
         recheck=audited.get('detection_items',{}).get('protagonist_count',{})
         better=better and recheck.get('status')=='ok'
@@ -329,7 +327,10 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     # Reliability of adjacent scene checks is unverified; retain all observations, never call them improvement.
     pending.update(status='completed',output=rec['output'],audit=audited,neighbors=adjacent,before_neighbors=before_neighbors,
         result={'reliable_fails_before':reliable_failures(before),'reliable_fails_after':reliable_failures(after),
-                'improved':better,'improvement_basis':'uncalibrated_detection' if count_better else 'reliable_visual_metric','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
+                'reliable_failure_vector_before':list(reliable_failure_vector(before)),
+                'reliable_failure_vector_after':list(reliable_failure_vector(after)),
+                'failure_tiers':list(REPAIR_FAILURE_TIER_NAMES),
+                'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
     key=f'shot{number:02d}_cycle{pending["round"]}'
     record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
     if better:
@@ -342,6 +343,14 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
 
 def candidate_improved(before,after):
     return frozen.candidate_improved([person_findings(r) for r in before], [person_findings(r) for r in after])
+
+
+def comparison_findings(audit):
+    return [person_findings(r) for r in frozen.comparison_findings(audit)]
+
+
+def reliable_failure_vector(results):
+    return frozen.reliable_failure_vector([person_findings(r) for r in results])
 
 
 def reliable_failures(results):
