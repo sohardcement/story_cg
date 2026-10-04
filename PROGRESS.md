@@ -9,7 +9,8 @@
 |---|---|---|---|
 | CAP-00 冒烟：确认模型与推理强度 | **通过**：会话记录 `~/.codex/sessions/2026/10/04/rollout-…-01a104bc….jsonl` 显示 `model=gpt-6.1-sol`、`effort=max`；ComfyUI 队列空，视觉服务 200 | 01a104bc-e170-7e90-b3f6-2370b853368d | `probe/smoke.json`、`reports/CAP-00.md` |
 | CAP-01 写 40 条提示词（不出图） | **通过**：直接调用 v1 的 assemble_prompt 和 TagRegistry，没有改代码；IPAdapter 参考是 v1 现行的面部裁切，和 v1 manifest 同名同内容。监工审 tag 后要求改两处：第 12 项删掉 left_hand/right_hand（Danbooru 使用数 0），第 17 项景别改为 close-up, portrait（v1 近景映射强制加 upper_body，写不对"只拍脸"）。第 11 项"单手"、第 12 项"左右手"无法用 tag 表达，判图时不考核 | 01a104c0-3c1a-7c42-83cb-c0d15876a096 | `probe/prompts.md`、`reports/CAP-01.md` |
-| CAP-02 首轮出图 80 张 | 进行中 | — | `orders/CAP-02.md` |
+| CAP-02 首轮出图 80 张 | **通过**：80 张各提交一次（监工核对 /history：80 个 probe/ 前缀各 1 次，80 个 prompt_id 不重复，本地 sha256 全部吻合），出图失败 0，没有重试；监工的两处 tag 修改已生效。单张中位数 12 秒，共 27 分钟。中途 Codex 的 PNG 元数据校验写得太严，前 58 张都标成 artifact_error；Codex 修正校验后按 prompt_id 从服务器取回原图，没有重新出图 | 01a104dd-450a-7823-b826-23ea96ace115 | `probe/runs.jsonl`、`probe/sheets/`、`reports/CAP-02.md` |
+| AUD-01 v1 代码审计 | 进行中 | — | `orders/AUD-01.md` |
 
 ## 第二轮进展（2026-10-02 更新，按用户 7 项决定 D9–D17 执行）
 
