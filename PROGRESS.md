@@ -1,5 +1,14 @@
 # PROGRESS
 
+## 能力摸底阶段（TASK-CAP.md，2026-10-04 开始）
+
+- 规则：以 `TASK-CAP.md` 为准。Codex 每次调用都指定 `-m gpt-6.1-sol -c model_reasoning_effort="max"`（已写入 `verify/dispatch.sh`），由 CAP-00 冒烟工单从 `~/.codex/sessions/` 的会话记录确认实际生效。新文件只放 `probe/`、`audit/`；本阶段出图上限 120 张，单独计数。
+- 冻结：道具相关工作全部停止。**两段式出图对照实验结项**，结论"不接入默认流程"（报告 `/work/workspace/twostage-exp/REPORT.md`，对比页 https://claude.ai/artifact/6ExSVEPtYBVwb1jrtMBLM8）。第二轮待决第 8–11 项暂缓，第三组待决第 12–13 项一并等 TASK v2 定稿后重新评估。已安装的 Hermes skill 不动。
+
+| 工单 | 结论 | 会话 ID | 证据 |
+|---|---|---|---|
+| CAP-00 冒烟：确认模型与推理强度 | 进行中 | — | `orders/CAP-00.md` |
+
 ## 第二轮进展（2026-10-02 更新，按用户 7 项决定 D9–D17 执行）
 
 ### 决定落实情况
