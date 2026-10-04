@@ -163,5 +163,10 @@
       "shoulders",
       "chest"
     ]
+  },
+  "supplementary_review": {
+    "extra_protagonist": false,
+    "accessories_zoom": false,
+    "outfit_detail_vs_portrait": false
   }
 }

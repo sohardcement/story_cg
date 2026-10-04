@@ -14,6 +14,7 @@ SETTINGS = {'head_expansion': .8, 'head_long_edge': 768,
             'person_head_fraction': .4}
 FACETS = ('sleeve_length', 'neckline', 'upper_length', 'skirt_or_trouser_length',
           'outer_layers', 'major_color_blocks')
+ALL_ITEMS = ('extra_protagonist', 'outfit_detail_vs_portrait', 'accessories_zoom', 'hair_ornaments_zoom')
 PROMPT = (
     'Audit only the supplied reference/current pixels and script-owned state. '
     'Images are labeled by the image index map. Enlargements contain no new detail. '
@@ -114,17 +115,19 @@ def head(source, result, output):
     record['method']='upper_person_box_without_face';return record
 
 
-def prepare(current, reference, identity, entry, directory, *, result=None, reference_result=None):
+def prepare(current, reference, identity, entry, directory, *, result=None, reference_result=None, items=None):
     directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
-    result=detect.detect_image(current) if result is None else result
-    reference_result=detect.detect_image(reference) if reference_result is None else reference_result
+    items=ALL_ITEMS if items is None else tuple(items)
+    needs_head=any(key in items for key in ('extra_protagonist','accessories_zoom','hair_ornaments_zoom'))
+    result=detect.detect_image(current) if result is None and needs_head else result
+    reference_result=detect.detect_image(reference) if reference_result is None and needs_head else reference_result
     paths=[Path(reference),Path(current)];index_map={'reference_full':0,'current_full':1}
     crops={}
-    for label,source,detection in [('reference_head',reference,reference_result),('current_head',current,result)]:
+    for label,source,detection in ([('reference_head',reference,reference_result),('current_head',current,result)] if needs_head else []):
         record=head(source,detection,directory/(label+'.png'))
         crops[label]=record
         if record:index_map[label]=len(paths);paths.append(Path(record['path']))
-    candidates=extra_candidates(result,entry.get('shot',entry))
+    candidates=extra_candidates(result,entry.get('shot',entry)) if 'extra_protagonist' in items else []
     for i,candidate in enumerate(candidates):
         key=f'candidate_{i:03d}'
         record=crop(current,candidate['bbox'],directory/(key+'.png'),
@@ -132,7 +135,7 @@ def prepare(current, reference, identity, entry, directory, *, result=None, refe
                     SETTINGS['candidate_long_edge'])
         crops[key]=record;index_map[key]=len(paths);paths.append(Path(record['path']))
         candidate['key']=key
-    return {'paths':paths,'index_map':index_map,'crops':crops,'candidates':candidates,
+    return {'paths':paths,'index_map':index_map,'crops':crops,'candidates':candidates,'items':items,
             'reflection':detection_review.declares_reflection(entry.get('shot',entry)),
             'checks':review.identity_checklist(identity,entry['outfit']),
             'locked_tags':identity.get('locked_tags',[]),'outfit':entry['outfit']}
@@ -148,15 +151,19 @@ def schema(prepared):
     candidate=review.object_schema({'status':{'enum':['ok','duplicate','not_visible']},
               'is_reflection':{'type':'boolean'},'reason':review.TEXT,
               **{key:grade for key in ('hair_color','hairstyle','eye_color')}})
-    return review.object_schema({'outfit_facets':review.object_schema({key:grade for key in FACETS}),
+    properties={'outfit_facets':review.object_schema({key:grade for key in FACETS}),
           'accessories':grade,'hair_ornaments':grade,
-          'candidates':review.object_schema({c['key']:candidate for c in prepared['candidates']})})
+          'candidates':review.object_schema({c['key']:candidate for c in prepared['candidates']})}
+    fields={'outfit_facets':'outfit_detail_vs_portrait','accessories':'accessories_zoom',
+            'hair_ornaments':'hair_ornaments_zoom','candidates':'extra_protagonist'}
+    return review.object_schema({key:value for key,value in properties.items()
+        if fields[key] in prepared.get('items',ALL_ITEMS)})
 
 
 def normalize(raw, prepared, config):
     result=copy.deepcopy(raw)
     if raw['status']!='pass':return result
-    data=raw['data'];reflection=prepared['reflection'];candidates=data['candidates']
+    data=raw['data'];reflection=prepared['reflection'];candidates=data.get('candidates',{})
     # Derive identity evidence without using the model's candidate-level verdict.
     candidates=copy.deepcopy(candidates)
     for item in candidates.values():
@@ -167,10 +174,11 @@ def normalize(raw, prepared, config):
             item['status']='not_visible'
         else:item['status']='ok'
     mapping={'ok':'pass','duplicate':'fail','mismatch':'fail','not_visible':'not_visible'}
-    verdicts={'extra_protagonist':extra_status(candidates,reflection),
-              'outfit_detail_vs_portrait':combine(i['status'] for i in data['outfit_facets'].values()),
-              'accessories_zoom':data['accessories']['status'],
-              'hair_ornaments_zoom':data['hair_ornaments']['status']}
+    verdicts={}
+    if 'candidates' in data:verdicts['extra_protagonist']=extra_status(candidates,reflection)
+    if 'outfit_facets' in data:verdicts['outfit_detail_vs_portrait']=combine(i['status'] for i in data['outfit_facets'].values())
+    if 'accessories' in data:verdicts['accessories_zoom']=data['accessories']['status']
+    if 'hair_ornaments' in data:verdicts['hair_ornaments_zoom']=data['hair_ornaments']['status']
     result['raw_data']=copy.deepcopy(data)
     result['validated_candidates']=candidates
     result['data']={key:{'status':mapping[value],'observed_status':value,
@@ -181,20 +189,36 @@ def normalize(raw, prepared, config):
     # Cropping failure cannot establish an accessory match, even if the full image suggests it.
     if not all(prepared['crops'].get(k) for k in ('reference_head','current_head')):
         for key in ('accessories_zoom','hair_ornaments_zoom'):
-            result['data'][key].update(status='not_visible',observed_status='not_visible',reason='head region not detected in reference/current')
+            if key in result['data']:
+                result['data'][key].update(status='not_visible',observed_status='not_visible',reason='head region not detected in reference/current')
     return review.annotate_reliability(result,review.load_reliability(config))
 
 
 def audit(vlm, prepared, config, purpose):
     context={key:prepared[key] for key in ('index_map','candidates','reflection','checks','locked_tags','outfit')}
-    raw=vlm.call(purpose,review.messages(PROMPT+json.dumps(context,ensure_ascii=False),prepared['paths']),
+    # Keep the full original prompt when all research items are explicitly requested.
+    items=prepared.get('items',ALL_ITEMS)
+    prompt=PROMPT
+    if set(items)!=set(ALL_ITEMS):
+        outfit_start=PROMPT.index('For each clothing facet')
+        head_start=PROMPT.index('For head accessories')
+        count_start=PROMPT.index('For EVERY extra candidate')
+        prompt=PROMPT[:outfit_start]
+        if 'outfit_detail_vs_portrait' in items:prompt+=PROMPT[outfit_start:head_start]
+        if 'accessories_zoom' in items or 'hair_ornaments_zoom' in items:prompt+=PROMPT[head_start:count_start]
+        if 'extra_protagonist' in items:prompt+=PROMPT[count_start:]
+    raw=vlm.call(purpose,review.messages(prompt+json.dumps(context,ensure_ascii=False),prepared['paths']),
                  schema(prepared),prepared['paths'])
     result=normalize(raw,prepared,config)
     result['crop_evidence']=prepared['crops'];result['image_index_map']=prepared['index_map']
     return result
 
 
+def enabled_items(config):
+    switches=config.get('supplementary_review',{})
+    return tuple(key for key in ALL_ITEMS if switches.get(
+        'accessories_zoom' if key=='hair_ornaments_zoom' else key,False) is True)
+
+
 def enabled(config):
-    path=Path(config.get('review_reliability_file',detect.ROOT/'config/review_reliability.json'))
-    if 'reviewer_version' in config:return config['reviewer_version']==3
-    return path.exists() and json.loads(path.read_text()).get('version',0)>=3
+    return bool(enabled_items(config))

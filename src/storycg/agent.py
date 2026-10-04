@@ -264,7 +264,7 @@ def deliver(root):
         existing += '\n'+RELIABILITY_NOTE+'\n'
     if final_review:
         from storycg.v1_scope import render_delivery
-        render_delivery(root, final_review, gate)
+        render_delivery(root, final_review, gate, read(root, 'job.json').get('generation_config'))
     else:
         result.write_text(existing)
     from storycg.review import reliability_note_lines

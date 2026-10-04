@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageChops
+from PIL import Image
 from storycg import detect
 
 CONFIG_PATH = detect.ROOT / 'config/detection_review.json'
@@ -84,29 +84,16 @@ def _hue_distance(a,b):
     return min(abs(a-b),360-abs(a-b))
 
 
-def _in_ranges(hue, ranges):
-    return any(lo <= hue <= hi for lo,hi in ranges)
-
-
-def _sample(image, face, *, mode, identity=None, config=None):
+def _sample(image, face, *, identity=None, config=None):
     cfg = config or settings(); colors = cfg['colors']
-    if mode=='eye':
-        from storycg.eye_sampling import sample
-        return sample(image,face,colors)
     if face is None:
         return evidence('not_visible',reason='face_not_detected',hue=None,saturation=None,pixel_count=0)
     image = detect._image(image)
     x0,y0,x1,y1 = detect.expand_box(face['bbox'],image.size,0)
-    w,h = x1-x0,y1-y0
-    if mode == 'eye':
-        left,top,right,bottom = colors['eye_region']
-        roi=(int(x0+w*left),int(y0+h*top),int(x0+w*right),int(y0+h*bottom))
-        selected=np.ones((roi[3]-roi[1],roi[2]-roi[0]),dtype=bool)
-    else:
-        roi=detect.expand_box(face['bbox'],image.size,colors['accessory_expansion'])
-        selected=np.ones((roi[3]-roi[1],roi[2]-roi[0]),dtype=bool)
-        # Accessories are sampled in the ring around the face, not iris/skin.
-        selected[y0-roi[1]:y1-roi[1],x0-roi[0]:x1-roi[0]]=False
+    roi=detect.expand_box(face['bbox'],image.size,colors['accessory_expansion'])
+    selected=np.ones((roi[3]-roi[1],roi[2]-roi[0]),dtype=bool)
+    # Accessories are sampled in the ring around the face, not iris/skin.
+    selected[y0-roi[1]:y1-roi[1],x0-roi[0]:x1-roi[0]]=False
     hsv=np.array(image.crop(roi).convert('HSV'),dtype=float)
     hue=hsv[:,:,0]*360/255; sat=hsv[:,:,1]/255; val=hsv[:,:,2]/255
     selected &= (sat>=colors['min_saturation']) & (val>=colors['min_value'])
@@ -126,30 +113,11 @@ def _sample(image, face, *, mode, identity=None, config=None):
                     candidate_pixels=int(selected.sum()),roi=list(roi))
 
 
-def sample_eye_color(image, face, identity, *, reference=None, config=None):
-    cfg = config or settings(); sample=_sample(image,face,mode='eye',identity=identity,config=cfg)
-    tags=_color_tags(identity,'_eyes'); ranges=[r for tag in tags for r in cfg['colors']['hue_ranges'].get(tag,[])]
-    sample['expected_tags']=tags; sample['expected_hue_ranges']=ranges
-    ref=_sample(*reference,mode='eye',identity=identity,config=cfg) if reference else None
-    sample['reference_sample']=ref
-    if sample['status']=='not_visible':return sample
-    checks=[]
-    sample['tag_status']='ok' if ranges and _in_ranges(sample['hue'],ranges) else 'mismatch' if ranges else 'not_visible'
-    if ref and ref['status']=='sampled':
-        delta=_hue_distance(sample['hue'],ref['hue']);sample['reference_hue_delta']=delta
-        checks.append(delta<=cfg['colors']['reference_hue_tolerance']);sample['comparison_basis']='setting_reference'
-    elif ranges:
-        checks.append(_in_ranges(sample['hue'],ranges));sample['comparison_basis']='color_tag'
-    sample['status']='not_visible' if not checks else 'ok' if all(checks) else 'mismatch'
-    if not checks:sample['reason']='no supported chromatic identity tag or visible reference sample'
-    return sample
-
-
 def sample_accessory_color(image, face, *, reference=None, identity=None, config=None):
     cfg=config or settings()
     if not reference:return evidence('not_visible',reason='no setting reference',hue=None,saturation=None,pixel_count=0)
-    ref=_sample(*reference,mode='accessory',identity=identity,config=cfg)
-    sample=_sample(image,face,mode='accessory',identity=identity,config=cfg); sample['reference_sample']=ref
+    ref=_sample(*reference,identity=identity,config=cfg)
+    sample=_sample(image,face,identity=identity,config=cfg); sample['reference_sample']=ref
     if ref['status']!='sampled' or sample['status']!='sampled':
         sample['status']='not_visible';sample['reason']='reference/current color not isolated';return sample
     delta=_hue_distance(sample['hue'],ref['hue']);sample['reference_hue_delta']=delta
@@ -166,14 +134,13 @@ def audit_detection(source, identity, entry, *, reference_path=None, result=None
         ref_faces=detect.detect_faces(reference_path)
         ref_face=max(ref_faces,key=lambda f:(f['area_ratio'],f['confidence']),default=None)
         ref=(reference_path,ref_face)
-    observations = {'eye_color_sampled':sample_eye_color(source,face,identity,reference=ref,config=cfg),
-            'accessory_color_sampled':sample_accessory_color(source,face,reference=ref,identity=identity,config=cfg),
+    observations = {'accessory_color_sampled':sample_accessory_color(source,face,reference=ref,identity=identity,config=cfg),
             'protagonist_count':protagonist_count(result['faces'],result['persons'],entry.get('shot',entry),config=cfg),
             'face_status':'detected' if face else 'face_not_detected',
             'detection':detect.json_result(result)}
     from storycg.review import load_reliability
     normalized = review_detection_items(observations, load_reliability(review_config or {}))
-    for key in DETECTION_KEYS:
+    for key in ACTIVE_DETECTION_KEYS:
         grade = normalized['data'][key]
         observations[key].update({name: grade[name] for name in ('reliability', 'verified', 'reliability_note')})
         observations[key]['grade_status'] = grade['status']
@@ -219,7 +186,7 @@ def repair_mask(source, result, purpose, output_dir, *, config=None):
     result=detect.detect_image(source) if result is None else result
     size=tuple(result['size']);faces=result['faces'];persons=result['persons']
     count=protagonist_count(faces,persons,{},config=cfg)
-    ids=count['major_face_indices'];pids=count['major_person_indices']
+    ids=count['major_face_indices']
     primary=max(ids,key=lambda i:faces[i]['area_ratio'],default=None)
     provenance={'source_sha256':hashlib.sha256(Path(source).read_bytes()).hexdigest(),
                 'purpose':purpose,'primary_face_index':primary,'uncertain':False}
@@ -227,39 +194,6 @@ def repair_mask(source, result, purpose, output_dir, *, config=None):
         if primary is None:raise ValueError('face_not_detected')
         mask=detect.feather_mask(faces[primary],size)
         provenance['method']='detected_face_box'
-    elif purpose=='remove_person':
-        if count['protagonist_count']<2:raise ValueError('no duplicate detected')
-        if primary is None:
-            subject=max(pids,key=lambda i:persons[i]['area_ratio'])
-            targets=[persons[i] for i in pids if i!=subject]
-        else:
-            subject_box=faces[primary]['bbox']
-            targets=[persons[i] for i in pids if not _contains(persons[i]['bbox'],subject_box)]
-        if targets:
-            mask=Image.new('L',size,0)
-            for target in targets:mask=ImageChops.lighter(mask,detect.feather_mask(target,size))
-            provenance['method']='non_subject_person_segmentation'
-        else:
-            # A merged segmentation has no identity ownership. Face-seeded spatial
-            # partition is an explicitly uncertain experiment, never a calibrated mask.
-            containing=[p for p in persons if p.get('mask') is not None and primary is not None
-                        and _contains(p['bbox'],faces[primary]['bbox'])]
-            if not containing or len(ids)<2:raise ValueError('non_subject_mask_not_localized')
-            yy,xx=np.indices((size[1],size[0]));dist=[]
-            for i in ids:
-                b=faces[i]['bbox'];cx=(b[0]+b[2])/2;cy=(b[1]+b[3])/2
-                dist.append((xx-cx)**2+cfg['mask']['partition_vertical_weight']*(yy-cy)**2)
-            owners=np.argmin(np.stack(dist),axis=0);active=owners!=ids.index(primary)
-            merged=max(containing,key=lambda p:p['area_ratio'])
-            binary=(np.array(merged['mask'])>0)&active
-            raw=Image.fromarray(binary.astype('uint8')*255)
-            bounds=raw.getbbox()
-            if not bounds:raise ValueError('non_subject_mask_not_localized')
-            mask=detect.feather_mask({'bbox':bounds,'mask':raw},size,expansion=0)
-            # Preserve primary partition even after feathering.
-            mask=ImageChops.multiply(mask,Image.fromarray(active.astype('uint8')*255))
-            provenance.update(method='face_partition_of_merged_segmentation',uncertain=True,
-                              limitation='spatial ownership only; merged mask may contain background or subject pixels')
     else:raise ValueError('unsupported detector mask purpose')
     bounds=mask.getbbox()
     if not bounds:raise ValueError('empty detection mask')
@@ -272,7 +206,9 @@ def repair_mask(source, result, purpose, output_dir, *, config=None):
     return record
 
 
+# Keep the frozen calibration vocabulary for reading historical observations.
 DETECTION_KEYS = ('eye_color_sampled', 'accessory_color_sampled', 'protagonist_count')
+ACTIVE_DETECTION_KEYS = ('accessory_color_sampled', 'protagonist_count')
 
 
 def review_detection_items(observations, reliability):
@@ -281,7 +217,9 @@ def review_detection_items(observations, reliability):
     mapping = {'ok': 'pass', 'mismatch': 'fail', 'duplicate': 'fail',
                'not_visible': 'not_visible', 'none_visible': 'not_visible'}
     data = {}
-    for key in DETECTION_KEYS:
+    # Historical sampled-eye observations remain readable; new audits never produce them.
+    keys = (key for key in DETECTION_KEYS if key in observations or key in ACTIVE_DETECTION_KEYS)
+    for key in keys:
         observed = observations.get(key, {})
         data[key] = {'status': mapping.get(observed.get('status'), 'fail'),
                      'reason': observed.get('reason', 'local detection: ' + str(observed.get('status'))),

@@ -63,6 +63,5 @@
   "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM.",
   "final_review_reserve_minutes": 8,
   "candidate_identity_regression": "reject new reliable hair_color/outfit fail even if total decreases",
-  "diagnosis_validation_retries": 1,
-  "inpaint_scope": "D10: detector face mask and non-subject person mask only; all other methods retain D6"
+  "diagnosis_validation_retries": 1
 }

@@ -56,7 +56,7 @@ def delivery_scope_notes(root):
     return ['道具未经审核。'] + ([note] if note else [])
 
 
-def render_delivery(root, report, gate):
+def render_delivery(root, report, gate, config=None):
     """Replace the explanation from saved evidence, avoiding stale failure headings."""
     root=Path(root);context=scope_context(root)
     lines=['# 结果说明','', '整组结论（v1 人物范围）：'+gate['conclusion'],
@@ -77,6 +77,8 @@ def render_delivery(root, report, gate):
     for key,item in report.get('narrative_compare',{}).get('data',{}).items():
         if item.get('status')!='pass':lines.append(f'- 盲审 {key}: {item.get("status")} — {item.get("reason","")}（原始记录）')
     lines.extend('- '+n for n in gate['notes'])
+    from storycg.review import reliability_note_lines
+    lines.extend(reliability_note_lines(report,config))
     lines.append('- 远处小人物可能漏检；配饰/发型等未可靠校准的项需要看图确认。')
     for name in ('portrait.json','cycle.json'):
         path=root/name

@@ -77,6 +77,9 @@ def comparison_findings(audit):
 
 
 def allowed_decision(decision, cfg=None):
+    from storycg.repairs import REPAIR_PRIMITIVES
+    if decision.get('primitive') not in REPAIR_PRIMITIVES:
+        raise ValueError('unsupported repair method: '+str(decision.get('primitive')))
     cfg=cfg or settings()
     if decision.get('primitive') not in cfg['problem_methods'].get(decision.get('problem'),[]):
         raise ValueError('primitive not allowed by problem mapping')
@@ -173,11 +176,6 @@ def validate_edit_target(problem,edit,state):
     grounded_instruction(edit,state)
     target=edit['target'];description=edit['description']
     if problem=='protagonist_count' and edit['operation']=='remove_duplicate_protagonist' and target=='entry.shot.action':return
-    if problem=='props':
-        if target.startswith('props.'):
-            p=state['props'][int(target.split('.')[1])]
-            if p['id'] in {r['prop_id'] for r in state['entry']['shot']['key_props']}:return
-        if target.startswith('entry.shot.key_props.'):return
     if problem=='outfit' and target.startswith(('entry.outfit.tags.','identity.default_outfit_tags.')):return
     checks=review.identity_checklist(state['identity'],state['entry']['outfit'])
     keys=['accessories','hair_ornaments'] if problem=='accessories' else [problem]
@@ -193,7 +191,7 @@ def diagnosis_state(identity,entry,props):
     locked={k:identity[k] for k in ('identity_block','outfit_block','locked_tags') if k in identity}
     for key in ('appearance_tags','default_outfit_tags'):
         locked[key]=[{k:v for k,v in item.items() if k in ('tag','category')} for item in identity.get(key,[])]
-    return {'identity':locked,'entry':entry,'props':props}
+    return {'identity':locked,'entry':entry}
 
 
 def edit_choices(problem,state):
@@ -208,6 +206,7 @@ def edit_choices(problem,state):
 
 
 def diagnosis_schema(cfg,*,state=None,problems=None):
+    from storycg.repairs import REPAIR_PRIMITIVES
     edit_schema=copy.deepcopy(EDIT_SCHEMA)
     if state is not None:
         descriptions=state_descriptions(state)
@@ -216,7 +215,7 @@ def diagnosis_schema(cfg,*,state=None,problems=None):
     schema=review.object_schema({
         'diagnosis':review.TEXT,'hypothesis':review.TEXT,'changes':review.TEXT,
         'problem':{'enum':problems or list(cfg['problem_methods'])},
-        'primitive':{'enum':sorted({p for values in cfg['problem_methods'].values() for p in values})},
+        'primitive':{'enum':sorted({p for values in cfg['problem_methods'].values() for p in values if p in REPAIR_PRIMITIVES})},
         'edit':{'anyOf':[edit_schema,{'type':'null'}]},
         'shot':{'anyOf':[SHOT,{'type':'null'}]},
         'target_shot':{'type':'integer','minimum':1}})
@@ -238,7 +237,9 @@ def cached_call(root,name,vlm,purpose,messages,schema,paths=()):
 
 
 def permitted_methods(problem,cycle,number):
-    methods=cycle['config']['problem_methods'][problem]
+    from storycg.repairs import REPAIR_PRIMITIVES
+    methods=[method for method in cycle['config']['problem_methods'][problem] if method in REPAIR_PRIMITIVES]
+    if not methods:raise ValueError('no supported repair method for problem '+problem)
     if methods[0]=='instruction_edit' and not any(h['decision'].get('primitive')=='instruction_edit' and h['decision'].get('problem')==problem for h in cycle['shots'][str(number)]['history']):return methods[:1]
     if problem=='protagonist_count':return ['relayout']
     return methods
@@ -264,7 +265,6 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
             old=previous['decision']
             if previous.get('source_attempt')==cycle['shots'][str(number)]['best_attempt'] and old['primitive']=='relayout' and old.get('shot')==decision['shot']:
                 raise ValueError('cannot repeat identical relayout on the same source')
-        if {r['prop_id'] for r in candidate['shot']['key_props']}-{p['id'] for p in board['props']}:raise ValueError('unknown prop')
     elif decision['shot'] is not None:raise ValueError('only relayout can alter shot')
     return decision
 
@@ -303,7 +303,7 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
             selected_paths=[root/selected_attempt(state,e['number'])['image']['path'] for e in board['shots']]
             selected_paths[number-1]=source
             outfit_ref=review_v3.outfit_reference(number-1,board['shots'],selected_paths,paths[0])
-        prepared=review_v3.prepare(source,outfit_ref,identity,entry,root/'cycle_artifacts'/f'{label}_v3')
+        prepared=review_v3.prepare(source,outfit_ref,identity,entry,root/'cycle_artifacts'/f'{label}_v3',items=review_v3.enabled_items(config))
         supplementary=review_v3.audit(vlm,prepared,config,label+'_v3')
         consistency['v3']=supplementary
         if supplementary['status']!='pass':

@@ -1,7 +1,7 @@
 """P9-05 orchestration outside the frozen reviewer.
 
 The scheduling loop is derived from this repository's frozen cycle.py;
-Visual audits and repair primitives are reused; D24 filters runtime candidate metrics.
+Visual audits and repair primitives are reused. Legacy findings remain readable.
 Only detection findings routing and delivery gates differ. Raw results remain intact.
 """
 from storycg.cycle import *
@@ -52,9 +52,7 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
 
 def diagnosis_schema(cfg, *, state=None, problems=None):
     from storycg.planning import production_schema
-    cfg=copy.deepcopy(cfg);cfg['problem_methods'].pop('props',None)
     if problems is not None:
-        problems=[p for p in problems if p!='props']
         if not problems:raise ValueError('no mapped actionable FAIL item')
     schema=frozen.diagnosis_schema(cfg,state=state,problems=problems)
     schema['properties']['shot']={'anyOf':[
@@ -63,14 +61,10 @@ def diagnosis_schema(cfg, *, state=None, problems=None):
 
 
 def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):
-    if decision['problem']=='props':raise ValueError('D24 props cannot trigger repair')
-    if decision['primitive']=='relayout' and (decision.get('shot') or {}).get('key_props')!=entry['shot']['key_props']:
-        raise ValueError('D24 narrative repair cannot target props' if narrative else 'D24 relayout cannot target props')
     if narrative:
         revised=decision.get('shot') or {}
         if (revised.get('action'),revised.get('expression'))==(entry['shot']['action'],entry['shot']['expression']):raise ValueError('narrative repair must change expression/action')
     if decision['primitive']=='instruction_edit':
-        if decision.get('edit',{}).get('target','').startswith(('props.','entry.shot.key_props.')):raise ValueError('D24 props cannot be repair targets')
         state={'identity':identity,'entry':entry,'props':board['props']}
         instruction=grounded_instruction(decision['edit'],state)
         slot=cycle['shots'][str(number)]
@@ -86,7 +80,7 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
 
 def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     from storycg.shot_contract import RULE_PROMPT
-    cfg=copy.deepcopy(cycle['config']);cfg['problem_methods'].pop('props',None);slot=cycle['shots'][str(number)]
+    cfg=cycle['config'];slot=cycle['shots'][str(number)]
     state=diagnosis_state(identity,entry,board['props'])
     audit=[person_findings(r) for r in audit]
     problems=preferred_problems(audit,cycle,number,narrative=bool(narrative))
@@ -105,11 +99,11 @@ def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrati
     prompt=('Interpret actual FAIL findings. Give a diagnosis, causal hypothesis and corrective change. '
         'Choose ONLY allowed_methods for the observed problem; target_shot must equal '+str(number)+'. '
         'For instruction_edit supply exact registered target/description and shot=null. '
-        'relayout: edit=null, return the complete revised shot, preserve key_props exactly; changes must target expression/action, never object state, count, ownership or contact. '
+        'relayout: edit=null, return the complete revised shot; changes must target expression/action. '
         'Return ALL fields, including pose, action, description, tags, reflection, protagonist_instances, '
-        'subject_visibility, other_people, hand_owners, and ALL key_props fields including detached, owner, state, '
-        'establishes_ownership and distinguishing_features_visible. action and description equal pose; tags contain only pose/expression. '
-        'face_detail/inpaint: edit=null and shot=null; regions are detected locally. '
+        'subject_visibility, other_people, hand_owners, and prop_tags. '
+        'action and description equal pose; tags contain only pose/expression. '
+        'face_detail: edit=null and shot=null; faces are detected locally. '
         'Do not merely change seed or synonyms. '+RULE_PROMPT.replace(
             'The script derives action, description and shot.tags from pose/expression; do not return these derived fields.',
             'For relayout return action and description equal to pose and tags containing pose and expression.')+
@@ -134,7 +128,7 @@ def deliver(root,cycle,config,client):
         gate=persist_group_gate(root,cycle['final_review'],config)
         manifest=read(root/'manifest.json');manifest['review_gate']=gate
         save_json_atomic(root/'manifest.json',manifest)
-        render_delivery(root,cycle['final_review'],gate)
+        render_delivery(root,cycle['final_review'],gate,config)
     return state
 
 
@@ -167,7 +161,6 @@ def run_repair_cycle(job_dir,config,client):
         'allow_obscured':config.get('allow_obscured_protagonist',False)}
     if not (root/'initial_storyboard.json').exists():save_json_atomic(root/'initial_storyboard.json',board)
     cfg=cycle['config']
-    cfg['problem_methods'].pop('props',None)
     recovered=recover_failed_diagnoses(cycle,repair_findings)
     if recovered:cycle['phase']='repairing';save_json_atomic(path,cycle)
     budget=Budget(root,cfg)
@@ -210,9 +203,12 @@ def run_repair_cycle(job_dir,config,client):
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
                 before=slot['best_audit'];results=repair_findings(before)
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
-                if pending and pending['decision'].get('problem')=='props':
-                    pending.update(status='completed',skipped=True,error='D24 pending prop repair disabled before submission')
-                    slot['stop']='v1_prop_repair_disabled';persist();break
+                if pending:
+                    from storycg.repairs import REPAIR_PRIMITIVES
+                    method=pending['decision'].get('primitive')
+                    if method not in REPAIR_PRIMITIVES:
+                        pending.update(status='completed',skipped=True,error='unsupported repair method: '+str(method)+' was removed in v2; no task submitted')
+                        slot['stop']='unsupported_repair_method';persist();break
                 if not pending:
                     actionable=actionable_issues(results)
                     if not actionable:slot['stop']='no_actionable_fail';persist();break
@@ -287,12 +283,7 @@ def run_repair_cycle(job_dir,config,client):
 def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm):
     from storycg.repairs import repair,record_result
     decision=pending['decision'];entry=slot['entry']
-    # Prepared decisions from older policy must pass the scope guard before any IO.
-    if decision.get('problem')=='props':raise ValueError('D24 props cannot trigger repair')
-    if decision.get('edit') and decision['edit'].get('target','').startswith(('props.','entry.shot.key_props.')):
-        raise ValueError('D24 props cannot be repair targets')
-    if decision.get('shot') is not None and decision['shot'].get('key_props')!=entry['shot']['key_props']:
-        raise ValueError('D24 relayout cannot target props')
+    allowed_decision(decision,cycle['config'])
     validate_problem(decision['problem'],repair_findings(slot['best_audit']),bool(pending.get('narrative')))
     candidate=copy.deepcopy(entry)
     if decision['shot'] is not None:candidate['shot']=decision['shot']
@@ -300,17 +291,14 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     kwargs={'repair_id':f'cycle{pending["round"]}', 'source_attempt':pending['source_attempt']}
     if decision['primitive']=='instruction_edit':kwargs['edit']=decision['edit']
     if decision['primitive']=='relayout':kwargs['revised_entry']=candidate
-    if decision['primitive'] in ('face_detail','inpaint'):
+    if decision['primitive']=='face_detail':
         from storycg.detection_review import repair_mask
-        from storycg.detect import detect_image
         source=root/slot['best_audit']['image']['path']
-        purpose='remove_person' if decision['problem']=='protagonist_count' else 'face'
-        region=repair_mask(source,None,purpose,root/'cycle_artifacts'/f'mask_{number}_{pending["round"]}')
+        region=repair_mask(source,None,'face',root/'cycle_artifacts'/f'mask_{number}_{pending["round"]}')
         if region['provenance']['uncertain']:
             raise ValueError('non_subject_mask_ambiguous: merged segmentation requires experimental review')
         kwargs.update(bbox=region['bbox'],mask_path=region['mask_path'],mask_sha256=region['mask_sha256'],
             region_source=region['provenance'])
-        if purpose=='remove_person':kwargs['operation']={'type':'remove_person'}
     label=f'repair_{number}_{pending["round"]}'
     before_neighbors=neighbors(root,number,slot['best_audit']['image'],entry,board,cycle,config,vlm,label+'_before')
     rec=repair(root,number,decision['primitive'],diagnosis,client,**kwargs)
