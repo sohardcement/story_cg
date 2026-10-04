@@ -7,7 +7,8 @@
 
 | 工单 | 结论 | 会话 ID | 证据 |
 |---|---|---|---|
-| CAP-00 冒烟：确认模型与推理强度 | 进行中 | — | `orders/CAP-00.md` |
+| CAP-00 冒烟：确认模型与推理强度 | **通过**：会话记录 `~/.codex/sessions/2026/10/04/rollout-…-01a104bc….jsonl` 显示 `model=gpt-6.1-sol`、`effort=max`；ComfyUI 队列空，视觉服务 200 | 01a104bc-e170-7e90-b3f6-2370b853368d | `probe/smoke.json`、`reports/CAP-00.md` |
+| CAP-01 写 40 条提示词（不出图） | 进行中 | — | `orders/CAP-01.md` |
 
 ## 第二轮进展（2026-10-02 更新，按用户 7 项决定 D9–D17 执行）
 
