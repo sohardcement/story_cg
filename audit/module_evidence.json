@@ -1,0 +1,740 @@
+[
+  {
+    "file": "src/storycg/__init__.py",
+    "lines": 1,
+    "role": "Python 包标记。",
+    "usage": "是（包初始化；无业务函数及独立调用计数）",
+    "feature": "agent_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 2
+    },
+    "evidence": "无（无独立行为；没有单独验证工单）",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "保留包标识；只有说明，没有可缩减的独立业务逻辑，也没有单独效果验证。",
+    "facade_reachable_definitions": 0,
+    "all_cli_reachable_definitions": 0
+  },
+  {
+    "file": "src/storycg/__main__.py",
+    "lines": 185,
+    "role": "分派 Hermes 命令与旧 CLI 子命令。",
+    "usage": "是（C/D/R=12/7/2；单位 agent_record）",
+    "feature": "agent_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 2
+    },
+    "evidence": "P1-01：[runs/p1_01_smoke_20260930/state.json](../runs/p1_01_smoke_20260930/state.json)；P7-02 / Hermes T2：[verify/hermes/t2b-approve.out](../verify/hermes/t2b-approve.out)",
+    "props_only": "否。",
+    "suggestion": "简化",
+    "reason": "保留 make/approve/status/resume/deliver/_worker；旧 new/run/gen-one/resolve/plan/review/detect 仅兼容或开发，宜与正式入口分离。",
+    "facade_reachable_definitions": 0,
+    "all_cli_reachable_definitions": 2
+  },
+  {
+    "file": "src/storycg/agent.py",
+    "lines": 476,
+    "role": "任务接收、后台 worker、审批、恢复与离线交付门面。",
+    "usage": "是（C/D/R=12/7/2；单位 agent_record）",
+    "feature": "agent_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 2
+    },
+    "evidence": "P7-02 / Hermes T2：[verify/hermes/t2b-approve.out](../verify/hermes/t2b-approve.out)；Hermes T3b：[verify/hermes/t3b-resume-check.json](../verify/hermes/t3b-resume-check.json)；D27 / Hermes T4：[verify/hermes/t4-hermes-output.log](../verify/hermes/t4-hermes-output.log)",
+    "props_only": "否；INTAKE_SCHEMA 的 possession_swap/prop_dependent/prop_only_narrative_items，以及 intake 中道具语义判断只服务道具范围告知。",
+    "suggestion": "简化",
+    "reason": "保留 worker/审批/锁/恢复；接收协议中的细分道具叙事项可缩为范围提醒，不删除人物流程。",
+    "facade_reachable_definitions": 16,
+    "all_cli_reachable_definitions": 16
+  },
+  {
+    "file": "src/storycg/assembly.py",
+    "lines": 50,
+    "role": "拼装身份、服装、场景、镜头与道具 tag。",
+    "usage": "是（C/D/R=46/31/76；单位 story_shot_attempt）",
+    "feature": "story_shot_attempt",
+    "counts": {
+      "jobs_cli": 46,
+      "jobs_development": 31,
+      "runs_development": 76
+    },
+    "evidence": "P1-04：[review/P1-02-vs-P1-04.jpg](../review/P1-02-vs-P1-04.jpg)；P3-02：[review/P3-02-芙莉莲-对照.jpg](../review/P3-02-芙莉莲-对照.jpg)",
+    "props_only": "否；registry/prop_blocks/prop_bindings（19–28 行）及道具描述去重只服务道具；四块人物拼装共用。",
+    "suggestion": "简化",
+    "reason": "保留 tag 拼装与景别；v2 道具仅陪衬，可去掉逐件绑定的工程要求。历史实测绑定不可靠。",
+    "facade_reachable_definitions": 2,
+    "all_cli_reachable_definitions": 2
+  },
+  {
+    "file": "src/storycg/budget.py",
+    "lines": 89,
+    "role": "跨 tier、定妆、生成、审核累计用量并在服务边界限额。",
+    "usage": "是（C/D/R=7/4/4；单位 cycle_record）",
+    "feature": "cycle_record",
+    "counts": {
+      "jobs_cli": 7,
+      "jobs_development": 4,
+      "runs_development": 4
+    },
+    "evidence": "P5-02：[reports/P5-02.md](../reports/P5-02.md)；P7-02：[reports/P7-02.md](../reports/P7-02.md)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "限额和重启持久化是核心；此处次数为留有循环记录的任务数，不是 Budget.check 调用数。",
+    "facade_reachable_definitions": 16,
+    "all_cli_reachable_definitions": 16
+  },
+  {
+    "file": "src/storycg/calibration.py",
+    "lines": 63,
+    "role": "v1 逐项映射与可靠性统计。",
+    "usage": "只在开发期（C/D/R=0；离线 42 条校准观测；工具入口）",
+    "feature": null,
+    "counts": {
+      "jobs_cli": 0,
+      "jobs_development": 0,
+      "runs_development": 0
+    },
+    "evidence": "P4-02：[calibration/results.json](../calibration/results.json)；P4-02：[calibration/summary.md](../calibration/summary.md)",
+    "props_only": "否；mapped_status 的 props 聚合分支只服务道具，人物统计共用。",
+    "suggestion": "保留",
+    "reason": "不在生产入口，但真实校准与 v2 映射仍依赖它；离线工具不能当作死代码删除。",
+    "facade_reachable_definitions": 0,
+    "all_cli_reachable_definitions": 0
+  },
+  {
+    "file": "src/storycg/calibration_v2.py",
+    "lines": 77,
+    "role": "v2 视觉与本机检测的固定校准映射。",
+    "usage": "只在开发期（C/D/R=0；离线 96 条校准观测；工具入口）",
+    "feature": null,
+    "counts": {
+      "jobs_cli": 0,
+      "jobs_development": 0,
+      "runs_development": 0
+    },
+    "evidence": "P9-04：[calibration/v2/results.json](../calibration/v2/results.json)；P9-04：[calibration/v2/summary.md](../calibration/v2/summary.md)",
+    "props_only": "否；经 calibration 继承 props 映射。",
+    "suggestion": "保留",
+    "reason": "离线校准被 v3 回归复用；统计规则不能因审核不可靠而删掉。",
+    "facade_reachable_definitions": 0,
+    "all_cli_reachable_definitions": 0
+  },
+  {
+    "file": "src/storycg/calibration_v3.py",
+    "lines": 47,
+    "role": "v3 服装细节、额外主角、配饰放大的校准统计。",
+    "usage": "只在开发期（C/D/R=0；离线 140 条校准观测；工具入口）",
+    "feature": null,
+    "counts": {
+      "jobs_cli": 0,
+      "jobs_development": 0,
+      "runs_development": 0
+    },
+    "evidence": "P10-02：[calibration/v3/results.json](../calibration/v3/results.json)；P10-03：[calibration/v3.1/summary.md](../calibration/v3.1/summary.md)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "生产不调用，但已校准功能的发布与外部验证需要这些固定映射；误报结果同样是有效证据。",
+    "facade_reachable_definitions": 0,
+    "all_cli_reachable_definitions": 0
+  },
+  {
+    "file": "src/storycg/comfy.py",
+    "lines": 78,
+    "role": "ComfyUI 提交、查询、下载、上传与模型元数据客户端。",
+    "usage": "是（C/D/R=78/54/144；单位 submitted_attempt）",
+    "feature": "submitted_attempt",
+    "counts": {
+      "jobs_cli": 78,
+      "jobs_development": 54,
+      "runs_development": 144
+    },
+    "evidence": "P1-01：[runs/p1_01_smoke_20260930/manifest.json](../runs/p1_01_smoke_20260930/manifest.json)；Hermes T3b：[verify/hermes/t3b-resume-check.json](../verify/hermes/t3b-resume-check.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "共用基础设施；276 等数字只数独立 prompt_id，不把轮询算作生成。",
+    "facade_reachable_definitions": 12,
+    "all_cli_reachable_definitions": 12
+  },
+  {
+    "file": "src/storycg/config.py",
+    "lines": 30,
+    "role": "加载并校验生成配置、合并固定画风参数。",
+    "usage": "是（C/D/R=12/7/6；单位 generation_config_record）",
+    "feature": "generation_config_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 6
+    },
+    "evidence": "P2-01：[config/style.json](../config/style.json)；P2-01：[review/P2-grid-A.jpg](../review/P2-grid-A.jpg)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "固定资源、采样参数与预算需要统一配置；画风有效性以 P2 网格为证。",
+    "facade_reachable_definitions": 1,
+    "all_cli_reachable_definitions": 1
+  },
+  {
+    "file": "src/storycg/controls.py",
+    "lines": 60,
+    "role": "冻结控制选项、校验和缓存上传参考、建立参考关系。",
+    "usage": "是（C/D/R=8/6/19；单位 reference_upload_record）",
+    "feature": "reference_upload_record",
+    "counts": {
+      "jobs_cli": 8,
+      "jobs_development": 6,
+      "runs_development": 19
+    },
+    "evidence": "P3-02：[review/P3-02-芙莉莲-对照.jpg](../review/P3-02-芙莉莲-对照.jpg)；P9-02：[reports/P9-02.md](../reports/P9-02.md)",
+    "props_only": "否；qwen layout 可用于人物构图，并非只为道具。",
+    "suggestion": "保留",
+    "reason": "实际 IPAdapter 参考注入和内容 hash 校验已用；上传记录不是服务调用次数。",
+    "facade_reachable_definitions": 3,
+    "all_cli_reachable_definitions": 3
+  },
+  {
+    "file": "src/storycg/cycle.py",
+    "lines": 648,
+    "role": "冻结循环及运行时复用的诊断校验、候选审核、取舍和交付函数。",
+    "usage": "是（C/D/R=7/4/4；单位 cycle_record）",
+    "feature": "cycle_record",
+    "counts": {
+      "jobs_cli": 7,
+      "jobs_development": 4,
+      "runs_development": 4
+    },
+    "evidence": "P5-02：[review/P5-02-约尔-前后.jpg](../review/P5-02-约尔-前后.jpg)；P10-05：[reports/assets/P10-05/replay-supervisor.json](../reports/assets/P10-05/replay-supervisor.json)",
+    "props_only": "否；validate_edit_target 的 props 分支、道具 edit 枚举和旧 diagnose 提示只服务道具；当前调度通过 is_prop_item 排除道具修复。",
+    "suggestion": "简化",
+    "reason": "当前 pipeline 调用 runtime_gate；本文件的 run_repair_cycle/diagnose/apply_round 只由测试链可达，可消除重复调度，保留被复用的审核与 D29 比较器。D29 只有离线验证。",
+    "facade_reachable_definitions": 33,
+    "all_cli_reachable_definitions": 33
+  },
+  {
+    "file": "src/storycg/detect.py",
+    "lines": 257,
+    "role": "本机 CPU 面部/人物检测、蒙版与像素几何。",
+    "usage": "是（C/D/R=2/4/0；单位 group_detection_record）",
+    "feature": "group_detection_record",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 4,
+      "runs_development": 0
+    },
+    "evidence": "P9-01：[calibration/detect/results.json](../calibration/detect/results.json)；P9-01：[review/P9-01-detect.jpg](../review/P9-01-detect.jpg)；P10-05：[reports/P10-05.md](../reports/P10-05.md)",
+    "props_only": "否；没有道具类别检测器。",
+    "suggestion": "简化",
+    "reason": "检测主体和参考脸是核心；crop_face 仅测试使用，与 detect_face_record 的裁切路径重复。计数阈值的离线回归不能替代新任务验证。",
+    "facade_reachable_definitions": 11,
+    "all_cli_reachable_definitions": 13
+  },
+  {
+    "file": "src/storycg/detection_review.py",
+    "lines": 289,
+    "role": "本机主角计数、颜色观测、脸裁切、盲审缩图与修复蒙版。",
+    "usage": "是（C/D/R=2/4/0；单位 group_detection_record）",
+    "feature": "group_detection_record",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 4,
+      "runs_development": 0
+    },
+    "evidence": "P9-02：[review/P9-02-inpaint.jpg](../review/P9-02-inpaint.jpg)；P9-04：[calibration/v2/summary.md](../calibration/v2/summary.md)；P10-05：[reports/P10-05.md](../reports/P10-05.md)",
+    "props_only": "否；面部/人物共用。配饰采样不是道具计数；人物分割的 spatial ownership 是人物区域归属。",
+    "suggestion": "简化",
+    "reason": "保留计数/裁切/缩图；删减无可靠决策价值的颜色采样及 _sample 中早退后永远不会执行的旧 eye 分支。区域去人失败与面部局部有效须分开。",
+    "facade_reachable_definitions": 16,
+    "all_cli_reachable_definitions": 16
+  },
+  {
+    "file": "src/storycg/editing.py",
+    "lines": 66,
+    "role": "把精确状态引用编译成指令编辑文本。",
+    "usage": "是（C/D/R=8/7/2；单位 repair_output_instruction_edit）",
+    "feature": "repair_output_instruction_edit",
+    "counts": {
+      "jobs_cli": 8,
+      "jobs_development": 7,
+      "runs_development": 2
+    },
+    "evidence": "P5-02：[review/P5-02-约尔-前后.jpg](../review/P5-02-约尔-前后.jpg)；P9-06：[review/P9-06-月城柳-前后.jpg](../review/P9-06-月城柳-前后.jpg)",
+    "props_only": "否；change_prop_state、remove_surplus、place 分支（35–63 行）只服务道具；set 与 remove_duplicate_protagonist 服务人物。",
+    "suggestion": "简化",
+    "reason": "保留人物属性与去重复；道具三种操作已被 D24 禁止进入新修复路径，历史记录可继续读。",
+    "facade_reachable_definitions": 3,
+    "all_cli_reachable_definitions": 3
+  },
+  {
+    "file": "src/storycg/eye_sampling.py",
+    "lines": 40,
+    "role": "通过虹膜色团及发色/肤色排除采样瞳色。",
+    "usage": "是（C/D/R=34/87/2；单位 observation_eye_color_sampled）",
+    "feature": "observation_eye_color_sampled",
+    "counts": {
+      "jobs_cli": 34,
+      "jobs_development": 87,
+      "runs_development": 2
+    },
+    "evidence": "P9-04：[calibration/v2/summary.md](../calibration/v2/summary.md)；P9-02：[review/P9-02-eyes.jpg](../review/P9-02-eyes.jpg)",
+    "props_only": "否，服务人物。",
+    "suggestion": "删除",
+    "reason": "建议 v2 移除这一独立辅助功能并同步移除调用分支：校准误报 50%，目前只记录不否决，视觉瞳色已校准可靠。不是死代码；删除理由是价值不足，不是未调用。",
+    "facade_reachable_definitions": 3,
+    "all_cli_reachable_definitions": 3
+  },
+  {
+    "file": "src/storycg/fallback.py",
+    "lines": 253,
+    "role": "L3 参考注入验证及 L4 诚实返回缺少的用户资料。",
+    "usage": "是（C/D/R=2/0/2；单位 identity_final_L3）",
+    "feature": "identity_final_L3",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 0,
+      "runs_development": 2
+    },
+    "evidence": "P6-02：[reports/P6-02.md](../reports/P6-02.md)；P6-02：[runs/p6_02/l4/unknown/needs-user.json](../runs/p6_02/l4/unknown/needs-user.json)；P8-03：[review/白雪姬-面包店打工.jpg](../review/白雪姬-面包店打工.jpg)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "L3/L4 都有真实证据；参考用于生成/比对，不冒充原设来源。",
+    "facade_reachable_definitions": 11,
+    "all_cli_reachable_definitions": 11
+  },
+  {
+    "file": "src/storycg/identity.py",
+    "lines": 205,
+    "role": "Danbooru 中文名消歧、来源查询与身份锁定。",
+    "usage": "是（C/D/R=12/7/69；单位 identity_origin_record）",
+    "feature": "identity_origin_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 69
+    },
+    "evidence": "P6-01a：[runs/p6_01a_rework1_resolve/05/identity.json](../runs/p6_01a_rework1_resolve/05/identity.json)；P6-01b：[reports/P6-01b.md](../reports/P6-01b.md)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "所有正式任务的角色解析基础；歧义返回2个开发状态记录，不把候选资料解析当作新出图。",
+    "facade_reachable_definitions": 9,
+    "all_cli_reachable_definitions": 9
+  },
+  {
+    "file": "src/storycg/identity_enrichment.py",
+    "lines": 176,
+    "role": "从 wiki 和共现资料补齐外貌并处理来源冲突与配饰归属。",
+    "usage": "是（C/D/R=12/7/56；单位 identity_rules_record）",
+    "feature": "identity_rules_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 56
+    },
+    "evidence": "P6-01a：[reports/P6-01a.md](../reports/P6-01a.md)；P10-01：[reports/assets/P10-01/yor-reextracted.json](../reports/assets/P10-01/yor-reextracted.json)",
+    "props_only": "否；服装配饰属于人物，不是道具。",
+    "suggestion": "保留",
+    "reason": "来源和冲突处理是身份保证基础；P10-01 已证明服装配饰分类流程，但当前资料不足仍未自动补全。",
+    "facade_reachable_definitions": 7,
+    "all_cli_reachable_definitions": 7
+  },
+  {
+    "file": "src/storycg/model_metadata.py",
+    "lines": 47,
+    "role": "按远端文件指纹缓存 LoRA 元数据与缺失状态。",
+    "usage": "是（C/D/R=8/6/4；单位 lora_metadata_inventory_record）",
+    "feature": "lora_metadata_inventory_record",
+    "counts": {
+      "jobs_cli": 8,
+      "jobs_development": 6,
+      "runs_development": 4
+    },
+    "evidence": "P9-06：[reports/P9-06.md](../reports/P9-06.md)；P9-06：[jobs/p9_06_cake/tier/inventory.json](../jobs/p9_06_cake/tier/inventory.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "解决大量无元数据 LoRA 的阻塞；inventory 内命中是保存标记，含复制的开发库存，不当作新 HTTP 调用次数。",
+    "facade_reachable_definitions": 2,
+    "all_cli_reachable_definitions": 2
+  },
+  {
+    "file": "src/storycg/outfits.py",
+    "lines": 150,
+    "role": "从整套 wiki 服装中按实测频率选择默认服装与替代服装。",
+    "usage": "是（C/D/R=12/7/52；单位 default_outfit_selection_record）",
+    "feature": "default_outfit_selection_record",
+    "counts": {
+      "jobs_cli": 12,
+      "jobs_development": 7,
+      "runs_development": 52
+    },
+    "evidence": "P6-01a：[reports/P6-01a.md](../reports/P6-01a.md)；P10-01：[reports/assets/P10-01/yor-reextracted.json](../reports/assets/P10-01/yor-reextracted.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "人物服装范围的关键模块，避免把不同套装与统计配饰混锁为身份。",
+    "facade_reachable_definitions": 5,
+    "all_cli_reachable_definitions": 5
+  },
+  {
+    "file": "src/storycg/pipeline.py",
+    "lines": 322,
+    "role": "角色、定妆、分镜、生成、修复与 manifest/拼图编排。",
+    "usage": "是（C/D/R=7/4/9；单位 contact_sheet_task）",
+    "feature": "contact_sheet_task",
+    "counts": {
+      "jobs_cli": 7,
+      "jobs_development": 4,
+      "runs_development": 9
+    },
+    "evidence": "P1-02：[review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg](../review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg)；Hermes T4：[jobs/cg-129ca5876d7b/contact_sheet.jpg](../jobs/cg-129ca5876d7b/contact_sheet.jpg)",
+    "props_only": "否；props 参数传递和 qwen edit 的物体绑定可简化，但 tier/定妆/交付均服务人物。",
+    "suggestion": "保留",
+    "reason": "主流程与完整交付已实测；不要把未达到叙事效果等同于模块未用。",
+    "facade_reachable_definitions": 8,
+    "all_cli_reachable_definitions": 9
+  },
+  {
+    "file": "src/storycg/planning.py",
+    "lines": 411,
+    "role": "请求并校验身份隔离、单瞬间、单主角的结构化分镜。",
+    "usage": "是（C/D/R=34/19/20；单位 planning_call）",
+    "feature": "planning_call",
+    "counts": {
+      "jobs_cli": 34,
+      "jobs_development": 19,
+      "runs_development": 20
+    },
+    "evidence": "P1-04：[review/P1-02-vs-P1-04.jpg](../review/P1-02-vs-P1-04.jpg)；P9-05：[reports/P9-05.md](../reports/P9-05.md)；P10-04：[reports/P10-04.md](../reports/P10-04.md)",
+    "props_only": "否；PROP/PROP_STATE、登记去重、holder/owner/state、同类物体对照、possession_swap 锁定只为道具；单姿态/表情、景别、服装/外貌隔离为人物共用。",
+    "suggestion": "简化",
+    "reason": "保留人物分镜约束；缩掉道具逐件状态协议。新 scope 每镜最多1关键道具，同类两物体对照校验只在旧分镜仍有意义。P10-04 动作解析修复生效，画面效果仍部分达标。",
+    "facade_reachable_definitions": 7,
+    "all_cli_reachable_definitions": 7
+  },
+  {
+    "file": "src/storycg/portrait_gate.py",
+    "lines": 46,
+    "role": "D7 定妆聚合及旧原始失败记录的合规恢复。",
+    "usage": "是（C/D/R=5/4/1；单位 d7_portrait_record）",
+    "feature": "d7_portrait_record",
+    "counts": {
+      "jobs_cli": 5,
+      "jobs_development": 4,
+      "runs_development": 1
+    },
+    "evidence": "P5-02 / D7：[jobs/cg-9b3e05ab005b/portrait_gate_original.json](../jobs/cg-9b3e05ab005b/portrait_gate_original.json)；Hermes T4：[jobs/cg-129ca5876d7b/portrait.json](../jobs/cg-129ca5876d7b/portrait.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "保留原审核并说明无来源不可见项；门禁通过仍不证明服装长短正确，P10-04 暴露该缺口。",
+    "facade_reachable_definitions": 2,
+    "all_cli_reachable_definitions": 2
+  },
+  {
+    "file": "src/storycg/posture_tags.py",
+    "lines": 63,
+    "role": "从有来源的姿态词表约束姿態仅出现于单瞬间块。",
+    "usage": "是（C/D/R=2/6/0；单位 shot_contract_v2_board）",
+    "feature": "shot_contract_v2_board",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 6,
+      "runs_development": 0
+    },
+    "evidence": "P9-05：[reports/P9-05.md](../reports/P9-05.md)；P9-05：[cache/tag_groups/posture.provenance.json](../cache/tag_groups/posture.provenance.json)",
+    "props_only": "否；tag_fields 的 props/关系/位置遍历仅为防止道具块夹带姿态。",
+    "suggestion": "保留",
+    "reason": "单瞬间人物控制有实际分镜；来源校验与固定词表可复用，不能用未验证姿态承诺可画。",
+    "facade_reachable_definitions": 5,
+    "all_cli_reachable_definitions": 5
+  },
+  {
+    "file": "src/storycg/reconcile.py",
+    "lines": 65,
+    "role": "按 prefix 与 prompt_id 对账队列/历史，决定等待、下载或提交。",
+    "usage": "是（C/D/R=0/0/1 同 prompt 状态转移；另 Hermes T3b 恢复验收；调用数未知）",
+    "feature": "saved_prompt_status_transition",
+    "counts": {
+      "jobs_cli": 0,
+      "jobs_development": 0,
+      "runs_development": 1
+    },
+    "evidence": "P1-01：[runs/p1_01_smoke_20260930/state.json](../runs/p1_01_smoke_20260930/state.json)；P5-01b：[reports/P5-01b.md](../reports/P5-01b.md)；Hermes T3b：[verify/hermes/t3b-resume-check.json](../verify/hermes/t3b-resume-check.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "中断不重复提交有独立验收；原目录 submitted、续跑目录 completed 的同 prompt_id 也是历史证据。无精确函数调用计数。",
+    "facade_reachable_definitions": 6,
+    "all_cli_reachable_definitions": 6
+  },
+  {
+    "file": "src/storycg/reference.py",
+    "lines": 256,
+    "role": "过审定妆、内容 hash 缓存、L3 复用及构图编辑指令。",
+    "usage": "是（C/D/R=8/4/11；单位 portrait_origin_record）",
+    "feature": "portrait_origin_record",
+    "counts": {
+      "jobs_cli": 8,
+      "jobs_development": 4,
+      "runs_development": 11
+    },
+    "evidence": "P3-01：[review/P3-01-pilot.jpg](../review/P3-01-pilot.jpg)；P3-01：[runs/p3_01_cache_probe_20260930/portrait.json](../runs/p3_01_cache_probe_20260930/portrait.json)；P6-02：[reports/P6-02.md](../reports/P6-02.md)",
+    "props_only": "否；edit_instruction 中 bindings/Holder/Position 只服务道具；定妆/脸参考/缓存服务人物。",
+    "suggestion": "保留",
+    "reason": "定妆与 IPAdapter 有真实改善；缓存出现6个非修复副本的命中目的地，其中1个是L3复用。",
+    "facade_reachable_definitions": 12,
+    "all_cli_reachable_definitions": 12
+  },
+  {
+    "file": "src/storycg/repairs.py",
+    "lines": 417,
+    "role": "持久化指令编辑、面部精修、重布局、局部重绘原语及复审记录。",
+    "usage": "是（C/D/R=8/7/2；单位 repair_output_instruction_edit）",
+    "feature": "repair_output_instruction_edit",
+    "counts": {
+      "jobs_cli": 8,
+      "jobs_development": 7,
+      "runs_development": 2
+    },
+    "evidence": "P5-01b：[review/P5-01b-repairs.jpg](../review/P5-01b-repairs.jpg)；P5-02：[review/P5-02-约尔-前后.jpg](../review/P5-02-约尔-前后.jpg)；P9-02：[review/P9-02-inpaint.jpg](../review/P9-02-inpaint.jpg)；P9-06：[review/P9-06-月城柳-前后.jpg](../review/P9-06-月城柳-前后.jpg)",
+    "props_only": "否；region_queries/region_prompt、prop_ids 子集、物体移除/放置路径只服务道具；面部/人物去重、合成边界共用。",
+    "suggestion": "简化",
+    "reason": "保留经过实测的人物修复；移除道具实验入口与只被测试的 rewrite_composition/composite_region。inpaint 出现3次开发提交，不等于物体区域修复已验证有效。seed 原语静态可达但无历史执行记录。",
+    "facade_reachable_definitions": 15,
+    "all_cli_reachable_definitions": 15
+  },
+  {
+    "file": "src/storycg/review.py",
+    "lines": 645,
+    "role": "三层审核、逐项可靠性、人物/服装/道具检查与图像盲审。",
+    "usage": "是（C/D/R=400/236/433；单位 review_request）",
+    "feature": "review_request",
+    "counts": {
+      "jobs_cli": 400,
+      "jobs_development": 236,
+      "runs_development": 433
+    },
+    "evidence": "P4-02：[calibration/summary.md](../calibration/summary.md)；P9-04：[calibration/v2/summary.md](../calibration/v2/summary.md)；P10-02：[calibration/v3/summary.md](../calibration/v3/summary.md)",
+    "props_only": "否；prop_checklist（300–307）、audit_single 的 prop_* / prop_contact 和逐件清点提示只服务道具；人物、一致性与盲审共用。",
+    "suggestion": "简化",
+    "reason": "保留已校准的人物项、盲审和原始结论。按 D24 现阶段仍必须记录道具，建议 v2 定稿后缩减清点协议，不能直接漏审或改判。旧 VLM bbox/crop_face 仅工具仍用。",
+    "facade_reachable_definitions": 29,
+    "all_cli_reachable_definitions": 29
+  },
+  {
+    "file": "src/storycg/review_gate.py",
+    "lines": 66,
+    "role": "在不改原审核的前提下应用检测可靠性与人物范围交付门禁。",
+    "usage": "是（C/D/R=2/4/0；单位 group_gate_record）",
+    "feature": "group_gate_record",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 4,
+      "runs_development": 0
+    },
+    "evidence": "P9-05：[reports/P9-05.md](../reports/P9-05.md)；P10-01：[reports/assets/P10-01/replay-summary.json](../reports/assets/P10-01/replay-summary.json)",
+    "props_only": "否；prop_* 已知问题和纯道具 narrative 降级分支只服务道具范围；可靠人数否决服务人物。",
+    "suggestion": "保留",
+    "reason": "范围门禁与冻结原审核应分开保存；旧任务缺结构化字段时保守处理。",
+    "facade_reachable_definitions": 3,
+    "all_cli_reachable_definitions": 3
+  },
+  {
+    "file": "src/storycg/review_v3.py",
+    "lines": 200,
+    "role": "检测定位后放大头部、比对服装细节并审核额外主角候选。",
+    "usage": "是（C/D/R=14/0/0；单位 supplement_review_request）",
+    "feature": "supplement_review_request",
+    "counts": {
+      "jobs_cli": 14,
+      "jobs_development": 0,
+      "runs_development": 0
+    },
+    "evidence": "P10-02：[calibration/v3/summary.md](../calibration/v3/summary.md)；P10-03：[calibration/v3.1/summary.md](../calibration/v3.1/summary.md)；P10-04：[review/P10-04-菲伦-前后.jpg](../review/P10-04-菲伦-前后.jpg)",
+    "props_only": "否；均为人物/服装/配饰，非道具。",
+    "suggestion": "简化",
+    "reason": "服装细节部分可靠但参考可能错；小号重复主角与配饰放大已冻结验证为不可靠，可从 v2 默认热路径移出，保留研究/结果记录。",
+    "facade_reachable_definitions": 13,
+    "all_cli_reachable_definitions": 13
+  },
+  {
+    "file": "src/storycg/runner.py",
+    "lines": 290,
+    "role": "生成状态先落盘、幂等提交、下载校验与重启恢复。",
+    "usage": "是（C/D/R=78/54/144；单位 submitted_attempt）",
+    "feature": "submitted_attempt",
+    "counts": {
+      "jobs_cli": 78,
+      "jobs_development": 54,
+      "runs_development": 144
+    },
+    "evidence": "P1-01：[runs/p1_01_smoke_20260930/state.json](../runs/p1_01_smoke_20260930/state.json)；Hermes T3b：[verify/hermes/t3b-resume-check.json](../verify/hermes/t3b-resume-check.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "所有已提交图的持久化底座；保留 diagnosis 约束及 prefix 对账，不能用换 seed 重试代替修复。",
+    "facade_reachable_definitions": 11,
+    "all_cli_reachable_definitions": 12
+  },
+  {
+    "file": "src/storycg/runtime_gate.py",
+    "lines": 365,
+    "role": "正式运行时人物范围修复循环、检测路由、D29 取舍与交付。",
+    "usage": "是（C/D/R=2/4/0；单位 group_gate_record）",
+    "feature": "group_gate_record",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 4,
+      "runs_development": 0
+    },
+    "evidence": "P9-06：[review/P9-06-月城柳-前后.jpg](../review/P9-06-月城柳-前后.jpg)；P10-01：[reports/assets/P10-01/replay-summary.json](../reports/assets/P10-01/replay-summary.json)；P10-05：[reports/assets/P10-05/replay-supervisor.json](../reports/assets/P10-05/replay-supervisor.json)",
+    "props_only": "否；D24 的 props 拒绝/过滤分支只为守住道具范围；循环主体服务人物。",
+    "suggestion": "简化",
+    "reason": "与 cycle 的重复循环宜合并为一条调度路径；保留当前范围门禁。detection_improved 无调用者。D29 新向量在线痕迹0，已保存历史不会因代码更新变为新取舍。",
+    "facade_reachable_definitions": 16,
+    "all_cli_reachable_definitions": 16
+  },
+  {
+    "file": "src/storycg/shot_contract.py",
+    "lines": 114,
+    "role": "定义并编译单姿态、表情、单主角及反射约束。",
+    "usage": "是（C/D/R=2/6/0；单位 shot_contract_v2_board）",
+    "feature": "shot_contract_v2_board",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 6,
+      "runs_development": 0
+    },
+    "evidence": "P9-05：[reports/P9-05.md](../reports/P9-05.md)；P10-01：[reports/P10-01.md](../reports/P10-01.md)；P10-04：[reports/P10-04.md](../reports/P10-04.md)",
+    "props_only": "否；owner/distinguish_ownership/establishes_ownership/distinguishing_features_visible、possession_swap 及 owner 一致性只服务道具。",
+    "suggestion": "简化",
+    "reason": "保留单瞬间编译与反射；D19/D25 已删掉强制交换/对照结构，现存 possession_swap 仅记录，不应误写成仍在强制交换。",
+    "facade_reachable_definitions": 5,
+    "all_cli_reachable_definitions": 5
+  },
+  {
+    "file": "src/storycg/state.py",
+    "lines": 47,
+    "role": "prefix 校验、JSON 原子写入与状态加载。",
+    "usage": "是（C/D/R=23/16/75；单位 state_record）",
+    "feature": "state_record",
+    "counts": {
+      "jobs_cli": 23,
+      "jobs_development": 16,
+      "runs_development": 75
+    },
+    "evidence": "P1-01：[runs/p1_01_smoke_20260930/state.json](../runs/p1_01_smoke_20260930/state.json)；Hermes T3b：[verify/hermes/t3b-resume-check.json](../verify/hermes/t3b-resume-check.json)",
+    "props_only": "否。",
+    "suggestion": "保留",
+    "reason": "多进程与恢复需要；文件数包含 tier/定妆/副本，不冒称写入次数。",
+    "facade_reachable_definitions": 4,
+    "all_cli_reachable_definitions": 4
+  },
+  {
+    "file": "src/storycg/story_rules.py",
+    "lines": 47,
+    "role": "校验主角可见性、匿名其他人、手归属和物体脱离。",
+    "usage": "是（C/D/R=10/6/10；单位 storyboard_record）",
+    "feature": "storyboard_record",
+    "counts": {
+      "jobs_cli": 10,
+      "jobs_development": 6,
+      "runs_development": 10
+    },
+    "evidence": "P5-02：[review/P5-02-约尔-前后.jpg](../review/P5-02-约尔-前后.jpg)；P8-03：[reports/P8-03.md](../reports/P8-03.md)",
+    "props_only": "否；for key_props 中 detached_separation/detached_reaction 是道具规则；other_holder 同时涉及持物者与匿名人物；obscured_limit/restricted_people/浮空手规则服务人物。",
+    "suggestion": "简化",
+    "reason": "保留人物可见/单主角约束；物体脱离和持有叙事协议可随 v2 陪衬道具范围缩掉。已有6条 detached=true 绑定，分支实际通过/拒绝次数未记录。",
+    "facade_reachable_definitions": 3,
+    "all_cli_reachable_definitions": 3
+  },
+  {
+    "file": "src/storycg/tags.py",
+    "lines": 155,
+    "role": "核验真实 Danbooru tag、精确动作解析和提示词块清洗。",
+    "usage": "是（C/D/R=27/9/11；单位 tag_validation_call_record）",
+    "feature": "tag_validation_call_record",
+    "counts": {
+      "jobs_cli": 27,
+      "jobs_development": 9,
+      "runs_development": 11
+    },
+    "evidence": "P1-04：[reports/P1-04.md](../reports/P1-04.md)；P10-04：[reports/P10-04.md](../reports/P10-04.md)",
+    "props_only": "否；verify_storyboard_tags 遍历道具描述/关系/位置，但核验算法与人物/场景共用。",
+    "suggestion": "保留",
+    "reason": "来源和精确匹配是提示词质量基础；tag 存在不能证明模型稳定会画，需结合能力摸底。",
+    "facade_reachable_definitions": 9,
+    "all_cli_reachable_definitions": 9
+  },
+  {
+    "file": "src/storycg/tier_gate.py",
+    "lines": 65,
+    "role": "在冻结角色比对之上按 D18/D20 合法聚合身份层级。",
+    "usage": "是（入口可达；C/D/R=0/3/0 独立聚合产物，ensure 调用数未知）",
+    "feature": "tier_gate_artifact",
+    "counts": {
+      "jobs_cli": 0,
+      "jobs_development": 3,
+      "runs_development": 0
+    },
+    "evidence": "P9-06 / D18：[jobs/p9_06_cake/tier_gate.json](../jobs/p9_06_cake/tier_gate.json)；P10-01 / D20：[reports/P10-01.md](../reports/P10-01.md)",
+    "props_only": "否，配饰否决规则属于人物身份。",
+    "suggestion": "简化",
+    "reason": "保留可靠性/配饰政策与原观察；可统一重复层级聚合接口。独立产物仅开发3个，ensure 由正式入口可达但未记逐函数调用。",
+    "facade_reachable_definitions": 5,
+    "all_cli_reachable_definitions": 5
+  },
+  {
+    "file": "src/storycg/tiers.py",
+    "lines": 648,
+    "role": "训练 tag 匹配角色 LoRA、纯知识探针、来源比对及生成配置路由。",
+    "usage": "是（C/D/R=42/36/90；单位 tier_comparison_request）",
+    "feature": "tier_comparison_request",
+    "counts": {
+      "jobs_cli": 42,
+      "jobs_development": 36,
+      "runs_development": 90
+    },
+    "evidence": "P6-01b：[reports/P6-01b.md](../reports/P6-01b.md)；P6-02：[reports/P6-02.md](../reports/P6-02.md)；P9-06：[reports/P9-06.md](../reports/P9-06.md)",
+    "props_only": "否。",
+    "suggestion": "简化",
+    "reason": "保留已用 L1/L2 探针与路由；determine_l1/prepare_l2/build_l2_workflow 仅测试，不是当前 live_inventory/ensure 路径。层级判定有效性仍受可见性和参考服装影响。",
+    "facade_reachable_definitions": 22,
+    "all_cli_reachable_definitions": 22
+  },
+  {
+    "file": "src/storycg/v1_scope.py",
+    "lines": 86,
+    "role": "D23–D25 人物范围过滤、道具依赖告知与交付说明。",
+    "usage": "是（C/D/R=2/0/0；单位 person_scope_gate_record）",
+    "feature": "person_scope_gate_record",
+    "counts": {
+      "jobs_cli": 2,
+      "jobs_development": 0,
+      "runs_development": 0
+    },
+    "evidence": "P10-01：[reports/assets/P10-01/replay-summary.json](../reports/assets/P10-01/replay-summary.json)；Hermes T4：[jobs/cg-129ca5876d7b/result.md](../jobs/cg-129ca5876d7b/result.md)",
+    "props_only": "否；is_prop_item/纯道具 narrative/PROP_NOTICE 专门管理道具范围，但人物保留与 render_delivery 服务完整交付。",
+    "suggestion": "保留",
+    "reason": "需要明确人物保证及已知问题；不能把范围过滤误当作放宽原审核阈值。正式2组已有 D23/D24 门禁。",
+    "facade_reachable_definitions": 7,
+    "all_cli_reachable_definitions": 7
+  },
+  {
+    "file": "src/storycg/workflow.py",
+    "lines": 97,
+    "role": "构建 WAI、角色 LoRA、IPAdapter、img2img 和 Qwen 编辑节点图。",
+    "usage": "是（C/D/R=78/54/144；单位 submitted_attempt）",
+    "feature": "submitted_attempt",
+    "counts": {
+      "jobs_cli": 78,
+      "jobs_development": 54,
+      "runs_development": 144
+    },
+    "evidence": "P2-01：[review/P2-grid-A.jpg](../review/P2-grid-A.jpg)；P3-01：[review/P3-01-pilot.jpg](../review/P3-01-pilot.jpg)；P9-02：[review/P9-02-inpaint.jpg](../review/P9-02-inpaint.jpg)",
+    "props_only": "否；各节点链服务人物和构图，不因曾用于道具就成为道具专用。",
+    "suggestion": "保留",
+    "reason": "实际 graph/seed/参数保存在 attempts；保留经过实测的节点链，不引入新模型。",
+    "facade_reachable_definitions": 2,
+    "all_cli_reachable_definitions": 2
+  }
+]

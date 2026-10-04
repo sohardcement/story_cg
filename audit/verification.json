@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "method": "Stdlib, original-file recount + hashes + event locations; no production imports/API execution.",
+  "checks": {
+    "audit_scripts_compile_in_memory": 4,
+    "modules_and_source_hashes": 41,
+    "source_lines": 7692,
+    "definition_locations": 365,
+    "facade_reachable_definitions": 334,
+    "all_cli_reachable_definitions": 340,
+    "classified_unreachable_definitions": 25,
+    "unchanged_scanned_input_files": 3239,
+    "resolvable_evidence_events": 16757,
+    "feature_aggregates": 119,
+    "independent_unique_prompt_ids": 276,
+    "independent_completed_prompt_ids": 276,
+    "independent_unique_request_ids": 1069,
+    "independent_repair_outputs": {
+      "face_detail": 6,
+      "inpaint": 3,
+      "instruction_edit": 17,
+      "relayout": 27
+    },
+    "validation_evidence_paths": 95,
+    "audit_table_rows": 41
+  }
+}

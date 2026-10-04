@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "compared_outputs": 15,
+  "changed": [],
+  "sha256": {
+    "static.json": "f5c6b031c0804fc758b20461c995e678cf7b02e4041283032c197f127c990949",
+    "functions.tsv": "a23c71547cd1b4bc7be6db40d54b9086c169b1950bf65556b8ccc1f838e0ab2e",
+    "call_edges.tsv": "a76e7c0ebf4fcbe6233408971a5cefabf1a2339ef7e5317bd353cd580b0be5f0",
+    "callgraph.dot": "a2865b77603b328daa89d3813826a464dfa66fe6f7ceeeeb6db2390bcadc0393",
+    "log_stats.json": "cfeedfe4d073ae7dd044243ad4d467ee16bfe026fcb9d4c7da758721989fed39",
+    "feature_counts.tsv": "a1e6f8ad11f5ba88887d00926fafdcda0f3c2e56c70aaef5b3aba366cd6bc61e",
+    "events.jsonl": "1cebb89b510a4f57df250980cd065f7893a2d8dd59116a5497c680f0ef7f3aa3",
+    "input_files.json": "39ff338e1922e401915d4c159e02df4559b7d718ba8d80be2960abdbafe19521",
+    "text_logs.json": "6572ef3b6ef266ef8a1880ab61d87e2c1f244b41c3ccf09a04a7043ac0a7bdb4",
+    "AUDIT.md": "0b928cdd77ad59e5c3f407f2dfe49cb1b3eff2f72bab4fdc370a6a674f73e1ee",
+    "module_evidence.json": "4d7f41907ff9661f1e67c34fc8c5596887219336360569d0bb99a4c7f76ee8e1",
+    "modules.tsv": "458a59b2af43b4ab8535c1c03963b5ce0c538595bdc9f388bd0b679a399ef120",
+    "validation_evidence.json": "3cd7d7e53c550295e97b25e2f2c8f3459fc190a04c5398e21c25d1127eed38b2",
+    "summary.json": "d96d133b5d83c353f6d94a97b294fd1829a82e8266e9825504260451a67202ac",
+    "callgraph.md": "bf8595b9cf26842c7e4288e97b55c578c575c5a25dee13af3be8dc6808206fad"
+  }
+}

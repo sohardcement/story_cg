@@ -1,0 +1,40 @@
+{
+  "module_count": 41,
+  "lines": 7692,
+  "recommendation_lines": {
+    "保留": 2769,
+    "简化": 4883,
+    "删除": 40
+  },
+  "test_only_symbols": [
+    "storycg.cycle.apply_round",
+    "storycg.cycle.detection_improved",
+    "storycg.cycle.diagnose",
+    "storycg.cycle.run_repair_cycle",
+    "storycg.cycle.run_repair_cycle.persist",
+    "storycg.cycle.run_repair_cycle.quota",
+    "storycg.detect.crop_face",
+    "storycg.repairs.composite_region",
+    "storycg.repairs.rewrite_composition",
+    "storycg.tiers.build_l2_workflow",
+    "storycg.tiers.determine_l1",
+    "storycg.tiers.prepare_l2"
+  ],
+  "tools_only_symbols": [
+    "storycg.calibration.mapped_status",
+    "storycg.calibration.summarize",
+    "storycg.calibration_v2.aggregate",
+    "storycg.calibration_v2.item_truth",
+    "storycg.calibration_v2.map_visual",
+    "storycg.calibration_v2.summarize",
+    "storycg.calibration_v3.accessory_mapping",
+    "storycg.calibration_v3.stats",
+    "storycg.calibration_v3.summarize",
+    "storycg.repairs.fork_repair_job",
+    "storycg.repairs.region_queries",
+    "storycg.review.crop_face"
+  ],
+  "unreferenced_symbols": [
+    "storycg.runtime_gate.detection_improved"
+  ]
+}

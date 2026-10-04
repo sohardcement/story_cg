@@ -1,0 +1,179 @@
+[
+  {
+    "path": "jobs/cg-129ca5876d7b/worker.log",
+    "bytes": 210,
+    "lines": 5,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 1,
+      "planning": 1,
+      "generating_and_repairing": 1,
+      "completed": 1
+    }
+  },
+  {
+    "path": "jobs/cg-28fefea56956/worker.log",
+    "bytes": 0,
+    "lines": 0,
+    "phases": {}
+  },
+  {
+    "path": "jobs/cg-650f8f818fa4/foreground.log",
+    "bytes": 802,
+    "lines": 19,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 6,
+      "needs_user": 1,
+      "planning": 5,
+      "generating_and_repairing": 5,
+      "completed": 1
+    }
+  },
+  {
+    "path": "jobs/cg-650f8f818fa4/worker.log",
+    "bytes": 0,
+    "lines": 0,
+    "phases": {}
+  },
+  {
+    "path": "jobs/cg-76d2eec57dfc/worker.log",
+    "bytes": 338,
+    "lines": 8,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 2,
+      "planning": 2,
+      "generating_and_repairing": 2,
+      "completed": 1
+    }
+  },
+  {
+    "path": "jobs/cg-76d63251d1f9/worker.log",
+    "bytes": 331,
+    "lines": 8,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 2,
+      "planning": 2,
+      "awaiting_approval": 1,
+      "generating_and_repairing": 1,
+      "completed": 1
+    }
+  },
+  {
+    "path": "jobs/cg-9b3e05ab005b/worker.log",
+    "bytes": 823,
+    "lines": 20,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 5,
+      "planning": 5,
+      "awaiting_approval": 1,
+      "generating_and_repairing": 4,
+      "needs_user": 3,
+      "completed": 1
+    }
+  },
+  {
+    "path": "jobs/cg-c626c56d3840/worker.log",
+    "bytes": 295,
+    "lines": 5,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 1,
+      "planning": 1,
+      "stopped": 1
+    }
+  },
+  {
+    "path": "runs/p1_01_smoke_20260930/gen-one-killed.log",
+    "bytes": 0,
+    "lines": 0,
+    "phases": {}
+  },
+  {
+    "path": "runs/p1_02_frieren_20260930/review_cli.log",
+    "bytes": 175,
+    "lines": 9,
+    "phases": {}
+  },
+  {
+    "path": "runs/p1_04_frieren_20260930/plan_stderr.txt",
+    "bytes": 0,
+    "lines": 0,
+    "phases": {}
+  },
+  {
+    "path": "runs/p1_04_frieren_20260930/plan_stdout.txt",
+    "bytes": 11843,
+    "lines": 446,
+    "phases": {}
+  },
+  {
+    "path": "runs/p1_04_frieren_20260930/run_stderr.txt",
+    "bytes": 0,
+    "lines": 0,
+    "phases": {}
+  },
+  {
+    "path": "runs/p1_04_frieren_20260930/run_stdout.txt",
+    "bytes": 2746,
+    "lines": 87,
+    "phases": {}
+  },
+  {
+    "path": "runs/p2_01_style_20260930/generation.log",
+    "bytes": 2092,
+    "lines": 39,
+    "phases": {}
+  },
+  {
+    "path": "runs/p3_01_pilot_20260930/comparison_review.log",
+    "bytes": 283,
+    "lines": 16,
+    "phases": {}
+  },
+  {
+    "path": "runs/p3_01_pilot_20260930/generation.log",
+    "bytes": 250,
+    "lines": 10,
+    "phases": {}
+  },
+  {
+    "path": "runs/p3_01_pilot_20260930/input_correction.log",
+    "bytes": 54,
+    "lines": 1,
+    "phases": {}
+  },
+  {
+    "path": "runs/p3_01_pilot_20260930/m2_repair.log",
+    "bytes": 125,
+    "lines": 4,
+    "phases": {}
+  },
+  {
+    "path": "runs/p9_02_duplicate/worker.log",
+    "bytes": 338,
+    "lines": 8,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 2,
+      "planning": 2,
+      "generating_and_repairing": 2,
+      "completed": 1
+    }
+  },
+  {
+    "path": "runs/p9_02_r1_duplicate/worker.log",
+    "bytes": 338,
+    "lines": 8,
+    "phases": {
+      "checking_requirements": 1,
+      "resolving_identity": 2,
+      "planning": 2,
+      "generating_and_repairing": 2,
+      "completed": 1
+    }
+  }
+]
