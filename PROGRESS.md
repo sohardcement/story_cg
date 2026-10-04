@@ -8,7 +8,8 @@
 | 工单 | 结论 | 会话 ID | 证据 |
 |---|---|---|---|
 | CAP-00 冒烟：确认模型与推理强度 | **通过**：会话记录 `~/.codex/sessions/2026/10/04/rollout-…-01a104bc….jsonl` 显示 `model=gpt-6.1-sol`、`effort=max`；ComfyUI 队列空，视觉服务 200 | 01a104bc-e170-7e90-b3f6-2370b853368d | `probe/smoke.json`、`reports/CAP-00.md` |
-| CAP-01 写 40 条提示词（不出图） | 进行中 | — | `orders/CAP-01.md` |
+| CAP-01 写 40 条提示词（不出图） | **通过**：直接调用 v1 的 assemble_prompt 和 TagRegistry，没有改代码；IPAdapter 参考是 v1 现行的面部裁切，和 v1 manifest 同名同内容。监工审 tag 后要求改两处：第 12 项删掉 left_hand/right_hand（Danbooru 使用数 0），第 17 项景别改为 close-up, portrait（v1 近景映射强制加 upper_body，写不对"只拍脸"）。第 11 项"单手"、第 12 项"左右手"无法用 tag 表达，判图时不考核 | 01a104c0-3c1a-7c42-83cb-c0d15876a096 | `probe/prompts.md`、`reports/CAP-01.md` |
+| CAP-02 首轮出图 80 张 | 进行中 | — | `orders/CAP-02.md` |
 
 ## 第二轮进展（2026-10-02 更新，按用户 7 项决定 D9–D17 执行）
 
