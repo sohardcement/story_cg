@@ -72,6 +72,8 @@ v1 的单张审核对 100 张摸底图的整体结论：监工判"不可用"的 
 
 每项用 §1 的对比集做前后并排，由你判定。三项各自独立测试，不叠加；通过的项再合并测一次。
 
+资源（监工 2026-10-04 查 `/object_info`）：放大模型已有 `RealESRGAN_x4plus_anime_6B`、`realesrganX4plusAnime_v1`、`OmniSR_X2/X3/X4`；姿势控制已有 `OpenPoseXL2`、`control-lora-openposeXL2-rank256` 等 SDXL 姿势 ControlNet，都不需要新装。但这些姿势 ControlNet 和 WAI（Illustrious 系）是否兼容还没测过，姿势一项要先用 1–2 张图确认能用。
+
 | 改进 | 做法 | 预算 | 撤销条件 |
 |---|---|---|---|
 | 面部精修 + 调高画风权重 | 检测脸部后局部重绘；Iwao/akaimelon 权重各上调一档 | ⟨待定⟩ 张 | 你判"一样"或"更差" |
