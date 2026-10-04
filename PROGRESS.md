@@ -2,6 +2,12 @@
 
 ## 晨报（能力摸底阶段，2026-10-04 定稿）
 
+> **当前状态（2026-10-04 18:50，第 2 版）**：用户答复（D30–D38）已落实。
+> - CAP-04 提示词干扰补测和 CAP-05 姿态审核校准都已通过；姿态审核按 D33 不加入 v2。
+> - 分档已更新；TASK v2 草稿和晨报页面已同步。
+> - 本阶段出图 120/120。
+> - **等用户**：一是贴出判定页改判结果（D30，消息里没附上，页面改判只存在用户浏览器）；二是 TASK v2 定稿。定稿前不开始实现（D38）。
+
 页面版：晨报 https://claude.ai/artifact/BULEU1JzA219yRVMmQtRDN（本地 `verify/brief/index.html`）；能力摸底判定页 https://claude.ai/artifact/Q76rqzTEUXsK8L4oddVL6h（本地 `verify/cap/index.html`）。
 
 ### 一句话
