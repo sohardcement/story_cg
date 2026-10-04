@@ -10,7 +10,8 @@
 | CAP-00 冒烟：确认模型与推理强度 | **通过**：会话记录 `~/.codex/sessions/2026/10/04/rollout-…-01a104bc….jsonl` 显示 `model=gpt-6.1-sol`、`effort=max`；ComfyUI 队列空，视觉服务 200 | 01a104bc-e170-7e90-b3f6-2370b853368d | `probe/smoke.json`、`reports/CAP-00.md` |
 | CAP-01 写 40 条提示词（不出图） | **通过**：直接调用 v1 的 assemble_prompt 和 TagRegistry，没有改代码；IPAdapter 参考是 v1 现行的面部裁切，和 v1 manifest 同名同内容。监工审 tag 后要求改两处：第 12 项删掉 left_hand/right_hand（Danbooru 使用数 0），第 17 项景别改为 close-up, portrait（v1 近景映射强制加 upper_body，写不对"只拍脸"）。第 11 项"单手"、第 12 项"左右手"无法用 tag 表达，判图时不考核 | 01a104c0-3c1a-7c42-83cb-c0d15876a096 | `probe/prompts.md`、`reports/CAP-01.md` |
 | CAP-02 首轮出图 80 张 | **通过**：80 张各提交一次（监工核对 /history：80 个 probe/ 前缀各 1 次，80 个 prompt_id 不重复，本地 sha256 全部吻合），出图失败 0，没有重试；监工的两处 tag 修改已生效。单张中位数 12 秒，共 27 分钟。中途 Codex 的 PNG 元数据校验写得太严，前 58 张都标成 artifact_error；Codex 修正校验后按 prompt_id 从服务器取回原图，没有重新出图 | 01a104dd-450a-7823-b826-23ea96ace115 | `probe/runs.jsonl`、`probe/sheets/`、`reports/CAP-02.md` |
-| AUD-01 v1 代码审计 | 进行中 | — | `orders/AUD-01.md` |
+| AUD-01 v1 代码审计 | **通过**：41 个模块、7,692 行，逐模块给出调用证据、验证工单和建议。整模块删除只建议 eye_sampling.py（40 行，校准误报 50%）；建议简化的模块合计 4,883 行（这是受影响的整文件行数，不是可删行数）；没有只为道具服务的整模块，道具专用的分支都已逐一列出。只被测试引用的定义有 12 个，包括 cycle.py 里重复的修复循环。监工抽查三项：runtime_gate 通过 import * 引入 cycle 后重新定义了 run_repair_cycle/apply_round，所以 cycle.py 中那两个只有测试能走到；prepare_l2 在 src 中没有调用方；总行数 7692。三项均属实 | 01a104f7-5255-7bf0-a61b-af477b9cada6 | `audit/AUDIT.md`、`reports/AUD-01.md` |
+| CAP-03 补图 20 张 + 审核器对照 | 进行中 | 01a10520-5fec-7d72-a0eb-add529081617 | `orders/CAP-03.md` |
 
 ## 第二轮进展（2026-10-02 更新，按用户 7 项决定 D9–D17 执行）
 

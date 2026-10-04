@@ -1,0 +1,667 @@
+[
+  {
+    "module": "src/storycg/__main__.py",
+    "ticket": "P1-01",
+    "path": "runs/p1_01_smoke_20260930/state.json",
+    "is_file": true,
+    "sha256": "13b1e98f8f146308766dbd0ce9201a5bd424a58c241300f57691a2a0c10be8e5"
+  },
+  {
+    "module": "src/storycg/__main__.py",
+    "ticket": "P7-02 / Hermes T2",
+    "path": "verify/hermes/t2b-approve.out",
+    "is_file": true,
+    "sha256": "a4f8349b62f3ed66d4e67396ec22f232a0103c0b0bd08231081907552840ced2"
+  },
+  {
+    "module": "src/storycg/agent.py",
+    "ticket": "P7-02 / Hermes T2",
+    "path": "verify/hermes/t2b-approve.out",
+    "is_file": true,
+    "sha256": "a4f8349b62f3ed66d4e67396ec22f232a0103c0b0bd08231081907552840ced2"
+  },
+  {
+    "module": "src/storycg/agent.py",
+    "ticket": "Hermes T3b",
+    "path": "verify/hermes/t3b-resume-check.json",
+    "is_file": true,
+    "sha256": "dd02f3f75b799f7a5ed7d546b76c6eaa98cb202001ca3c5f81f8a0df711f867f"
+  },
+  {
+    "module": "src/storycg/agent.py",
+    "ticket": "D27 / Hermes T4",
+    "path": "verify/hermes/t4-hermes-output.log",
+    "is_file": true,
+    "sha256": "38850bfdb59e78ec41141015f8f3194b33750f4f4446c9dc9c240203a2ba53d9"
+  },
+  {
+    "module": "src/storycg/assembly.py",
+    "ticket": "P1-04",
+    "path": "review/P1-02-vs-P1-04.jpg",
+    "is_file": true,
+    "sha256": "f0240dc3d60bb8703be99b32ce69d4d60ad45e35a826ddc09394becd68fc2381"
+  },
+  {
+    "module": "src/storycg/assembly.py",
+    "ticket": "P3-02",
+    "path": "review/P3-02-芙莉莲-对照.jpg",
+    "is_file": true,
+    "sha256": "5b285f5834944df8d94a553ab06fbfd06b0cc72bbcbf2051023e41260dd8f5ec"
+  },
+  {
+    "module": "src/storycg/budget.py",
+    "ticket": "P5-02",
+    "path": "reports/P5-02.md",
+    "is_file": true,
+    "sha256": "fd1191bd64abd52bdf7ee72ae137ea8458bd489dfa6a55cac7d2b80ec925c3b4"
+  },
+  {
+    "module": "src/storycg/budget.py",
+    "ticket": "P7-02",
+    "path": "reports/P7-02.md",
+    "is_file": true,
+    "sha256": "5e4f40f8eec776bfad8ae2ee8e13394155cf7ada28002e45661b9fb4bb2b4a7f"
+  },
+  {
+    "module": "src/storycg/calibration.py",
+    "ticket": "P4-02",
+    "path": "calibration/results.json",
+    "is_file": true,
+    "sha256": "dfce2fdaba249bd0247125f58df75e01d362c44f73fb00f83505ea1c9c72ca7f"
+  },
+  {
+    "module": "src/storycg/calibration.py",
+    "ticket": "P4-02",
+    "path": "calibration/summary.md",
+    "is_file": true,
+    "sha256": "0487773673d67de2e0bd25f88416518f36d600f79e15a10f04dc79bdf329947d"
+  },
+  {
+    "module": "src/storycg/calibration_v2.py",
+    "ticket": "P9-04",
+    "path": "calibration/v2/results.json",
+    "is_file": true,
+    "sha256": "650e24a11d38a6a730f0b7ad42c9c922b92b46c1a413d0d32b0ce792db298307"
+  },
+  {
+    "module": "src/storycg/calibration_v2.py",
+    "ticket": "P9-04",
+    "path": "calibration/v2/summary.md",
+    "is_file": true,
+    "sha256": "9132f41c1b5207bf3d9b3ce60b1121cb8250e48fd3597d3e2da77c82c3f58cdf"
+  },
+  {
+    "module": "src/storycg/calibration_v3.py",
+    "ticket": "P10-02",
+    "path": "calibration/v3/results.json",
+    "is_file": true,
+    "sha256": "45563d40201c87123bb9e262d2a1e6d8dcb7a604eef875929a353668f1b2da6b"
+  },
+  {
+    "module": "src/storycg/calibration_v3.py",
+    "ticket": "P10-03",
+    "path": "calibration/v3.1/summary.md",
+    "is_file": true,
+    "sha256": "4555882823aa9e350ab85dd0b803f07b2107dbac7db0511d3fdc58dd53538d5f"
+  },
+  {
+    "module": "src/storycg/comfy.py",
+    "ticket": "P1-01",
+    "path": "runs/p1_01_smoke_20260930/manifest.json",
+    "is_file": true,
+    "sha256": "b093a24e33e64382fee62dcc4e4eef56d68a972bfb57c0566356c1b6bc8f9803"
+  },
+  {
+    "module": "src/storycg/comfy.py",
+    "ticket": "Hermes T3b",
+    "path": "verify/hermes/t3b-resume-check.json",
+    "is_file": true,
+    "sha256": "dd02f3f75b799f7a5ed7d546b76c6eaa98cb202001ca3c5f81f8a0df711f867f"
+  },
+  {
+    "module": "src/storycg/config.py",
+    "ticket": "P2-01",
+    "path": "config/style.json",
+    "is_file": true,
+    "sha256": "d4781aa2b77ee149b30d20712bef8fd7fe69198e8ffb9ae8b311ba59bbbb11f8"
+  },
+  {
+    "module": "src/storycg/config.py",
+    "ticket": "P2-01",
+    "path": "review/P2-grid-A.jpg",
+    "is_file": true,
+    "sha256": "1a4c9e1f5341dae2a621f4694be8ab87bca738afe89c0dd3094c821e08053560"
+  },
+  {
+    "module": "src/storycg/controls.py",
+    "ticket": "P3-02",
+    "path": "review/P3-02-芙莉莲-对照.jpg",
+    "is_file": true,
+    "sha256": "5b285f5834944df8d94a553ab06fbfd06b0cc72bbcbf2051023e41260dd8f5ec"
+  },
+  {
+    "module": "src/storycg/controls.py",
+    "ticket": "P9-02",
+    "path": "reports/P9-02.md",
+    "is_file": true,
+    "sha256": "b0fcfd214ae0836fc001ac19ce0cd38ea79baf3d5be65be91f255ee612952ebf"
+  },
+  {
+    "module": "src/storycg/cycle.py",
+    "ticket": "P5-02",
+    "path": "review/P5-02-约尔-前后.jpg",
+    "is_file": true,
+    "sha256": "25a3c7465f64f35d8426e0dec018b40dcce9fc5f80c8a2232374871b27e97a87"
+  },
+  {
+    "module": "src/storycg/cycle.py",
+    "ticket": "P10-05",
+    "path": "reports/assets/P10-05/replay-supervisor.json",
+    "is_file": true,
+    "sha256": "8d1c9c5965cc8cfee24847a6c65e61d8eaebeb63d6221302a9d6fbb25d33cf31"
+  },
+  {
+    "module": "src/storycg/detect.py",
+    "ticket": "P9-01",
+    "path": "calibration/detect/results.json",
+    "is_file": true,
+    "sha256": "8cf22442193ac847220eeb81b6c297722fe0e95a6e4a4acdb5124f3c3e664828"
+  },
+  {
+    "module": "src/storycg/detect.py",
+    "ticket": "P9-01",
+    "path": "review/P9-01-detect.jpg",
+    "is_file": true,
+    "sha256": "692b2275cd4c01d3865a4400b0158a5277d107139495cb5357e206d31d6ffa8b"
+  },
+  {
+    "module": "src/storycg/detect.py",
+    "ticket": "P10-05",
+    "path": "reports/P10-05.md",
+    "is_file": true,
+    "sha256": "26e9054214e1077d022178a13751de027174f87ab6ec487810bee213d3a9ca30"
+  },
+  {
+    "module": "src/storycg/detection_review.py",
+    "ticket": "P9-02",
+    "path": "review/P9-02-inpaint.jpg",
+    "is_file": true,
+    "sha256": "cba234a91eb6b9bace560e63946fefd70f66fb5e5147f9509e998fbfdc37c6d9"
+  },
+  {
+    "module": "src/storycg/detection_review.py",
+    "ticket": "P9-04",
+    "path": "calibration/v2/summary.md",
+    "is_file": true,
+    "sha256": "9132f41c1b5207bf3d9b3ce60b1121cb8250e48fd3597d3e2da77c82c3f58cdf"
+  },
+  {
+    "module": "src/storycg/detection_review.py",
+    "ticket": "P10-05",
+    "path": "reports/P10-05.md",
+    "is_file": true,
+    "sha256": "26e9054214e1077d022178a13751de027174f87ab6ec487810bee213d3a9ca30"
+  },
+  {
+    "module": "src/storycg/editing.py",
+    "ticket": "P5-02",
+    "path": "review/P5-02-约尔-前后.jpg",
+    "is_file": true,
+    "sha256": "25a3c7465f64f35d8426e0dec018b40dcce9fc5f80c8a2232374871b27e97a87"
+  },
+  {
+    "module": "src/storycg/editing.py",
+    "ticket": "P9-06",
+    "path": "review/P9-06-月城柳-前后.jpg",
+    "is_file": true,
+    "sha256": "5dbfe11cf4be6dd2fe9689972d83c63ce4d6023ec54a00ac4cda954311604f0f"
+  },
+  {
+    "module": "src/storycg/eye_sampling.py",
+    "ticket": "P9-04",
+    "path": "calibration/v2/summary.md",
+    "is_file": true,
+    "sha256": "9132f41c1b5207bf3d9b3ce60b1121cb8250e48fd3597d3e2da77c82c3f58cdf"
+  },
+  {
+    "module": "src/storycg/eye_sampling.py",
+    "ticket": "P9-02",
+    "path": "review/P9-02-eyes.jpg",
+    "is_file": true,
+    "sha256": "2a990fbb504bd5b6856162704b067b11d5ac6ed6a84d89b62c680612f80f39e7"
+  },
+  {
+    "module": "src/storycg/fallback.py",
+    "ticket": "P6-02",
+    "path": "reports/P6-02.md",
+    "is_file": true,
+    "sha256": "ca8f6f019bea1af94da1f2ad6e0906132a75843cd40e06243af07f0dc478d967"
+  },
+  {
+    "module": "src/storycg/fallback.py",
+    "ticket": "P6-02",
+    "path": "runs/p6_02/l4/unknown/needs-user.json",
+    "is_file": true,
+    "sha256": "1ed9f486e5b350a56f44f604f436af5c4cc82e0b46a0ff6c4ced6456401547b5"
+  },
+  {
+    "module": "src/storycg/fallback.py",
+    "ticket": "P8-03",
+    "path": "review/白雪姬-面包店打工.jpg",
+    "is_file": true,
+    "sha256": "61e326c3d8fd343347204a21cd39304f9c216d13a31735933cfabe47c0ca2776"
+  },
+  {
+    "module": "src/storycg/identity.py",
+    "ticket": "P6-01a",
+    "path": "runs/p6_01a_rework1_resolve/05/identity.json",
+    "is_file": true,
+    "sha256": "73c65c9f4cf2e69ef61d5610f454c6d63b49e6ff119699a95525fc36f2a82573"
+  },
+  {
+    "module": "src/storycg/identity.py",
+    "ticket": "P6-01b",
+    "path": "reports/P6-01b.md",
+    "is_file": true,
+    "sha256": "abc23883f1ad44513eb21f7d146274137e1de54d1dec9f05fe4ae532d177b1c1"
+  },
+  {
+    "module": "src/storycg/identity_enrichment.py",
+    "ticket": "P6-01a",
+    "path": "reports/P6-01a.md",
+    "is_file": true,
+    "sha256": "7a4adc1d4abfd921653cf5319dfd88d94b209b559903f68cd605c44679d6f19a"
+  },
+  {
+    "module": "src/storycg/identity_enrichment.py",
+    "ticket": "P10-01",
+    "path": "reports/assets/P10-01/yor-reextracted.json",
+    "is_file": true,
+    "sha256": "00430767d89e1fd14ef9380f17475e5fc70a5729daf9821046739e2fd3c65b8e"
+  },
+  {
+    "module": "src/storycg/model_metadata.py",
+    "ticket": "P9-06",
+    "path": "reports/P9-06.md",
+    "is_file": true,
+    "sha256": "f5afe72e99306453148b463e7cd6c8a8a2569295e181a6b6ed0a09c600a48722"
+  },
+  {
+    "module": "src/storycg/model_metadata.py",
+    "ticket": "P9-06",
+    "path": "jobs/p9_06_cake/tier/inventory.json",
+    "is_file": true,
+    "sha256": "1a4aae9066d49550e31ca1df14a2876fd16c71e763171c543dd6607a6bae3aca"
+  },
+  {
+    "module": "src/storycg/outfits.py",
+    "ticket": "P6-01a",
+    "path": "reports/P6-01a.md",
+    "is_file": true,
+    "sha256": "7a4adc1d4abfd921653cf5319dfd88d94b209b559903f68cd605c44679d6f19a"
+  },
+  {
+    "module": "src/storycg/outfits.py",
+    "ticket": "P10-01",
+    "path": "reports/assets/P10-01/yor-reextracted.json",
+    "is_file": true,
+    "sha256": "00430767d89e1fd14ef9380f17475e5fc70a5729daf9821046739e2fd3c65b8e"
+  },
+  {
+    "module": "src/storycg/pipeline.py",
+    "ticket": "P1-02",
+    "path": "review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg",
+    "is_file": true,
+    "sha256": "0723d44e4e62efcdc533b09bd6a36c8d3cc66004b02cb7b3b7ed40a84ff26331"
+  },
+  {
+    "module": "src/storycg/pipeline.py",
+    "ticket": "Hermes T4",
+    "path": "jobs/cg-129ca5876d7b/contact_sheet.jpg",
+    "is_file": true,
+    "sha256": "29d933d4bb117f2f3029d0e5e8cc4239ef1719e0a1ae75c7a84645482636c1f2"
+  },
+  {
+    "module": "src/storycg/planning.py",
+    "ticket": "P1-04",
+    "path": "review/P1-02-vs-P1-04.jpg",
+    "is_file": true,
+    "sha256": "f0240dc3d60bb8703be99b32ce69d4d60ad45e35a826ddc09394becd68fc2381"
+  },
+  {
+    "module": "src/storycg/planning.py",
+    "ticket": "P9-05",
+    "path": "reports/P9-05.md",
+    "is_file": true,
+    "sha256": "6fe034993c2e0f0ffd5c160014a66c9263c3204bd2a21625f9bff9aa3124965f"
+  },
+  {
+    "module": "src/storycg/planning.py",
+    "ticket": "P10-04",
+    "path": "reports/P10-04.md",
+    "is_file": true,
+    "sha256": "08595d45761cf32bd30e0a166202f316d6f3f61fd3b1137d2078cc29c33b5123"
+  },
+  {
+    "module": "src/storycg/portrait_gate.py",
+    "ticket": "P5-02 / D7",
+    "path": "jobs/cg-9b3e05ab005b/portrait_gate_original.json",
+    "is_file": true,
+    "sha256": "e9d96638c04b4bafbd8e344fc3c52f36453fa3c2f20e31aebdc6c7e4e897b169"
+  },
+  {
+    "module": "src/storycg/portrait_gate.py",
+    "ticket": "Hermes T4",
+    "path": "jobs/cg-129ca5876d7b/portrait.json",
+    "is_file": true,
+    "sha256": "4648d6cec44130a5a574ac3e145df357b003358f2b44a91b17f0db7a62f49c70"
+  },
+  {
+    "module": "src/storycg/posture_tags.py",
+    "ticket": "P9-05",
+    "path": "reports/P9-05.md",
+    "is_file": true,
+    "sha256": "6fe034993c2e0f0ffd5c160014a66c9263c3204bd2a21625f9bff9aa3124965f"
+  },
+  {
+    "module": "src/storycg/posture_tags.py",
+    "ticket": "P9-05",
+    "path": "cache/tag_groups/posture.provenance.json",
+    "is_file": true,
+    "sha256": "a012c813206b0c43c19d6fec9961873a4534205da6a03ab13d742d48a43dd85c"
+  },
+  {
+    "module": "src/storycg/reconcile.py",
+    "ticket": "P1-01",
+    "path": "runs/p1_01_smoke_20260930/state.json",
+    "is_file": true,
+    "sha256": "13b1e98f8f146308766dbd0ce9201a5bd424a58c241300f57691a2a0c10be8e5"
+  },
+  {
+    "module": "src/storycg/reconcile.py",
+    "ticket": "P5-01b",
+    "path": "reports/P5-01b.md",
+    "is_file": true,
+    "sha256": "6a20ff96305ef59274b4d34cdc40f2cf5ba4cd1725a71359f95cd581aab36137"
+  },
+  {
+    "module": "src/storycg/reconcile.py",
+    "ticket": "Hermes T3b",
+    "path": "verify/hermes/t3b-resume-check.json",
+    "is_file": true,
+    "sha256": "dd02f3f75b799f7a5ed7d546b76c6eaa98cb202001ca3c5f81f8a0df711f867f"
+  },
+  {
+    "module": "src/storycg/reference.py",
+    "ticket": "P3-01",
+    "path": "review/P3-01-pilot.jpg",
+    "is_file": true,
+    "sha256": "611f21b03c3122266d981a2cc1c0c19b81568470e0595f95367267a21d8335dc"
+  },
+  {
+    "module": "src/storycg/reference.py",
+    "ticket": "P3-01",
+    "path": "runs/p3_01_cache_probe_20260930/portrait.json",
+    "is_file": true,
+    "sha256": "a1a908878235b0fde3743a540acd0cd487db62df84c1c821075eaba341598614"
+  },
+  {
+    "module": "src/storycg/reference.py",
+    "ticket": "P6-02",
+    "path": "reports/P6-02.md",
+    "is_file": true,
+    "sha256": "ca8f6f019bea1af94da1f2ad6e0906132a75843cd40e06243af07f0dc478d967"
+  },
+  {
+    "module": "src/storycg/repairs.py",
+    "ticket": "P5-01b",
+    "path": "review/P5-01b-repairs.jpg",
+    "is_file": true,
+    "sha256": "5cb1032304fe9d97313caf885c0cd093170530888f0156795a6fff83a321d1a0"
+  },
+  {
+    "module": "src/storycg/repairs.py",
+    "ticket": "P5-02",
+    "path": "review/P5-02-约尔-前后.jpg",
+    "is_file": true,
+    "sha256": "25a3c7465f64f35d8426e0dec018b40dcce9fc5f80c8a2232374871b27e97a87"
+  },
+  {
+    "module": "src/storycg/repairs.py",
+    "ticket": "P9-02",
+    "path": "review/P9-02-inpaint.jpg",
+    "is_file": true,
+    "sha256": "cba234a91eb6b9bace560e63946fefd70f66fb5e5147f9509e998fbfdc37c6d9"
+  },
+  {
+    "module": "src/storycg/repairs.py",
+    "ticket": "P9-06",
+    "path": "review/P9-06-月城柳-前后.jpg",
+    "is_file": true,
+    "sha256": "5dbfe11cf4be6dd2fe9689972d83c63ce4d6023ec54a00ac4cda954311604f0f"
+  },
+  {
+    "module": "src/storycg/review.py",
+    "ticket": "P4-02",
+    "path": "calibration/summary.md",
+    "is_file": true,
+    "sha256": "0487773673d67de2e0bd25f88416518f36d600f79e15a10f04dc79bdf329947d"
+  },
+  {
+    "module": "src/storycg/review.py",
+    "ticket": "P9-04",
+    "path": "calibration/v2/summary.md",
+    "is_file": true,
+    "sha256": "9132f41c1b5207bf3d9b3ce60b1121cb8250e48fd3597d3e2da77c82c3f58cdf"
+  },
+  {
+    "module": "src/storycg/review.py",
+    "ticket": "P10-02",
+    "path": "calibration/v3/summary.md",
+    "is_file": true,
+    "sha256": "006161aec5ce826eef38e1f5df6447543454b24088d21bf11fcdb0149978cf48"
+  },
+  {
+    "module": "src/storycg/review_gate.py",
+    "ticket": "P9-05",
+    "path": "reports/P9-05.md",
+    "is_file": true,
+    "sha256": "6fe034993c2e0f0ffd5c160014a66c9263c3204bd2a21625f9bff9aa3124965f"
+  },
+  {
+    "module": "src/storycg/review_gate.py",
+    "ticket": "P10-01",
+    "path": "reports/assets/P10-01/replay-summary.json",
+    "is_file": true,
+    "sha256": "2698aed51fec7afe521cf402ff515bcc2239be4979187ec219531fdb362ee9db"
+  },
+  {
+    "module": "src/storycg/review_v3.py",
+    "ticket": "P10-02",
+    "path": "calibration/v3/summary.md",
+    "is_file": true,
+    "sha256": "006161aec5ce826eef38e1f5df6447543454b24088d21bf11fcdb0149978cf48"
+  },
+  {
+    "module": "src/storycg/review_v3.py",
+    "ticket": "P10-03",
+    "path": "calibration/v3.1/summary.md",
+    "is_file": true,
+    "sha256": "4555882823aa9e350ab85dd0b803f07b2107dbac7db0511d3fdc58dd53538d5f"
+  },
+  {
+    "module": "src/storycg/review_v3.py",
+    "ticket": "P10-04",
+    "path": "review/P10-04-菲伦-前后.jpg",
+    "is_file": true,
+    "sha256": "aab68104805f5116b3c195de2220e3e6cc01694af08775071fcc9a3d8c37f6af"
+  },
+  {
+    "module": "src/storycg/runner.py",
+    "ticket": "P1-01",
+    "path": "runs/p1_01_smoke_20260930/state.json",
+    "is_file": true,
+    "sha256": "13b1e98f8f146308766dbd0ce9201a5bd424a58c241300f57691a2a0c10be8e5"
+  },
+  {
+    "module": "src/storycg/runner.py",
+    "ticket": "Hermes T3b",
+    "path": "verify/hermes/t3b-resume-check.json",
+    "is_file": true,
+    "sha256": "dd02f3f75b799f7a5ed7d546b76c6eaa98cb202001ca3c5f81f8a0df711f867f"
+  },
+  {
+    "module": "src/storycg/runtime_gate.py",
+    "ticket": "P9-06",
+    "path": "review/P9-06-月城柳-前后.jpg",
+    "is_file": true,
+    "sha256": "5dbfe11cf4be6dd2fe9689972d83c63ce4d6023ec54a00ac4cda954311604f0f"
+  },
+  {
+    "module": "src/storycg/runtime_gate.py",
+    "ticket": "P10-01",
+    "path": "reports/assets/P10-01/replay-summary.json",
+    "is_file": true,
+    "sha256": "2698aed51fec7afe521cf402ff515bcc2239be4979187ec219531fdb362ee9db"
+  },
+  {
+    "module": "src/storycg/runtime_gate.py",
+    "ticket": "P10-05",
+    "path": "reports/assets/P10-05/replay-supervisor.json",
+    "is_file": true,
+    "sha256": "8d1c9c5965cc8cfee24847a6c65e61d8eaebeb63d6221302a9d6fbb25d33cf31"
+  },
+  {
+    "module": "src/storycg/shot_contract.py",
+    "ticket": "P9-05",
+    "path": "reports/P9-05.md",
+    "is_file": true,
+    "sha256": "6fe034993c2e0f0ffd5c160014a66c9263c3204bd2a21625f9bff9aa3124965f"
+  },
+  {
+    "module": "src/storycg/shot_contract.py",
+    "ticket": "P10-01",
+    "path": "reports/P10-01.md",
+    "is_file": true,
+    "sha256": "1105b6c70654b6a99fc2c0889093f2a57437fb205fc715d838be77df7c343fba"
+  },
+  {
+    "module": "src/storycg/shot_contract.py",
+    "ticket": "P10-04",
+    "path": "reports/P10-04.md",
+    "is_file": true,
+    "sha256": "08595d45761cf32bd30e0a166202f316d6f3f61fd3b1137d2078cc29c33b5123"
+  },
+  {
+    "module": "src/storycg/state.py",
+    "ticket": "P1-01",
+    "path": "runs/p1_01_smoke_20260930/state.json",
+    "is_file": true,
+    "sha256": "13b1e98f8f146308766dbd0ce9201a5bd424a58c241300f57691a2a0c10be8e5"
+  },
+  {
+    "module": "src/storycg/state.py",
+    "ticket": "Hermes T3b",
+    "path": "verify/hermes/t3b-resume-check.json",
+    "is_file": true,
+    "sha256": "dd02f3f75b799f7a5ed7d546b76c6eaa98cb202001ca3c5f81f8a0df711f867f"
+  },
+  {
+    "module": "src/storycg/story_rules.py",
+    "ticket": "P5-02",
+    "path": "review/P5-02-约尔-前后.jpg",
+    "is_file": true,
+    "sha256": "25a3c7465f64f35d8426e0dec018b40dcce9fc5f80c8a2232374871b27e97a87"
+  },
+  {
+    "module": "src/storycg/story_rules.py",
+    "ticket": "P8-03",
+    "path": "reports/P8-03.md",
+    "is_file": true,
+    "sha256": "c37831dbb836a258a518e78ba48eca7a077040dfc52fbeae24e4f000489d69c0"
+  },
+  {
+    "module": "src/storycg/tags.py",
+    "ticket": "P1-04",
+    "path": "reports/P1-04.md",
+    "is_file": true,
+    "sha256": "6e0c2f000398146a38eb8b818f978f80f8e95474beb21f1de1b8629831f37c5a"
+  },
+  {
+    "module": "src/storycg/tags.py",
+    "ticket": "P10-04",
+    "path": "reports/P10-04.md",
+    "is_file": true,
+    "sha256": "08595d45761cf32bd30e0a166202f316d6f3f61fd3b1137d2078cc29c33b5123"
+  },
+  {
+    "module": "src/storycg/tier_gate.py",
+    "ticket": "P9-06 / D18",
+    "path": "jobs/p9_06_cake/tier_gate.json",
+    "is_file": true,
+    "sha256": "d51b8c93d86755ce0eec04a6994c95c6f8fcc716707ba9a99866d3fb6226a5e2"
+  },
+  {
+    "module": "src/storycg/tier_gate.py",
+    "ticket": "P10-01 / D20",
+    "path": "reports/P10-01.md",
+    "is_file": true,
+    "sha256": "1105b6c70654b6a99fc2c0889093f2a57437fb205fc715d838be77df7c343fba"
+  },
+  {
+    "module": "src/storycg/tiers.py",
+    "ticket": "P6-01b",
+    "path": "reports/P6-01b.md",
+    "is_file": true,
+    "sha256": "abc23883f1ad44513eb21f7d146274137e1de54d1dec9f05fe4ae532d177b1c1"
+  },
+  {
+    "module": "src/storycg/tiers.py",
+    "ticket": "P6-02",
+    "path": "reports/P6-02.md",
+    "is_file": true,
+    "sha256": "ca8f6f019bea1af94da1f2ad6e0906132a75843cd40e06243af07f0dc478d967"
+  },
+  {
+    "module": "src/storycg/tiers.py",
+    "ticket": "P9-06",
+    "path": "reports/P9-06.md",
+    "is_file": true,
+    "sha256": "f5afe72e99306453148b463e7cd6c8a8a2569295e181a6b6ed0a09c600a48722"
+  },
+  {
+    "module": "src/storycg/v1_scope.py",
+    "ticket": "P10-01",
+    "path": "reports/assets/P10-01/replay-summary.json",
+    "is_file": true,
+    "sha256": "2698aed51fec7afe521cf402ff515bcc2239be4979187ec219531fdb362ee9db"
+  },
+  {
+    "module": "src/storycg/v1_scope.py",
+    "ticket": "Hermes T4",
+    "path": "jobs/cg-129ca5876d7b/result.md",
+    "is_file": true,
+    "sha256": "748fa0a1f3825163603171efe1ea183cb029c80a2461fda1b0ecb8512af39c70"
+  },
+  {
+    "module": "src/storycg/workflow.py",
+    "ticket": "P2-01",
+    "path": "review/P2-grid-A.jpg",
+    "is_file": true,
+    "sha256": "1a4c9e1f5341dae2a621f4694be8ab87bca738afe89c0dd3094c821e08053560"
+  },
+  {
+    "module": "src/storycg/workflow.py",
+    "ticket": "P3-01",
+    "path": "review/P3-01-pilot.jpg",
+    "is_file": true,
+    "sha256": "611f21b03c3122266d981a2cc1c0c19b81568470e0595f95367267a21d8335dc"
+  },
+  {
+    "module": "src/storycg/workflow.py",
+    "ticket": "P9-02",
+    "path": "review/P9-02-inpaint.jpg",
+    "is_file": true,
+    "sha256": "cba234a91eb6b9bace560e63946fefd70f66fb5e5147f9509e998fbfdc37c6d9"
+  }
+]

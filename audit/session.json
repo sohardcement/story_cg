@@ -1,0 +1,13 @@
+{
+  "order": "AUD-01",
+  "first_time_check_utc": "2026-10-04 03:31:44 UTC",
+  "delivery_record_utc": "2026-10-04 04:13:06 UTC",
+  "elapsed_seconds_since_first_check": 2482,
+  "elapsed_minutes": 41.37,
+  "new_images": 0,
+  "new_vision_calls": 0,
+  "new_comfy_submissions": 0,
+  "dependency_installs": 0,
+  "git_commits": 0,
+  "scope": "Read-only production audit; output audit/ plus explicitly required reports/AUD-01.md"
+}
