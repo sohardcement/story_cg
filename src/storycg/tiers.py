@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 import httpx
 from storycg.identity_enrichment import load_rules
 from storycg.state import save_json_atomic
-from storycg.workflow import build_workflow
 
 
 def normalize_tag(tag):
@@ -81,27 +80,6 @@ def match_character_loras(character_tag, names, metadata, *, character_tags=None
             'rejected':rejected,'selection_rule':'character share, non eval/intermediate artifact, training count, filename support, lexical tie break'}
 
 
-def determine_l1(character_tag, get_json, *, base_url='', character_tags=None, rules=None):
-    """get_json(path, params) is a GET-only injected client; never trusts saved list as live evidence."""
-    try:
-        info=get_json('/object_info',None)
-        names=lora_names(info)
-        metadata={name:get_json('/view_metadata/loras',{'filename':name}) for name in names}
-    except (httpx.HTTPError,OSError,ValueError,KeyError) as exc:
-        return {'identity_tier':'tier_pending_comfyui','lora':None,
-                'tier_evidence':{'status':'unavailable','error':str(exc),'method':'live object_info and view_metadata/loras'}}
-    result=match_character_loras(character_tag,names,metadata,character_tags=character_tags,rules=rules)
-    for match in result['matches']:
-        match['evidence']['url']=str(httpx.URL(base_url+'/view_metadata/loras',params={'filename':match['name']}))
-    if result['selected']:
-        tier='tier_pending_L1_validation'
-    elif result['metadata_missing']:
-        tier='tier_pending_comfyui'
-    else:
-        tier='tier_pending_L2'
-    return {'identity_tier':tier,'lora':result['selected'] if tier=='tier_pending_L1_validation' else None,'tier_evidence':result}
-
-
 def add_character_lora(workflow,lora):
     workflow=copy.deepcopy(workflow)
     # Insert after the two style LoRAs, preserving both MODEL and CLIP chains.
@@ -129,17 +107,6 @@ def l1_validation_tags(identity,rules=None):
     rules=rules or load_rules()
     return ', '.join(filter(None,[identity['identity_block'],identity.get('outfit_block'),
                                  rules['neutral_l2_tags']]))
-
-
-def build_l2_workflow(config,identity,seed,prefix,rules=None):
-    cfg=copy.deepcopy(config)
-    cfg.pop('generation_reference',None)
-    cfg.pop('character_lora',None)
-    cfg['sampler']['denoise']=1.0
-    rules=rules or load_rules()
-    tags=knowledge_probe_tags(identity,rules)
-    workflow=build_workflow(cfg,tags,'medium',seed,prefix)
-    return workflow
 
 
 def _eyewear(tag,cfg):
@@ -270,31 +237,6 @@ def evaluate_l2(checklist,comparisons,reliability):
             'reliable':reliable,'unverified':unverified,'outfit_comparisons':outfit,
             'vetoes':vetoes,'not_visible':not_visible,
             'limitations':'D8b: all reliable appearance items must pass; any appearance fail vetoes; outfit is diagnostic only; not_visible neither vetoes nor confirms'}
-
-
-def prepare_l2(job_dir, identity, config, *, seeds=(1,), rules=None, reference_client=None):
-    """Persist 1–2 unconditioned test workflows, without ever submitting them.
-
-    A later generation runner must execute these exact workflows and supply the
-    resulting image/workflow records to compare_l2. References are comparison only.
-    """
-    if not 1 <= len(seeds) <= 2:
-        raise ValueError('L2 requires one or two tests')
-    root=Path(job_dir)
-    plan={'status':'awaiting_generation','generation_count':0,'vision_calls':0,
-          'tests':[],'references':[],'checklist':identity_checklist(identity)}
-    for number,seed in enumerate(seeds,1):
-        path=f'l2/test_{number:02d}_workflow.json'
-        workflow=build_l2_workflow(config,identity,seed,f'storycg_{root.name}_l2_{number:02d}_a001',rules)
-        save_json_atomic(root/path,workflow)
-        plan['tests'].append({'workflow_path':path,'seed':seed,'status':'not_submitted',
-                              'workflow_sha256':hashlib.sha256((root/path).read_bytes()).hexdigest(),
-                              'reference_injection':False})
-    save_json_atomic(root/'l2/plan.json',plan)
-    if reference_client is not None:
-        plan['references']=download_references(identity['character_tag'],root,reference_client,rules=rules,identity=identity)
-        save_json_atomic(root/'l2/plan.json',plan)
-    return plan
 
 
 def _local_file(root,relative):

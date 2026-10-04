@@ -48,21 +48,6 @@ def aspect_resolution(size, target_pixels=1024*1024):
     return list(min(candidates,key=lambda wh:abs(math.log((wh[0]/wh[1])/ratio))+.05*abs(math.log(wh[0]*wh[1]/target_pixels))))
 
 
-def region_queries(entry, props, operation):
-    registry={p['id']:p for p in props};queries=[]
-    for pid in operation['prop_ids']:
-        prop=registry[pid];ref=next(r for r in entry['shot']['key_props'] if r['prop_id']==pid)
-        description=', '.join(prop['description_tags'])
-        other_tags={t for other in props if other['id']!=pid for t in other['description_tags']}
-        distinguishing=', '.join(t for t in prop['description_tags'] if t not in other_tags) or description
-        forbidden=[t for t in entry['scene']['negative_tags'] if prop['kind'].replace('_',' ') in t.replace('_',' ')]
-        subject=('the complete forbidden-state or surplus instance matching attributes '+distinguishing+'; expected kind: '+prop['kind']+'; forbidden states: '+', '.join(forbidden)) if operation['type']=='remove' else 'the complete incorrectly held object matching '+description
-        queries.append({'prop_id':pid,'kind':'object','query':'Locate '+subject+'. Include full object extent, not only handle or hand.'})
-        target=('the subject hand/contact space at '+ref['position']) if ref['held_by']!='none' else ('the supporting furniture or placement space at '+ref['position']+'; if absent return found=false')
-        queries.append({'prop_id':pid,'kind':'target','query':'Locate intended target for '+description+': '+target+'. Use the supplied shot state as ground truth.'})
-    return queries
-
-
 def region_prompt(identity, entry, props, operation):
     registry={p['id']:p for p in props}
     ids=operation.get('prop_ids',[])
@@ -137,12 +122,6 @@ def feather_mask(size, pixels, feather):
     blurred=mask.filter(ImageFilter.GaussianBlur(feather))
     from PIL import ImageChops
     return ImageChops.multiply(mask,blurred)
-
-
-def composite_region(base, patch, pixels, feather):
-    x0,y0,x1,y1=pixels
-    layer=base.convert('RGB').copy();layer.paste(patch.convert('RGB').resize((x1-x0,y1-y0),Image.Resampling.LANCZOS),(x0,y0))
-    return Image.composite(layer,base.convert('RGB'),feather_mask(base.size,pixels,feather))
 
 
 def composite_masked(base, patch, pixels, mask):
@@ -391,27 +370,3 @@ def record_result(root,key,review,observation):
         for a in state['attempts']:
             if a.get('repair_key')==key:a['repair_diagnosis']=copy.deepcopy(rec['diagnosis'])
         _save(Path(root),state);write_repair_manifest(root,state)
-
-
-def rewrite_composition(root, shot_number, diagnosis, llm):
-    """Optional runtime rewrite; locked identity, outfit and scene never enter editable schema."""
-    validate_diagnosis(diagnosis)
-    from storycg.planning import production_schema
-    shot_schema=production_schema()["properties"]["shots"]["items"]["properties"]["shot"]
-    from storycg.review import messages
-    root=Path(root)
-    board=json.loads((root/'storyboard.json').read_text())
-    identity=json.loads((root/'identity.json').read_text())
-    original=board['shots'][shot_number-1]
-    answer=llm.call('repair_composition_rewrite',messages(
-        'Revise only this shot composition to address the diagnosis. Preserve narrative event and registered prop IDs. '
-        'Make camera, framing and contact positions readable. Do not add identity or appearance descriptions. '
-        'Return every required shot field, including pose, reflection, protagonist_instances, subject_visibility, other_people, hand_owners, and all prop reference fields. action and description must equal pose; tags contain pose/expression only. '
-        'Diagnosis: '+json.dumps(diagnosis,ensure_ascii=False)+'\nShot: '+json.dumps(original['shot'],ensure_ascii=False)+
-        '\nRegistered props: '+json.dumps(board['props'],ensure_ascii=False)),shot_schema)
-    save_json_atomic(root/f'rewrite_shot{shot_number:02d}_{llm.session_id}.json',answer)
-    if answer['status']!='pass': raise ValueError('composition rewrite failed')
-    candidate=copy.deepcopy(original);candidate['shot']=answer['data']
-    rewritten=copy.deepcopy(board);rewritten['shots'][shot_number-1]=candidate
-    validate_storyboard(rewritten,len(board['shots']),identity)
-    return candidate

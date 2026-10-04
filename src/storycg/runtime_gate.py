@@ -355,11 +355,3 @@ def reliable_failure_vector(results):
 
 def reliable_failures(results):
     return frozen.reliable_failures([person_findings(r) for r in results])
-
-
-def detection_improved(before,after):
-    previous=copy.deepcopy(before);current=copy.deepcopy(after)
-    for item in (previous,current):
-        for layer in ('single','consistency'):
-            item[layer]=person_findings(item[layer])
-    return frozen.detection_improved(previous,current)
