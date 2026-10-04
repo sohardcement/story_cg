@@ -27,10 +27,10 @@ V1_RELIABILITY_NOTE = ('层级判定与身份审核的可靠依据只有发色�
 RELIABILITY_NOTE = ('发色、视觉瞳色等身份审核以逐项 reliability 配置为准。检测项仅 reliable 的可否决；'
                     '检测弃权标注未经审核；未可靠校准的项目标注“该项未经可靠审核”，建议用户看图确认。')
 TEXT = {'type': 'string'}
+PROP_SCOPE_NOTICE = '道具只作陪衬，数量、归属、状态不保证。'
 INTAKE_SCHEMA = {'type': 'object', 'additionalProperties': False,
-                 'required': ['named_characters', 'conflict', 'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items'], 'properties': {
-                     'named_characters': {'type': 'array', 'items': TEXT}, 'conflict': TEXT,
-                     'possession_swap': {'type':'boolean'}, 'prop_dependent': {'type':'boolean'}, 'prop_dependency_reason': {'type':'string','minLength':1}, 'prop_only_narrative_items': {'type':'array','uniqueItems':True,'items':{'enum':['key_events','changes','ending']}}}}
+                 'required': ['named_characters', 'conflict'], 'properties': {
+                     'named_characters': {'type': 'array', 'items': TEXT}, 'conflict': TEXT}}
 
 
 def read(root, name, default=None):
@@ -192,17 +192,14 @@ def execute(root):
             update(root, phase='checking_requirements')
             job = read(root, 'job.json')
             intake = runtime_json(root, config, 'intake',
-                'Identify explicitly named people in this input. Set prop_dependent true if the core event depends on object ownership or state, and give a one-sentence semantic reason in prop_dependency_reason; otherwise false and explain the person-driven change. In prop_only_narrative_items list only key_events/changes/ending whose entire expected requirement is object ownership/state/count/contact. Leave mixed person emotions/actions out; use [] when uncertain or prop_dependent=false. Do not use keyword matching. Do not ask the user about prop dependency. Set possession_swap true when the story involves the protagonist mistakenly taking/holding an object belonging to another owner or an exchange of ownership-distinguished objects; otherwise false. Infer this from the meaning, not a keyword list. Return an empty conflict unless the user explicitly demands mutually incompatible outcomes or constraints; ordinary creative choices are not conflicts. Multiple named people are not a conflict; v1 keeps the supplied protagonist. Give conflicts in Chinese.\n'+json.dumps({'character': job['character'], 'story': job['story']}, ensure_ascii=False), INTAKE_SCHEMA)
+                'Identify explicitly named people in this input. Return an empty conflict unless the user explicitly demands mutually incompatible outcomes or constraints; ordinary creative choices are not conflicts. Multiple named people are not a conflict; v2 keeps the supplied protagonist. Give conflicts in Chinese.\n'+json.dumps({'character': job['character'], 'story': job['story']}, ensure_ascii=False), INTAKE_SCHEMA)
             validate(intake, INTAKE_SCHEMA)
             if intake['conflict']:
                 question(root, 'requirements_conflict', intake['conflict']+' 请说明采用哪项要求。')
                 return
-            notices = []
+            notices = [PROP_SCOPE_NOTICE]
             if len(set(intake['named_characters'])) > 1:
-                notices.append('v1 只保证一个具名主角；按指定主角处理，其他人物以背影、路人、画面外或局部入镜表现。')
-            if intake['prop_dependent']:
-                from storycg.v1_scope import PROP_NOTICE
-                notices.append(PROP_NOTICE)
+                notices.append('v2 只保证一个具名主角；按指定主角处理，其他人物以背影、路人、画面外或局部入镜表现。')
             update(root, intake=intake, notices=notices)
         update(root, phase='resolving_identity')
         identity = resolve_job(root)
@@ -273,6 +270,11 @@ def deliver(root):
     from storycg.review import reliability_note_lines
     notes = reliability_note_lines(final_review, read(root, 'job.json').get('generation_config'))
     existing = result.read_text()
+    from storycg.v1_scope import delivery_scope_notes
+    scope_notes = [note for note in delivery_scope_notes(root) if note not in existing]
+    if scope_notes:
+        existing += '\n' + '\n'.join(scope_notes) + '\n'
+        result.write_text(existing)
     missing = [note for note in notes if note not in existing.splitlines()]
     if missing:
         result.write_text(existing + '\n## 审核项说明\n\n' + '\n'.join(missing) + '\n')
@@ -341,7 +343,6 @@ def edit_board(root, edit, config):
     Draft202012Validator(production_schema()).validate(candidate)
     present(root, config, candidate)
     save_json_atomic(root/'storyboard.json', candidate)
-    save_json_atomic(root/'props.json', candidate['props'])
 
 
 def main(argv):

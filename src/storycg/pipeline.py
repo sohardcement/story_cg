@@ -116,7 +116,8 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
         if not matching:
             continue
         attempt = matching[-1]
-        parts = assemble_prompt(identity, entry, props=board["props"], config=config)
+        parts = assemble_prompt(identity, entry, config=config,
+                                **({'props': board['props']} if board.get('props') else {}))
         workflow = attempt["workflow"]
         images.append({"shot_id": shot_id, "attempt_number": attempt["attempt_number"],
                        "prompt_id": attempt["prompt_id"], "filename_prefix": attempt["filename_prefix"],
@@ -277,14 +278,15 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     state = None
     for entry in board["shots"]:
         if config.get("repair_cycle_enabled"):gate.check()
-        parts = assemble_prompt(identity, entry, props=board["props"], config=config)
+        parts = assemble_prompt(identity, entry, config=config,
+                                **({'props': board['props']} if board.get('props') else {}))
         shot_config = copy.deepcopy(config)
         shot_config["negative_prompt"] = ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
         shot_id = f'shot{entry["number"]:02d}'
         relation = face_ref
         if full_ref:
             layout_id = f'layout{entry["number"]:02d}'
-            state = run_gen_one(job_dir, layout_id, edit_instruction(entry, board['props']),
+            state = run_gen_one(job_dir, layout_id, edit_instruction(entry, board.get('props', [])),
                                 parts['framing'], config, client, generation_reference=full_ref)
             layout = next(a for a in reversed(state['attempts']) if a['shot_id'] == layout_id)
             if layout['status'] != 'completed':

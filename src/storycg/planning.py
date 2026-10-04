@@ -22,16 +22,6 @@ OUTFIT = {"type": "object", "additionalProperties": False,
           "required": ["clothing_state", "change_at_shot", "tags"],
           "properties": {"clothing_state": TEXT, "tags": {**TAGS, "minItems": 1},
                          "change_at_shot": {"type": ["integer", "null"], "minimum": 1}}}
-PROP_STATE = {"type": "object", "additionalProperties": False,
-              "required": ["id", "kind", "description_tags"],
-              "properties": {"id": TEXT, "kind": TEXT,
-                             "role": {"enum": ["key", "group"], "description": "key is an individually tracked story object. group is homogeneous background/display items with no individual holder, owner or state distinction; otherwise register separate key objects."},
-                             "description_tags": {**TAGS, "minItems": 1}}}
-PROP = {"type": "object", "additionalProperties": False,
-        "required": ["prop_id", "held_by", "position", "relation_tags", "location_tags"],
-        "properties": {"prop_id": TEXT, "held_by": {"enum": ["subject", "other", "none", "offscreen"]},
-                       "position": TEXT, "owner": TEXT, "state": TEXT,
-                       "relation_tags": TAGS, "location_tags": TAGS}}
 SHOT = {"type": "object", "additionalProperties": False,
         "required": ["narrative_role", "description", "action", "expression", "key_props", "tags",
                      "spatial_relation", "framing", "camera_angle", "change_from_previous", "composition_reason"],
@@ -39,26 +29,27 @@ SHOT = {"type": "object", "additionalProperties": False,
                                                 "spatial_relation", "change_from_previous"]},
                        "composition_reason": {"type": "string"},
                        "tags": {**TAGS, "minItems": 1},
-                       "key_props": {"type": "array", "items": PROP},
+                       # Opaque archived records; new planning never writes bindings.
+                       "key_props": {"type": "array", "items": {"type": "object"}},
+                       "prop_tags": {**TAGS, "maxItems": 1},
                        "camera_angle": {"enum": ["front", "above", "below", "side", "behind", "dutch"]},
                        "framing": {"enum": ["wide", "full", "medium", "closeup"]}}}
 STORYBOARD_SCHEMA = {"$schema": "https://json-schema.org/draft/2020-12/schema",
                      "type": "object", "additionalProperties": False,
                      "required": ["props", "shots"], "properties": {
-                         "props": {"type": "array", "items": PROP_STATE},
+                         "props": {"type": "array", "items": {"type": "object"}},
                          "shots": {"type": "array", "items": {
                          "type": "object", "additionalProperties": False,
                          "required": ["number", "scene", "outfit", "shot"],
                          "properties": {"number": {"type": "integer", "minimum": 1},
                                         "scene": SCENE, "outfit": OUTFIT, "shot": SHOT}}}}}
 
-# Optional on legacy boards; production planning requires explicit visibility/ownership.
+# Optional on legacy boards; production planning requires explicit person visibility.
 SHOT['properties'].update({
     'subject_visibility':{'enum':['clear','obscured']},
     'reflection':{'type':'boolean','description':'True only when the shot explicitly includes one mirror or glass reflection of the protagonist.'},
     'other_people':{'type':'array','items':{'enum':['passerby','back_view','offscreen','partial']}},
     'hand_owners':{'type':'array','items':{'enum':['subject','anonymous_other']}}})
-PROP['properties']['detached']={'type':'boolean', 'description': 'True only at the instant an object is airborne, flying away, falling or departing from the subject. False for placed/set-down props resting on a surface or at a location, even when separated from the subject.'}
 
 
 from storycg.shot_contract import extend_schema, validate_contract, RULE_PROMPT as CONTRACT_PROMPT
@@ -69,9 +60,6 @@ def production_schema():
     schema=copy.deepcopy(STORYBOARD_SCHEMA)
     shot=schema['properties']['shots']['items']['properties']['shot']
     shot['required'] += ['subject_visibility','other_people','hand_owners']
-    shot['properties']['key_props']['items']['required'].append('detached')
-    shot['properties']['key_props']['items']['required'] += ['owner', 'state']
-    schema['properties']['props']['items']['required'].append('role')
     return extend_schema(schema, required=True)
 
 
@@ -125,13 +113,15 @@ def _strings(value):
 
 
 def validate_storyboard(board: dict, shot_count: int, identity: dict | None = None) -> dict:
-    if board.get('scope_version')==1:
-        if type(board.get('prop_dependent')) is not bool or not str(board.get('prop_dependency_reason','')).strip():
-            raise ValueError('scope requires prop_dependent boolean and prop_dependency_reason')
-        if not board.get('prop_dependent') and board.get('prop_only_narrative_items'):
-            raise ValueError('nondependent story cannot declare prop-only narrative items')
+    for entry in board.get('shots', []):
+        shot = entry['shot']
+        if len(shot.get('prop_tags', [])) + len(shot.get('key_props', [])) > 1:
+            raise ValueError('each shot permits at most one prop (key prop or background tag)')
     validate_contract(board)
-    errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(board))
+    # Read archived intake metadata without retaining its protocol or judgments.
+    view = {key: value for key, value in board.items() if key not in (
+        'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items')}
+    errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(view))
     if errors:
         first = sorted(errors, key=lambda error: str(error.path))[0]
         raise ValueError(f"storyboard schema: {first.json_path}: {first.message}")
@@ -140,12 +130,8 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
     if [entry["number"] for entry in board["shots"]] != list(range(1, shot_count + 1)):
         raise ValueError("storyboard shot numbers must be sequential")
     from storycg.tags import canonical_tag
-    props = {p['id']: p for p in board['props']}
-    if len(props) != len(board['props']):
-        raise ValueError("prop ids must be unique")
-    visual_attributes = re.compile(r"(?:^|_)(red|blue|green|yellow|orange|purple|pink|white|black|grey|gray|brown|silver|gold|multicolored|rainbow|striped|plaid|checkered|polka_dot|floral|argyle|camouflage|patterned)(?:_|$)")
-    for prop in board['props']:
-        for value in prop['description_tags']:
+    for prop in board.get('props', []):
+        for value in prop.get('description_tags', []):
             if APPEARANCE_EN.search(value.replace('_', ' ')) or APPEARANCE_ZH.search(value):
                 raise ValueError(f"appearance description is forbidden in props: {value}")
     first = board['shots'][0]['shot']
@@ -154,44 +140,14 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
     previous = None
     for entry in board["shots"]:
         shot = entry['shot']
+        if any(tag not in entry['scene']['tags'] for tag in shot.get('prop_tags', [])):
+            raise ValueError('prop tag must remain in scene.tags after tag validation')
         if previous and (shot['framing'], shot['camera_angle']) == (previous['framing'], previous['camera_angle']) and not shot['composition_reason'].strip():
             raise ValueError("adjacent shots need different framing/angle or a composition_reason")
-        if board.get('scope_version')==1:
-            if sum(props.get(r['prop_id'],{}).get('role','key')=='key' for r in shot['key_props'])>1:
-                raise ValueError('each shot permits at most one key prop')
+        if board.get('scope_version') in (1, 2):
             if previous and (shot['expression'],shot['action'])==(previous['expression'],previous['action']) and not shot.get('unchanged_person_reason','').strip():
                 raise ValueError('adjacent shots need expression/action change or unchanged_person_reason')
         previous = shot
-        for ref in shot['key_props']:
-            if ref['prop_id'] not in props:
-                raise ValueError(f"unknown prop reference: {ref['prop_id']}")
-            if ref['held_by'] in ('subject', 'other') and not ref['relation_tags']:
-                raise ValueError("held props need hand/object relation tags")
-            if props[ref['prop_id']].get('role') == 'group' and (
-                    ref['held_by'] not in ('none', 'offscreen') or ref.get('detached')
-                    or ref.get('owner', 'none') != 'none'):
-                raise ValueError("display group cannot have an individual holder/owner or detached state; register key props")
-        if len({ref['prop_id'] for ref in shot['key_props']}) != len(shot['key_props']):
-            raise ValueError("each prop may be referenced only once per shot")
-        visible = [ref for ref in shot['key_props'] if ref['held_by'] != 'offscreen'
-                   and props[ref['prop_id']].get('role', 'key') == 'key']
-        for index, ref in enumerate(visible):
-            for other in visible[index + 1:]:
-                left, right = props[ref['prop_id']], props[other['prop_id']]
-                if canonical_tag(left['kind']) != canonical_tag(right['kind']):
-                    continue
-                # Legacy boards use placement/contact as the state fallback.
-                def relation_state(item):
-                    return (item['held_by'], item.get('owner', 'none'),
-                            item.get('state', item['position']), item.get('detached', False))
-                if relation_state(ref) == relation_state(other):
-                    continue
-                def attributes(prop):
-                    return frozenset(match.group(1) for tag in prop['description_tags']
-                                     for match in visual_attributes.finditer(canonical_tag(tag)))
-                a, b = attributes(left), attributes(right)
-                if not a or not b or a == b:
-                    raise ValueError("same-kind props in one shot with different holder/owner/state require distinct color or pattern tags")
         changed = entry["outfit"]["change_at_shot"]
         if changed is not None and changed != entry["number"]:
             raise ValueError("outfit change_at_shot must name the current shot")
@@ -223,12 +179,6 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     plan_path = job_dir / "storyboard.json"
     if plan_path.exists():
         board = json.loads(plan_path.read_text(encoding="utf-8"))
-        intake_path=job_dir/'agent.json'
-        intake=json.loads(intake_path.read_text()).get('intake',{}) if intake_path.exists() else {}
-        for field in ('prop_dependent','prop_dependency_reason','prop_only_narrative_items'):
-            if field in intake and board.get(field)!=intake[field]:raise ValueError('storyboard '+field+' differs from locked intake')
-        if 'possession_swap' in intake and board.get('possession_swap') is not intake['possession_swap']:
-            raise ValueError('storyboard possession_swap differs from locked intake')
         validate_storyboard(board,shot_count,identity)
         from storycg.story_rules import validate_story_rules
         return validate_story_rules(board,allow_obscured=(config or {}).get("allow_obscured_protagonist",False))
@@ -249,7 +199,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"calls": []}
     instructions = (
         "Return only schema JSON. Plan exactly " + str(shot_count) + " visually causal shots. "
-        "Descriptions/action/expression/position are concise English for display and audit ONLY. "
+        "Descriptions/action/expression are concise English for display and audit ONLY. "
         "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
         "No character names, franchises or physical appearance tags in any state. "
         "Body parts may occur only as direct targets of the current physical action in pose, "
@@ -262,42 +212,27 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "First shot MUST be wide with narrative_role establishing. Vary framing and camera_angle "
         "between adjacent shots; identical pairs require a meaningful composition_reason. "
         "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
-        "Register every key prop at top-level props with unique id, kind (a real object tag), "
-        "role key for individually tracked story objects; use role group for homogeneous scene/display "
-        "collections without individual ownership/state, or leave decoration in scene.tags. Groups "
-        "must have held_by none, owner none and detached false. description_tags contain the object "
-        "tag and concrete color/pattern tags. If a color-object compound tag does not exist, use "
-        "separate REAL color and object tags; both must exist. Same-kind key props visible in the "
-        "SAME shot with different holder, owner or state MUST have conspicuously different colors "
-        "or patterns. Other same-kind objects do not require distinction. "
-        "Each shot references prop_id with held_by and position, AND real relation_tags/location_tags "
-        "that visually express contact and placement. Include owner (subject/other/none or stable "
-        "anonymous owner id) and state (stable concise object state, identical for equivalent states). "
-        "held_by subject means the main person. "
-        "Use tags for holding/contact, pose, gesture and expression; omit irrelevant props per shot. "
+        "Props are background only. Put at most ONE ordinary object tag in shot.prop_tags, "
+        "or use [] when absent. Include every depicted prop there; scene.tags describe the setting, "
+        "time, weather and light, not extra objects. The script adds prop_tags to scene.tags. "
+        "Do not register objects, bind holders, or track ownership, state or left/right hands. "
         "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
         "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
-        "when the story states it has ended. No captions or dialogue: visually reveal recognition "
-        "of the error, its contrasting evidence and the corrective action. "
-        "v1 has one main person; others only anonymous backs, cropped parts or offscreen."
+        "when the story states it has ended. No captions or dialogue. "
+        "v2 has one main person; others only anonymous backs, cropped parts or offscreen. "
+        "If the plot relies on mistaken possession, object ownership or mistaken identity, "
+        "rewrite it at the storyboard stage so actions and expressions convey the key change. "
+        "Record that adaptation in story_note as one concise Chinese sentence. If the inference "
+        "cannot be expressed this way, continue planning and state in story_note that this part "
+        "may not be readable. Otherwise set story_note to an empty string."
     )
     from storycg.story_rules import RULE_PROMPT
-    instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=1. Key story changes must be expressed in expression/action. Each shot references at most ONE role=key prop, including offscreen references. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason. Set prop_dependent and a one-sentence prop_dependency_reason from the input meaning, not keywords. prop_only_narrative_items lists ONLY narrative comparison items key_events/changes/ending whose complete expected requirement is object ownership/state/count/contact; keep mixed expression/action requirements out, use [] if uncertain or not dependent. Ownership/state dependence is a known limitation; continue without asking.')
+    instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=2. Key story changes must be expressed in expression/action. Each shot permits at most ONE prop tag. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason.')
     from storycg.shot_contract import planner_schema, materialize
     schema=planner_schema(production_schema())
     outfit_tags = [item["tag"].replace("_", " ") for item in
                    identity.get("default_outfit_tags", [])]
     base_user_content = story
-    intake_path=job_dir/'agent.json'
-    intake=json.loads(intake_path.read_text()).get('intake',{}) if intake_path.exists() else {}
-    for field in ('prop_dependent','prop_dependency_reason','prop_only_narrative_items'):
-        if field in intake:
-            schema['properties'][field]={'const':intake[field]}
-            base_user_content += '\nLocked intake '+field+'='+json.dumps(intake[field],ensure_ascii=False)
-    if 'possession_swap' in intake:
-        schema['properties']['possession_swap']={'const':intake['possession_swap']}
-        if 'possession_swap' not in schema['required']:schema['required'].append('possession_swap')
-        base_user_content += '\nLocked intake possession_swap='+json.dumps(intake['possession_swap'])
     if outfit_tags:
         base_user_content += ("\nSourced canonical outfit tags (clothing only): " +
                               ", ".join(outfit_tags) +
@@ -406,6 +341,5 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         call["status"] = "valid"
         save_json_atomic(log_path, log)
         save_json_atomic(plan_path, board)
-        save_json_atomic(job_dir / "props.json", board["props"])
         return board
     raise ValueError(f"storyboard failed validation after {attempts} calls (limit {max_calls}); last error: {log['calls'][-1].get('error', 'no call available') if log['calls'] else 'no call available'}; see {log_path}")
