@@ -46,3 +46,8 @@
    - 只在 v2 工作树（分支 `v2`）里改代码、写报告。主线工作区保持 v1 现状，已安装的 Hermes skill 指向它，不得改动。
    - ComfyUI 的 `filename_prefix` 以 `v2/` 开头。出图计入 TASK-v2 §5 的 400 张总额，按工单分配。
    - 道具相关功能只删不加（TASK-v2 §0）。
+9. （2026-10-08 追加）执行者由 Codex 换为 omp（模型 GLM-5.3），本守则全部照旧适用。omp 没有写入沙盒，所以：
+   - 所有写入只能落在启动目录（v2 工作树）内。主线工作区里 `.v2/` 以外的路径一律不写；`~/.hermes`、ComfyUI 主机和视觉模型主机也不写。
+   - 不执行会改变仓库状态的 git 命令（commit、checkout、switch、reset、stash、branch、merge、rebase、worktree）；只读的 git 命令可以用。
+   - 不留下工单结束后还在运行的后台进程。
+   - 监工会在每张工单验收时核对主线工作区和 Hermes 目录有没有被改动。
