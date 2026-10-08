@@ -34,9 +34,32 @@ def count_diagnosis_schema(entry):
         'shot':{'type':'null'},'target_shot':{'const':entry['number']}})
 
 
+def count_reseed_decision(root,number,audit,entry,slot):
+    """Deterministic first repair for a reliable duplicate count: new seed, same conditioning."""
+    import secrets
+    observation=slot.get('best_audit',{}).get('detection_items',{}).get('protagonist_count',{})
+    observed=observation.get('protagonist_count');allowed=observation.get('allowed_count',1)
+    seed=secrets.randbits(63)
+    try:
+        source=next(a for a in load_state(root)['attempts']
+                    if a['shot_id']==f'shot{number:02d}' and a['attempt_number']==slot['best_attempt'])
+        while seed==source.get('seed'):seed=secrets.randbits(63)
+    except (OSError, StopIteration, ValueError):
+        pass  # No persisted source attempt to differ from; any fresh seed is valid.
+    return {'problem':'protagonist_count','primitive':'seed','seed':seed,
+            'diagnosis':f'local count gate observed {observed} protagonist instances (allowed {allowed})',
+            'hypothesis':'duplicate protagonist is seed-level sampling noise (TASK-v2 §2.2-3); '
+                         'identical conditioning with a new seed is the required first repair',
+            'changes':'re-roll the sampling seed only; no prompt, storyboard or scene change',
+            'shot':None,'edit':None,'target_shot':number}
+
+
 def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     count='protagonist_count' in preferred_problems(audit,cycle,number,narrative=bool(narrative))
     methods=permitted_methods('protagonist_count',cycle,number)
+    if count and methods==['seed'] and not narrative:
+        decision=count_reseed_decision(root,number,audit,entry,cycle['shots'][str(number)])
+        return validate_decision(decision,number,audit,entry,board,identity,cycle)
     if count and methods==['instruction_edit'] and not narrative:
         label=f'decision_{number}_{len(cycle["shots"][str(number)]["history"])+1}_count_schema4'
         prompt=('Reliable local detection found duplicate protagonist instances. Diagnose this observed count failure, '
@@ -293,6 +316,7 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     kwargs={'repair_id':f'cycle{pending["round"]}', 'source_attempt':pending['source_attempt']}
     if decision['primitive']=='instruction_edit':kwargs['edit']=decision['edit']
     if decision['primitive']=='relayout':kwargs['revised_entry']=candidate
+    if decision['primitive']=='seed':kwargs['seed']=decision['seed']
     if decision['primitive']=='face_detail':
         from storycg.detection_review import repair_mask
         source=root/slot['best_audit']['image']['path']

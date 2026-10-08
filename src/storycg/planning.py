@@ -112,13 +112,19 @@ def _strings(value):
             yield from _strings(item)
 
 
-def validate_storyboard(board: dict, shot_count: int, identity: dict | None = None) -> dict:
+def validate_storyboard(board: dict, shot_count: int, identity: dict | None = None,
+                        config: dict | None = None) -> dict:
     for entry in board.get('shots', []):
         shot = entry['shot']
         if len(shot.get('prop_tags', [])) + len(shot.get('key_props', [])) > 1:
             raise ValueError('each shot permits at most one prop (key prop or background tag)')
+    from storycg.prompt_rules import companion_conflicts
+    conflicts = companion_conflicts(board, config)
+    if conflicts:
+        detail = '; '.join(f"shot {c['shot']} pose {c['pose']} requires {', '.join(c['require'])} but has {', '.join(c['conflicts'])}"
+                           for c in conflicts)
+        raise ValueError('action companion tag conflict: ' + detail)
     validate_contract(board)
-    # Read archived intake metadata without retaining its protocol or judgments.
     view = {key: value for key, value in board.items() if key not in (
         'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items')}
     errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(view))
@@ -217,6 +223,12 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "Props are background only. Put at most ONE ordinary object tag in shot.prop_tags, "
         "or use [] when absent. Include every depicted prop there; scene.tags describe the setting, "
         "time, weather and light, not extra objects. The script adds prop_tags to scene.tags. "
+        "Scene object budgets by framing: closeup keeps only setting/place/time tags and NO objects; "
+        "medium at most 2 object tags; full and wide at most 3. Never place action-invoking objects "
+        "(computer, keyboard, monitor, laptop, smartphone, book, cup, mug, pen, musical instrument) "
+        "in scene.tags unless that object is this shot's single declared prop. "
+        "Actions that imply closed eyes (sleeping, sleeping on desk) must never pair with open eyes; "
+        "the assembler adds the closed-eyes companion tag automatically. "
         "Do not register objects, bind holders, or track ownership, state or left/right hands. "
         "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
         "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
@@ -308,7 +320,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                 for key in ('spatial_relation','change_from_previous'):
                     shot[key] = anchor['semantic_context'][key]
             # Reject appearance/identity additions before discarding unknown tags.
-            validate_storyboard(board, shot_count, identity)
+            validate_storyboard(board, shot_count, identity, config)
             from storycg.tags import TagRegistry, validate_tag_lists
             if tag_registry is None:
                 with httpx.Client(base_url="https://danbooru.donmai.us", timeout=30, trust_env=False) as tag_client:
@@ -324,7 +336,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                 finally:
                     call['tag_validation'] = tag_registry.records[before:]
             from storycg.shot_vocab import validate_shot_vocab
-            board = validate_storyboard(board, shot_count, identity)
+            board = validate_storyboard(board, shot_count, identity, config)
             call['shot_vocab'] = validate_shot_vocab(board, identity.get('identity_tier'), config)
             from storycg.story_rules import validate_story_rules
             validate_story_rules(board, allow_obscured=(config or {}).get('allow_obscured_protagonist', False))

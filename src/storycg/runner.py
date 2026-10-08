@@ -10,7 +10,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from PIL import Image
 
@@ -76,7 +76,9 @@ def _download_completed(job_dir: Path, state: dict, attempt: dict, client, histo
     if len(images) != 1:
         raise ValueError(f"expected one SaveImage output, got {len(images)}")
     reference = images[0]
-    if not reference["filename"].startswith(attempt["filename_prefix"]):
+    # ComfyUI splits a directory-bearing prefix into subfolder + base filename.
+    remote_path = "/".join(part for part in (reference.get("subfolder", ""), reference["filename"]) if part)
+    if not remote_path.startswith(attempt["filename_prefix"]):
         raise ValueError("ComfyUI output filename does not match this attempt")
     image_bytes = client.download_image(reference)
     with Image.open(io.BytesIO(image_bytes)) as image:
@@ -85,7 +87,8 @@ def _download_completed(job_dir: Path, state: dict, attempt: dict, client, histo
         image.verify()
     with Image.open(io.BytesIO(image_bytes)) as image:
         width, height = image.size
-    path = job_dir / f'{attempt["filename_prefix"]}.png'
+    # Keep job-local artefacts flat; only the remote prefix carries the root directory.
+    path = job_dir / f'{PurePosixPath(attempt["filename_prefix"]).name}.png'
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=job_dir)
     temp_path = Path(temp_name)
     try:
@@ -194,7 +197,8 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         raise ValueError("job submission budget exhausted")
     attempt_number = 1 + max((a["attempt_number"] for a in state["attempts"]
                               if a["shot_id"] == shot_id), default=0)
-    prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number)
+    prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number,
+                         root=state["config"].get("comfy_prefix_root", ""))
     seed = state["config"].get("generation_seed")
     if seed is None:
         seed = secrets.randbits(63)
@@ -231,7 +235,7 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                 repair_diagnosis: dict | None = None, generation_reference: dict | None = None) -> dict:
     job_dir = Path(job_dir)
     job_id = job_dir.name
-    make_prefix(job_id, shot_id, 1)
+    make_prefix(job_id, shot_id, 1, root=config.get("comfy_prefix_root", ""))
     with _job_lock(job_dir):
         state_path = job_dir / "state.json"
         if state_path.exists():

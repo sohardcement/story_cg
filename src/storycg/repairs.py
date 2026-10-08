@@ -3,7 +3,7 @@ import copy
 import json
 import math
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from PIL import Image, ImageDraw, ImageFilter
 from storycg.assembly import assemble_prompt
 from storycg.controls import portrait_reference, upload_reference
@@ -258,7 +258,7 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
             reference={'mechanism':'img2img','strength':denoise if denoise is not None else config.get('layout_denoise',.55),'uploaded_image':upload_reference(root,root/layout['image']['path'],client),'identity_reference':face,'layout_image':layout['image'],'prompt_id':layout['prompt_id'],'upstream_reference':full}
         final=stage(shot_id,tags,reference,'final')
         if pixels and not final.get('raw_image'):
-            final['raw_image']=copy.deepcopy(final['image']);output=root/(final['filename_prefix']+'_composite.png')
+            final['raw_image']=copy.deepcopy(final['image']);output=root/(PurePosixPath(final['filename_prefix']).name+'_composite.png')
             with Image.open(root/rec['source_image']['path']) as base, Image.open(root/final['raw_image']['path']) as patch, Image.open(assets/'mask_full.png') as mask:
                 composite_masked(base,patch,pixels,mask).save(output)
             if primitive=='face_detail':

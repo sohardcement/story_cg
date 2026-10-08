@@ -75,6 +75,96 @@
     "path": "config/shot_vocab.json",
     "observation_log": "calibration/shot_vocab_observations.jsonl"
   },
+  "comfy_prefix_root": "v2/",
+  "fixed_negative_tags": [
+    "multiple girls",
+    "2girls",
+    "multiple views"
+  ],
+  "fixed_negative_tags_source": "TASK-v2 §2.2-8c（CAP-04 实测：加后重复主角仍在，仅作常规写法保留，不去重）",
+  "scene_rules": {
+    "object_limits": {
+      "closeup": 0,
+      "medium": 2,
+      "full": 3,
+      "wide": 3
+    },
+    "object_limits_source": "工单 V2-06s 第 1 条。CAP-04 证据：近景改写只留 indoors+地点；中景 06 恰留 desk+chair 两件；远景放宽到 3 件。",
+    "non_object_tags": [
+      "indoors", "outdoors", "day", "night", "noon", "morning", "afternoon", "evening", "midnight",
+      "snowing", "fog", "wind", "sunlight", "moonlight", "starry_sky", "night_sky", "blue_sky",
+      "cloudy_sky", "lightning", "city_lights", "wooden_floor", "floor", "ceiling", "wall", "path", "sidewalk",
+      "street", "road", "alley", "stairs", "stairway", "hallway", "corridor", "doorway", "entrance",
+      "door", "gate", "fence", "window_frame", "park", "garden", "courtyard", "plaza", "field",
+      "meadow", "forest", "woods", "beach", "seaside", "coastline", "river", "lake", "pond",
+      "mountain", "mountains", "hill", "bridge", "rooftop", "bedroom", "living_room", "kitchen",
+      "bathroom", "classroom", "office", "library", "cafe", "restaurant", "shop", "store",
+      "convenience_store", "supermarket", "hotel", "inn", "school", "hospital", "city", "town",
+      "village", "scenery"
+    ],
+    "non_object_source": "环境/时间/天气/光线与地点类 tag 永不视为物件。取舍对照 CAP-04 实际改写：wooden_floor、window 边界按改写保留/舍弃记录归类（window 属物件，06 因 desk+chair 占满中景额度被舍）。",
+    "action_invoking_props": {
+      "computer": {
+        "reason": "会引出打字/看屏幕等未声明动作",
+        "source": "TASK-v2 §2.2-8a；CAP-04：去掉键盘后趴桌睡着不再画成打字"
+      },
+      "computer_keyboard": {
+        "reason": "同 computer，直接触发打字动作",
+        "source": "CAP-04 单元 06 证据：keyboard 在场时 sleeping on desk 被画成打字"
+      },
+      "keyboard": {
+        "reason": "computer keyboard 的简写形式",
+        "source": "同 computer_keyboard"
+      },
+      "monitor": {
+        "reason": "会引出注视屏幕动作",
+        "source": "CAP-04 单元 06 改写中随键盘一并移除"
+      },
+      "laptop": {
+        "reason": "computer 的便携形式，同样引出交互动作",
+        "source": "TASK-v2 §2.2-8a 推广"
+      },
+      "smartphone": {
+        "reason": "会引出看/持手机动作；仅当它就是该镜声明道具时才可入场景块",
+        "source": "CAP-04 单元 13：smartphone 只作为该镜道具出现在动作块"
+      },
+      "book": {
+        "reason": "会引出阅读动作",
+        "source": "TASK-v2 §2.2-8a 同类（读物引出使用动作）"
+      },
+      "cup": {
+        "reason": "会引出端起/饮用动作",
+        "source": "TASK-v2 §2.2-8a 同类"
+      },
+      "mug": {
+        "reason": "同 cup",
+        "source": "同 cup"
+      },
+      "pen": {
+        "reason": "会引出书写动作",
+        "source": "TASK-v2 §2.2-8a 同类"
+      },
+      "pencil": {
+        "reason": "同 pen",
+        "source": "同 pen"
+      },
+      "musical_instrument": {
+        "reason": "会引出演奏动作",
+        "source": "TASK-v2 §2.2-8a 同类"
+      }
+    }
+  },
+  "action_companion_tags": {
+    "sleeping": {
+      "require": ["closed_eyes"],
+      "conflicts": ["open_eyes"]
+    },
+    "sleeping_on_desk": {
+      "require": ["closed_eyes"],
+      "conflicts": ["open_eyes"]
+    }
+  },
+  "action_companion_tags_source": "TASK-v2 §2.2-8d（CAP-04 单元 06 四张全是睁眼/半睁眼；睡着类动作拼装时自动补闭眼 tag）",
   "framing_negative_tags": {
     "wide": [],
     "full": [],

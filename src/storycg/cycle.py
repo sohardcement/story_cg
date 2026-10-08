@@ -240,8 +240,18 @@ def permitted_methods(problem,cycle,number):
     from storycg.repairs import REPAIR_PRIMITIVES
     methods=[method for method in cycle['config']['problem_methods'][problem] if method in REPAIR_PRIMITIVES]
     if not methods:raise ValueError('no supported repair method for problem '+problem)
+    if problem=='protagonist_count':
+        # TASK-v2 §2.2-3: a reliable duplicate count re-rolls the seed first,
+        # before any other repair. Only while no count repair was attempted.
+        attempted=any(h['decision'].get('problem')=='protagonist_count' and not h.get('skipped')
+                      for h in cycle['shots'][str(number)]['history'])
+        if 'seed' in methods and not attempted:
+            return ['seed']
+        methods=[method for method in methods if method!='seed']
+        if any(h['decision'].get('primitive')=='instruction_edit' and h['decision'].get('problem')=='protagonist_count'
+               for h in cycle['shots'][str(number)]['history']):
+            methods=[method for method in methods if method!='instruction_edit']
     if methods[0]=='instruction_edit' and not any(h['decision'].get('primitive')=='instruction_edit' and h['decision'].get('problem')==problem for h in cycle['shots'][str(number)]['history']):return methods[:1]
-    if problem=='protagonist_count':return ['relayout']
     return methods
 
 def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):

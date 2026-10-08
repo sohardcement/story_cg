@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 
@@ -19,6 +20,8 @@ def load_config(path: str | Path) -> dict:
                                     "sha256": hashlib.sha256(raw).hexdigest(), "content": style}
     if config["http_timeout_seconds"] < 180:
         raise ValueError("http_timeout_seconds must be at least 180")
+    if not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9_-]*/)*", config.get("comfy_prefix_root", "")):
+        raise ValueError("comfy_prefix_root must be empty or slash-terminated path segments")
     for framing in ("wide", "full", "medium", "closeup"):
         width, height = config["resolutions"][framing]
         if width <= 0 or height <= 0 or width % 64 or height % 64:
