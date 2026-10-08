@@ -51,3 +51,4 @@
    - 不执行会改变仓库状态的 git 命令（commit、checkout、switch、reset、stash、branch、merge、rebase、worktree）；只读的 git 命令可以用。
    - 不留下工单结束后还在运行的后台进程。
    - 监工会在每张工单验收时核对主线工作区和 Hermes 目录有没有被改动。
+10. （2026-10-09 追加）执行者由 omp 换为监工派出的 Claude Code subagent（Haiku 5.5），本守则全部照旧适用，第 9 条的写入和 git 限制同样适用。当前需求以 `TASK-v2.md` §9 为准。

@@ -23,6 +23,12 @@
 
 - **D46（2026-10-08）**：Codex 订阅到期，执行者改为 omp（`ai938729/glm-5.3`，推理强度 max）。`verify/dispatch.sh` 已改；AGENTS.md 追加第 9 条。omp 没有写入沙盒，所以第 9 条写明了写入范围和禁止的 git 操作，监工每张工单都核对主线工作区。冒烟（只读）通过：`logs/OMP-SMOKE.jsonl`。
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
+- **D56（用户，2026-10-09）选方向 A，同意新对比方法，同意近景放开声明道具；分镜第一段和执行者都改用 Claude Code subagent**。原话："先不用 hermes 了，你直接用你的 subagent 调用吧。先把 skill 搞好再说多 harness 兼容的事。"落实：
+  - TASK-v2 §9 写明了方向调整，AGENTS.md 加了第 10 条。
+  - 分镜第一段（讲故事）由 agent 写成 beats 文件，开发期由监工派 Haiku 5.5 subagent 写；第二段由代码编译，不再调用本地模型做分镜。
+  - 执行者改为 Haiku 5.5 subagent，omp 停用。
+  - Hermes 暂不测试。视觉审核器和身份解析仍用本地模型。
+  - 工单：V2-10（beats 输入、编译框架、撤回 D52），V2-11（确定性改写：表外改用稳定组合、不可用自动替代、近景声明道具、室内天气补窗户、服装状态一致性）。
 - **D55（用户，2026-10-09）第 ③ 步不通过，暂停 v2 实现，重新评估方向**：
   - 监工先写一份问题分析给用户。
   - 同意"表外动作自动改用同一动作的稳定组合"。
@@ -96,6 +102,7 @@
 | V2-06s 精简版：提示词规则 + 计数门禁 + `v2/` 前缀（D50） | **通过**（续跑 1 次）：场景物件上限（近景 0、中景 2、全景/远景 3）；会引出别的动作的物件不进场景块；负面固定追加 multiple girls / 2girls / multiple views；sleeping 自动补 closed eyes，写了 open eyes 就校验失败；计数不过第一步重抽 seed（不调模型）；ComfyUI 前缀根改为配置项，默认 `v2/`，恢复测试覆盖。监工复跑 728 passed；主线和 Hermes 未被改动（Hermes 的 `.bundled_manifest` 是网关 23:30 自己写的）。**监工改动**：执行者误删了 v1 的 `http_timeout_seconds ≥ 180` 校验，属越界，监工原样恢复这两行。第一轮 90 分钟到时没交报告，还留了一个保存图片时的 fsync 缺陷，续跑修好。已知：伴随表只有 sleeping 系 pose，对比集第 1 组第 4 镜是 on_back，不会自动补闭眼 | 1 | 01a11bca-d359-739b-b979-0a2cbd5b537f | `.v2/reports/V2-06s.md`，7afe3d1 |
 | V2-08 分镜收敛（D51） | **通过**（8941693）：`change_at_shot` 改由代码推导；闭眼、擦眼泪等眼睛的状态和动作不算外貌（依据 Danbooru eyes tag group 快照，有 sha256）；pose 和状态分开填。监工复跑 781 passed，主线和 Hermes 未被改动。在线分镜回放 9/12（目标 11），3 次失败都是首镜规则和"有时"名额的冲突（D52），原来的三类拒绝原因在 36 次调用里一次都没再出现。**续跑 1 通过**（295e28d）：首镜可为 wide 或 medium，仍须 establishing；改了 1 条 v1 旧断言（首镜 medium 原本报错，现在通过；closeup 仍报错）。监工复跑 787 passed。回放 r1 11/12 达标，唯一的失败是月城柳首镜用了中景正面站立（第 19、20 项撞键，取保守的有时档），之后又写了表外动作，连续 3 次被拒后停止 | 1 | 01a11c6b-e6a3-752c-8e0d-925429e3e538 | `orders/V2-08.md` |
 | V2-09 场景过滤：天气、光线词不算物件（D53） | **通过**（d03b300）：判断"不算物件"时，除原有手写清单外，增加 Danbooru 的 lighting、locations、backgrounds 三组（快照带 sha256，加载时校验）。天气没有干净的组（water 组混有杯子等实体物件），所以 rain、overcast 等补进手写清单。被丢的 tag 写进 attempt 记录、manifest 和 result.md。离线回放：第 2 组第 3 镜的 rain 保住了。监工复跑 808 passed，主线和 Hermes 未被改动。已知：lighting 组含台灯、吊灯等灯具，现在不占物件名额；`cloudy` 不是真实的 Danbooru tag，是按工单验证点留在清单里的 | 0 | （logs/V2-09.jsonl） | `.v2/reports/V2-09.md` |
+| V2-10 故事分镜输入 + 编译框架 + 撤回 D52（D56） | 进行中：Haiku 5.5 subagent | 0 | — | `orders/V2-10.md` |
 
 
 ## 晨报（能力摸底阶段，2026-10-04 定稿）
