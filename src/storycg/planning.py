@@ -63,6 +63,18 @@ def production_schema():
     return extend_schema(schema, required=True)
 
 
+from functools import lru_cache
+
+# Body-action verb stems with their inflection groups; BODY_ACTION and the
+# eye-state exemption share this one table.
+ACTION_VERBS = (
+    ('cover', '(?:s|ed|ing)?'), ('shield', '(?:s|ed|ing)?'), ('touch', '(?:es|ed|ing)?'),
+    ('rub', '(?:s|bed|bing)?'), ('press', '(?:es|ed|ing)?'), ('hold', '(?:s|ing)?'),
+    ('rais', '(?:e|es|ed|ing)'), ('lower', '(?:s|ed|ing)?'), ('tilt', '(?:s|ed|ing)?'),
+    ('turn', '(?:s|ed|ing)?'), ('move', '(?:s|d|ing)?'), ('reach', '(?:es|ed|ing)'),
+    ('wipe', '(?:s|d|ing)'), ('close', '(?:s|d|ing)'),
+)
+
 APPEARANCE_EN = re.compile(
     r"\b(?:hair|haired|hairstyle|bangs|twintails?|ponytails?|braids?|eyes?|eyed|iris|pupils?|"
     r"eyelashes|eyebrows?|ears?|skin|complexion|face|facial features|body type|"
@@ -77,12 +89,76 @@ APPEARANCE_ZH = re.compile(
 # Match the direct object only; attributes such as color/shape still hit the
 # unchanged appearance filter, as do all mentions in scene/outfit/props.
 BODY_ACTION = re.compile(
-    r'\b(?:cover(?:s|ed|ing)?|shield(?:s|ed|ing)?|touch(?:es|ed|ing)?|'
-    r'rub(?:s|bed|bing)?|press(?:es|ed|ing)?|hold(?:s|ing)?|'
-    r'rais(?:e|es|ed|ing)|lower(?:s|ed|ing)?|tilt(?:s|ed|ing)?|turn(?:s|ed|ing)?)'
+    r'\b(?:' + '|'.join(stem + group for stem, group in ACTION_VERBS) + r')'
     r'\s+(?:(?:the|own|their|her|his)\s+)?(?:face|eyes?|mouth|ears?|lips?|nose)\b|'
     r'\b(?:hands?|fingers?|palms?)\s+(?:on|over|against)\s+'
     r'(?:(?:the|own|their|her|his)\s+)?(?:face|eyes?|mouth|ears?|lips?|nose)\b', re.I)
+
+# Eye states and actions on the eyes are not appearance (V2-08): a value whose
+# only appearance words are the eye nouns passes when every content word of the
+# eye-mention segment belongs to the state/action vocabulary below. Color,
+# shape and size words (blue, tareme, big, ...) are not in it, so they still
+# reject. Chinese appearance words are not exempted.
+EYE_NOUN = re.compile(r'\bey(?:e|es)\b', re.I)
+FUNCTION_WORDS = frozenset(
+    'a an the own her his their its with and or is are was were be being while '
+    'from at of in on to as both into'.split())
+
+
+def _inflect(stem, suffixes):
+    forms = {stem}
+    for suffix in suffixes:
+        if suffix == 'ing' and stem.endswith('e'):
+            forms.add(stem[:-1] + suffix)
+        else:
+            forms.add(stem + suffix)
+    if len(stem) >= 3 and stem[-1] not in 'aeiou' and stem[-2] in 'aeiou' and stem[-3] not in 'aeiou':
+        forms |= {stem + stem[-1] + 'ing', stem + stem[-1] + 'ed'}
+    return forms
+
+
+def _action_verb_forms():
+    forms = set()
+    for stem, group in ACTION_VERBS:
+        forms |= _inflect(stem, re.findall(r'[a-z]+', group))
+    return forms
+
+
+@lru_cache(maxsize=1)
+def _eye_exemption_words():
+    from storycg.eye_state import eye_state_words
+    from storycg.shot_contract import EXPRESSION_TAGS
+    words = (set(eye_state_words()) | FUNCTION_WORDS | _action_verb_forms()
+             | {'eye', 'eyes', 'hand', 'hands', 'finger', 'fingers', 'palm', 'palms',
+                'subject', 'person', 'character', 'she', 'he', 'they'})
+    expression_words = set()
+    for tag in EXPRESSION_TAGS:
+        expression_words |= {word for word in re.split(r'[^a-z0-9]+', tag) if word}
+    try:
+        from storycg.shot_vocab import load_vocab
+        for item in load_vocab()['items']:
+            for tag in item.get('expression_tags', []):
+                expression_words |= {word for word in re.split(r'[^a-z0-9]+', tag.lower()) if word}
+    except (OSError, ValueError, KeyError):
+        pass  # Additive guidance only; the snapshot words above still apply.
+    for word in expression_words:
+        words |= _inflect(word, ('s', 'ing'))
+    return frozenset(words)
+
+
+def _eyes_state_or_action_only(normalized):
+    """True when the only appearance words are eye nouns in state/action use."""
+    remainder = EYE_NOUN.sub('', normalized)
+    if APPEARANCE_EN.search(remainder):
+        return False
+    allowed = _eye_exemption_words()
+    for segment in re.split(r'[,;.]\s*', normalized):
+        if not EYE_NOUN.search(segment):
+            continue
+        words = {word.lower() for word in re.split(r'[^A-Za-z0-9]+', segment) if word}
+        if not words <= allowed:
+            return False
+    return True
 
 
 def appearance_forbidden(value, *, body_action=False):
@@ -98,7 +174,11 @@ def appearance_forbidden(value, *, body_action=False):
             r'(?:' + BODY_ACTION.pattern + r')[.!]?', normalized.strip(), re.I)
         if plain_action:
             normalized = ''
-    return bool(APPEARANCE_EN.search(normalized) or APPEARANCE_ZH.search(value))
+    en_hit = APPEARANCE_EN.search(normalized)
+    zh_hit = APPEARANCE_ZH.search(value)
+    if en_hit and not zh_hit and _eyes_state_or_action_only(normalized):
+        return False
+    return bool(en_hit or zh_hit)
 
 
 def _strings(value):
@@ -110,6 +190,21 @@ def _strings(value):
     elif isinstance(value, list):
         for item in value:
             yield from _strings(item)
+def derive_outfit_changes(board: dict) -> dict:
+    """Set outfit.change_at_shot from outfit tag sets (V2-08), in place.
+
+    Shot 1 is always null; any later shot whose outfit tag set differs from the
+    previous shot's gets its own shot number, otherwise null. Model-supplied
+    values are overwritten, so change_at_shot is never a rejection reason.
+    """
+    from storycg.tags import canonical_tag
+    previous = None
+    for entry in board.get('shots', []):
+        outfit = entry.setdefault('outfit', {})
+        tags = {canonical_tag(tag) for tag in outfit.get('tags', [])}
+        outfit['change_at_shot'] = entry.get('number') if (previous is not None and tags != previous) else None
+        previous = tags
+    return board
 
 
 def validate_storyboard(board: dict, shot_count: int, identity: dict | None = None,
@@ -121,7 +216,7 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
     from storycg.prompt_rules import companion_conflicts
     conflicts = companion_conflicts(board, config)
     if conflicts:
-        detail = '; '.join(f"shot {c['shot']} pose {c['pose']} requires {', '.join(c['require'])} but has {', '.join(c['conflicts'])}"
+        detail = '; '.join(f"shot {c['shot']} tag {c['trigger']} requires {', '.join(c['require'])} but has {', '.join(c['conflicts'])}"
                            for c in conflicts)
         raise ValueError('action companion tag conflict: ' + detail)
     validate_contract(board)
@@ -143,6 +238,7 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
     first = board['shots'][0]['shot']
     if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
         raise ValueError("first shot must establish the environment: wide framing and establishing role")
+    derive_outfit_changes(board)
     previous = None
     for entry in board["shots"]:
         shot = entry['shot']
@@ -154,9 +250,6 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
             if previous and (shot['expression'],shot['action'])==(previous['expression'],previous['action']) and not shot.get('unchanged_person_reason','').strip():
                 raise ValueError('adjacent shots need expression/action change or unchanged_person_reason')
         previous = shot
-        changed = entry["outfit"]["change_at_shot"]
-        if changed is not None and changed != entry["number"]:
-            raise ValueError("outfit change_at_shot must name the current shot")
         from storycg.identity_enrichment import category_for, load_rules
         rules=load_rules()
         clothing_for_check=copy.deepcopy(entry['outfit'])
@@ -185,7 +278,10 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     plan_path = job_dir / "storyboard.json"
     if plan_path.exists():
         board = json.loads(plan_path.read_text(encoding="utf-8"))
+        saved_changes = [entry.get('outfit', {}).get('change_at_shot') for entry in board.get('shots', [])]
         validate_storyboard(board, shot_count, identity)
+        if [entry['outfit']['change_at_shot'] for entry in board['shots']] != saved_changes:
+            save_json_atomic(plan_path, board)  # persist the re-derived outfit changes
         from storycg.shot_vocab import validate_shot_vocab
         validate_shot_vocab(board, identity.get('identity_tier'), config)
         from storycg.story_rules import validate_story_rules
@@ -215,6 +311,9 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "Keep each body-target field as one plain action clause; place no other clauses or "
         "appearance adjectives in that field. "
         "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
+        "Eye states and actions on the eyes (closed eyes, half-closed eyes, one eye closed, "
+        "wiping eyes, tears) are allowed in action or expression fields; eye color, shape and "
+        "size remain forbidden. "
         "Use emotions such as surprised, confused, smile in shot.tags. "
         "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
         "First shot MUST be wide with narrative_role establishing. Vary framing and camera_angle "
@@ -296,6 +395,14 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
             schema_errors = list(Draft202012Validator(schema).iter_errors(board))
             if schema_errors:
                 raise ValueError(f"storyboard schema: {schema_errors[0].json_path}: {schema_errors[0].message}")
+            model_changes = [entry.get('outfit', {}).get('change_at_shot')
+                             for entry in board.get('shots', [])]
+            def record_outfit_changes():
+                call['outfit_changes'] = [
+                    {'shot': entry['number'],
+                     'model_value': model_changes[index] if index < len(model_changes) else None,
+                     'derived': entry['outfit'].get('change_at_shot')}
+                    for index, entry in enumerate(board.get('shots', []))]
             board = materialize(board)
             # Later HTTP/schema checks may trigger a retry after the current
             # action has already been resolved safely. Keep that action and its
@@ -320,6 +427,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                 for key in ('spatial_relation','change_from_previous'):
                     shot[key] = anchor['semantic_context'][key]
             # Reject appearance/identity additions before discarding unknown tags.
+            record_outfit_changes()
             validate_storyboard(board, shot_count, identity, config)
             from storycg.tags import TagRegistry, validate_tag_lists
             if tag_registry is None:
@@ -336,6 +444,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                 finally:
                     call['tag_validation'] = tag_registry.records[before:]
             from storycg.shot_vocab import validate_shot_vocab
+            record_outfit_changes()
             board = validate_storyboard(board, shot_count, identity, config)
             call['shot_vocab'] = validate_shot_vocab(board, identity.get('identity_tier'), config)
             from storycg.story_rules import validate_story_rules

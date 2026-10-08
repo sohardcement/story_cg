@@ -64,36 +64,43 @@ def companion_rules(config):
     return config.get('action_companion_tags') or {}
 
 
+def companion_triggers(shot):
+    """Canonical keys from pose, expression and tags alike (V2-08)."""
+    keys = []
+    sources = [shot.get('pose'), shot.get('expression'), *(shot.get('tags') or [])]
+    for key in sources:
+        if isinstance(key, str) and key:
+            keys.append(canonical_tag(key))
+    return list(dict.fromkeys(keys))
+
+
 def companion_tags_for_shot(shot, config=None):
     """Companion tags the shot's action implies, e.g. sleeping -> closed eyes."""
     table = companion_rules(config)
-    keys = [shot.get('pose')] if shot.get('pose') else list(shot.get('tags', []))
     required = []
-    for key in keys:
-        rule = table.get(canonical_tag(key))
+    for key in companion_triggers(shot):
+        rule = table.get(key)
         if rule:
             required.extend(rule.get('require', []))
     return list(dict.fromkeys(required))
 
 
 def companion_conflicts(board, config=None):
-    """Shots whose written tags contradict a companion requirement."""
+    """Shots whose written pose/expression/tags contradict a companion rule."""
     table = companion_rules(config)
     problems = []
     for entry in board.get('shots', []):
         shot = entry.get('shot', {})
-        pose = shot.get('pose')
-        if not isinstance(pose, str):
-            continue  # Malformed poses are rejected by the contract validator.
-        rule = table.get(canonical_tag(pose))
-        if not rule:
+        triggers = companion_triggers(shot)
+        rules = [(key, table[key]) for key in triggers if key in table]
+        if not rules:
             continue
-        written = {canonical_tag(tag) for tag in shot.get('tags', [])}
-        written.add(canonical_tag(shot.get('expression') or ''))
-        conflicts = sorted({canonical_tag(c) for c in rule.get('conflicts', [])} & written)
-        if conflicts:
-            problems.append({'shot': entry.get('number'), 'pose': shot.get('pose'),
-                             'conflicts': conflicts, 'require': rule.get('require', [])})
+        written = set(triggers)
+        for key, rule in rules:
+            conflicts = sorted({canonical_tag(c) for c in rule.get('conflicts', [])} & written)
+            if conflicts:
+                problems.append({'shot': entry.get('number'), 'trigger': key,
+                                 'conflicts': conflicts, 'require': rule.get('require', [])})
     return problems
 
 

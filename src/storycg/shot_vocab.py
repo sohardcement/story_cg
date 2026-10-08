@@ -153,11 +153,15 @@ def validate_shot_vocab(board, tier, config=None, vocab=None):
         parts = [f"第 {c['shot']} 镜：动作 {c['action']} 为有时{'（表外）' if c['off_table'] else ''}"
                  for c in sometimes]
         problem = "；".join(parts) + "；每组最多 1 镜有时（含表外）"
+        fix = "换用稳定组合；表外动作与“有时”项共享这 1 镜名额"
+        if any(c["off_table"] for c in sometimes):
+            fix += ("；表外的 pose 若是状态（如睡着、哭），把状态移到 expression，"
+                    "并换一个表内体位；其余表外 pose 改成表内动作")
         raise StoryRuleViolation(
             "shot_vocab_sometimes_limit",
             [f"$.shots[{c['shot'] - 1}].shot.pose" for c in sometimes],
             problem,
-            "换用稳定组合；表外动作与“有时”项共享这 1 镜名额")
+            fix)
     return shots
 
 

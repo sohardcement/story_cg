@@ -6,7 +6,8 @@ No action vocabulary or story/character-specific branches are used.
 import re
 from storycg.story_rules import StoryRuleViolation
 
-EXPRESSION_TAGS=('expressionless','smile','frown','blush','surprised','confused','embarrassed','angry','sad','tears','pout','grin','serious')
+EXPRESSION_TAGS=('expressionless','smile','frown','blush','surprised','confused','embarrassed','angry','sad','tears','pout','grin','serious',
+ 'worried','crying','light_smile','smug','sleeping','closed_eyes')
 
 ATOMIC_TAG = {'type':'string','pattern':r'^[a-z0-9]+(?:_[a-z0-9]+)*$','minLength':1}
 
@@ -64,8 +65,10 @@ def validate_contract(board):
 
 RULE_PROMPT=(
     ' D16: schema_version=2. Every shot depicts exactly ONE instantaneous pose/action. '
-    'pose is ONE real atomic Danbooru tag, not a phrase/list/sequence. The script derives action, description and shot.tags from pose/expression; do not return these derived fields. '
-    'expression is ONE real emotion tag, never another action or posture. Never put another pose in any tag block. '
+    'pose is ONE real atomic Danbooru tag naming a body position only (e.g. sitting, on_back, standing); '
+    'transient states such as sleeping, crying or closed eyes belong in expression, never in pose. '
+    'The script derives action, description and shot.tags from pose/expression; do not return these derived fields. '
+    'expression is ONE real emotion or eye/state tag, never another posture. Never put another pose in any tag block. '
     'Background objects go in prop_tags as ordinary tags. Split sequential actions into separate shots. '
     'Always declare reflection=false and protagonist_instances=1, or reflection=true and protagonist_instances=2 for exactly one reflection of that SAME instant. '
 )
@@ -81,6 +84,10 @@ def planner_schema(schema):
     schema['properties']['scope_version']={'const':2}
     for field in ('scope_version','story_note'):
         if field not in schema['required']:schema['required'].append(field)
+    outfit=schema['properties']['shots']['items']['properties']['outfit']
+    # change_at_shot is code-derived from outfit tag sets (V2-08); the planner
+    # may still state its intent, which is ignored and logged.
+    outfit['required'].remove('change_at_shot')
     schema['properties']['shots']['items']['properties']['shot']['required'].append('unchanged_person_reason')
     shot=schema['properties']['shots']['items']['properties']['shot']
     shot['required'].remove('key_props')
@@ -109,4 +116,6 @@ def materialize(board):
                     tags=list(dict.fromkeys([shot['pose'],shot['expression']])))
         shot['key_props']=[]
         entry['scene']['tags']=list(dict.fromkeys([*entry['scene']['tags'], *shot['prop_tags']]))
+    from storycg.planning import derive_outfit_changes
+    derive_outfit_changes(compiled)
     return compiled

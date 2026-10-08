@@ -165,6 +165,29 @@
     }
   },
   "action_companion_tags_source": "TASK-v2 §2.2-8d（CAP-04 单元 06 四张全是睁眼/半睁眼；睡着类动作拼装时自动补闭眼 tag）",
+  "eye_state_tags": {
+    "roots": [
+      "blinking",
+      "closed_eyes",
+      "one_eye_closed",
+      "wince",
+      "averting_eyes",
+      "half-closed_eyes",
+      "squinting",
+      "staring",
+      "rolling_eyes",
+      "shading_eyes"
+    ],
+    "source": {
+      "url": "https://danbooru.donmai.us/wiki_pages/tag_group:eyes_tags.json",
+      "fetched_at_utc": "2026-10-08T17:00:41Z",
+      "fetched_by": "executor (V2-08)",
+      "sha256": "cdcf8bcc8e1c2168a648c590d96208f9cc1c7dc8a745973572780c060029fd90",
+      "wiki_updated_at": "2026-08-19T19:09:30.779-04:00",
+      "cache_path": "cache/tag_groups/eyes.json"
+    },
+    "derivation": "配置的 roots 逐个对照缓存的 tag_group:eyes_tags wiki bullets 校验存在（闭眼/半闭眼/单眼闭等状态与 averting/shading/rolling 等动作节）；词表取这些 tag 的词。颜色、形状、大小类 tag 不在 roots 内，仍按外貌拒绝。"
+  },
   "framing_negative_tags": {
     "wide": [],
     "full": [],
