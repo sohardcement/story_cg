@@ -277,7 +277,7 @@ def deliver(root):
         raise ValueError('no generated storyboard images to deliver')
     cycle = read(root, 'cycle.json')
     manifest = read(root, 'manifest.json')
-    images = []
+    images, drop_lines = [], []
     for e in board['shots']:
         number = e['number']; selected = cycle.get('shots', {}).get(str(number), {}).get('best_attempt')
         matches = [a for a in state['attempts'] if a['shot_id'] == f'shot{number:02d}' and a['status'] == 'completed']
@@ -287,7 +287,11 @@ def deliver(root):
         if not (root/attempt['image']['path']).is_file():
             raise ValueError(f'missing image file for shot {number}')
         previous = next((x for x in manifest.get('images', []) if x['shot_id'] == attempt['shot_id'] and x.get('attempt_number') == attempt['attempt_number']), {})
-        images.append({**previous, 'shot_id': attempt['shot_id'], 'attempt_number': attempt['attempt_number'], **attempt['image']})
+        images.append({**previous, 'shot_id': attempt['shot_id'], 'attempt_number': attempt['attempt_number'],
+                       'dropped_scene_tags': attempt.get('dropped_scene_tags', []), **attempt['image']})
+        dropped = attempt.get('dropped_scene_tags') or []
+        if dropped:
+            drop_lines.append(f'第 {number} 镜因景别物件上限省略了：{"、".join(dropped)}')
     make_contact_sheet(root, root/'delivery')
     manifest.update(images=images, usage=count_usage(root), attempts=state['attempts'])
     manifest.setdefault('identity_file', 'identity.json')
@@ -321,6 +325,13 @@ def deliver(root):
     missing = [note for note in notes if note not in existing.splitlines()]
     if missing:
         result.write_text(existing + '\n## 审核项说明\n\n' + '\n'.join(missing) + '\n')
+    if drop_lines:
+        existing = result.read_text()
+        if '## 已知问题' not in existing:
+            existing = existing.rstrip('\n') + '\n\n## 已知问题\n'
+        new_lines = [line for line in drop_lines if line not in existing.splitlines()]
+        if new_lines:
+            result.write_text(existing + '\n'.join(new_lines) + '\n')
 
 
 def status(root):

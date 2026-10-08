@@ -18,7 +18,10 @@ def _object_limit(framing, rules):
 
 
 def _non_object_set(rules):
-    return {canonical_tag(tag) for tag in rules.get('non_object_tags', [])}
+    """Handwritten supplement plus Danbooru group membership (V2-09)."""
+    from storycg.scene_groups import non_object_group_tags
+    return ({canonical_tag(tag) for tag in rules.get('non_object_tags', [])}
+            | set(non_object_group_tags(rules)))
 
 
 def _action_invoking_set(rules):

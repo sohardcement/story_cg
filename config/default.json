@@ -100,9 +100,33 @@
       "mountain", "mountains", "hill", "bridge", "rooftop", "bedroom", "living_room", "kitchen",
       "bathroom", "classroom", "office", "library", "cafe", "restaurant", "shop", "store",
       "convenience_store", "supermarket", "hotel", "inn", "school", "hospital", "city", "town",
-      "village", "scenery"
+      "village", "scenery", "rain", "overcast", "cloudy", "wet_ground", "thunderstorm", "puddle"
     ],
-    "non_object_source": "环境/时间/天气/光线与地点类 tag 永不视为物件。取舍对照 CAP-04 实际改写：wooden_floor、window 边界按改写保留/舍弃记录归类（window 属物件，06 因 desk+chair 占满中景额度被舍）。",
+    "non_object_source": "环境/时间/天气/光线与地点类 tag 永不视为物件；此清单是手写补充，在 non_object_tag_groups 覆盖之外兜底。取舍对照 CAP-04 实际改写：wooden_floor、window 边界按改写保留/舍弃记录归类（window 属物件，06 因 desk+chair 占满中景额度被舍）。V2-09 补充天气词：rain/overcast/wet_ground/thunderstorm/puddle 均为真实 Danbooru tag（posts 49423/4478/101/40/8156，2026-10-09 查询）；cloudy 非真实 tag（真实词是 cloudy_sky，已在本清单），因工单 V2-09 要求其不计物件而保留在规则里。",
+    "non_object_tag_groups": {
+      "lighting": {
+        "url": "https://danbooru.donmai.us/wiki_pages/tag_group:lighting.json",
+        "sha256": "76ba0183ecb6fed93305111ae065d5fe58ddc8514261d54a33c82600db85c33d",
+        "wiki_title": "tag_group:lighting",
+        "wiki_updated_at": "2026-09-03T01:37:16.315-04:00",
+        "cache_path": "cache/tag_groups/lighting.json"
+      },
+      "locations": {
+        "url": "https://danbooru.donmai.us/wiki_pages/tag_group:locations.json",
+        "sha256": "3b5a79b919eead0a9cf1141cae9014a9500d5ae6ea3e5288756ecb13961095be",
+        "wiki_title": "tag_group:locations",
+        "wiki_updated_at": "2026-09-15T06:01:51.787-04:00",
+        "cache_path": "cache/tag_groups/locations.json"
+      },
+      "backgrounds": {
+        "url": "https://danbooru.donmai.us/wiki_pages/tag_group:backgrounds.json",
+        "sha256": "c9ff5d26a06918990c3c7e899df345673b0b1a51297d1c28237cfa645144b646",
+        "wiki_title": "tag_group:backgrounds",
+        "wiki_updated_at": "2026-08-19T16:04:58.766-04:00",
+        "cache_path": "cache/tag_groups/backgrounds.json"
+      }
+    },
+    "non_object_groups_source": "V2-09：非物件判定 = 在这些 Danbooru tag group 快照里，或在手写 non_object_tags 里。选组依据（遍历 110 个 tag_group wiki，2026-10-09）：lighting 覆盖光线、时间（time of day lighting 节）与天空光源（sun/moon/starry sky/lightning）；locations 覆盖地点（indoors/outdoors/buildings）；backgrounds 覆盖背景构图 tag（simple/color/pattern background）。天气无干净组：唯一含 rain 的 tag_group:water 混入 cup/mug/glass/bottle/umbrella/boat 等实体物件（cup/mug 还是 action_invoking_props），整组采用会让未声明道具绕过近景剔除（CAP-04 回退），故弃用；rain/overcast 等天气词走手写补充。提取规则只取 bullet 行首部 [[..]] 链接，忽略描述文字里的链接（refraction 行的 glass/water 不入组）。window/desk/cat 及全部 action_invoking_props 均不在任何选用组内（有测试钉住）。",
     "action_invoking_props": {
       "computer": {
         "reason": "会引出打字/看屏幕等未声明动作",

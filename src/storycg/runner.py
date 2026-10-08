@@ -190,7 +190,8 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
 
 
 def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
-                 framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None) -> dict:
+                 framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None,
+                 dropped_scene_tags: list | None = None) -> dict:
     if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job image budget exhausted")
     if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
@@ -216,6 +217,8 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         "prompt_id": None, "status": "ready", "post_count": 0,
         "workflow": build_workflow(workflow_config, positive_tags, framing, seed, prefix),
         "created_at": _now(), "reference": workflow_config.get("generation_reference"),
+        # Scene tags dropped by the framing object cap travel with the attempt (V2-09).
+        "dropped_scene_tags": list(dropped_scene_tags or []),
     }
     state["attempts"].append(attempt)
     _save(job_dir, state)
@@ -226,13 +229,15 @@ def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
     if attempt["status"] == "failed" and state["config"].get("auto_retry_failed", True):
         replacement = _new_attempt(job_dir, state, attempt["shot_id"],
                                    attempt["positive_tags"], attempt["framing"],
-                                   attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")), generation_reference=attempt.get("reference"))
+                                   attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")), generation_reference=attempt.get("reference"),
+                                   dropped_scene_tags=attempt.get("dropped_scene_tags"))
         _process(job_dir, state, replacement, client, recovering=False)
 
 
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
                 config: dict, client, *, negative_prompt: str | None = None,
-                repair_diagnosis: dict | None = None, generation_reference: dict | None = None) -> dict:
+                repair_diagnosis: dict | None = None, generation_reference: dict | None = None,
+                dropped_scene_tags: list | None = None) -> dict:
     job_dir = Path(job_dir)
     job_id = job_dir.name
     make_prefix(job_id, shot_id, 1, root=config.get("comfy_prefix_root", ""))
@@ -260,7 +265,7 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                     return state  # A completed diagnosed repair is idempotent.
                 if same_conditioning:
                     raise ValueError("repair must change conditioning, not seed alone")
-                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, new_negative, generation_reference=generation_reference)
+                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, new_negative, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags)
                 replacement['repair_diagnosis'] = repair_diagnosis
                 _save(job_dir, state)
                 _process(job_dir, state, replacement, client, recovering=False)
@@ -273,7 +278,7 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                 _process(job_dir, state, attempt, client, recovering=True)
             _retry_if_failed(job_dir, state, attempt, client)
             return state
-        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference)
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags)
         _process(job_dir, state, attempt, client, recovering=False)
         _retry_if_failed(job_dir, state, attempt, client)
         return state

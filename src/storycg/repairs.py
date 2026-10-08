@@ -227,7 +227,7 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
             if prior is None:
                 # Build through the same runner API, then persist the full repair workflow before POST.
                 old=state['config'];state['config']=config
-                try: a=_new_attempt(root,state,stage_id,text,framing,negative,generation_reference=ref)
+                try: a=_new_attempt(root,state,stage_id,text,framing,negative,generation_reference=ref,dropped_scene_tags=parts['dropped_scene_tags'])
                 finally: state['config']=old
                 a['repair_key']=key;a['repair_stage']=kind;a['repair_diagnosis']=rec['diagnosis']
                 if primitive=='seed':
