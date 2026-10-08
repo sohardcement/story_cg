@@ -236,9 +236,8 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
             if APPEARANCE_EN.search(value.replace('_', ' ')) or APPEARANCE_ZH.search(value):
                 raise ValueError(f"appearance description is forbidden in props: {value}")
     first = board['shots'][0]['shot']
-    if first['narrative_role'] != 'establishing' or first['framing'] not in ('wide', 'medium'):
-        raise ValueError("first shot must establish the environment: establishing role "
-                         "with wide or medium framing (closeup forbidden)")
+    if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
+        raise ValueError("first shot must establish the environment: wide framing and establishing role")
     derive_outfit_changes(board)
     previous = None
     for entry in board["shots"]:
@@ -269,6 +268,57 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
                        for term in forbidden):
                     raise ValueError(f"identity term is forbidden in storyboard: {value}")
     return board
+
+
+FIRST_SHOT_RULE = ("First shot MUST be wide with narrative_role establishing. ")
+
+
+def writing_rules(shot_count: int) -> str:
+    """Storyboard writing rules shared by plan_story and `storycg beats-guide` (V2-10).
+
+    Excludes the tier-dependent vocabulary section (prompt_section), which only plan_story adds.
+    """
+    instructions = (
+        "Return only schema JSON. Plan exactly " + str(shot_count) + " visually causal shots. "
+        "Descriptions/action/expression are concise English for display and audit ONLY. "
+        "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
+        "No character names, franchises or physical appearance tags in any state. "
+        "Body parts may occur only as direct targets of the current physical action in pose, "
+        "spatial_relation and change_from_previous. Preserve the action's contact and direction. "
+        "Keep each body-target field as one plain action clause; place no other clauses or "
+        "appearance adjectives in that field. "
+        "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
+        "Eye states and actions on the eyes (closed eyes, half-closed eyes, one eye closed, "
+        "wiping eyes, tears) are allowed in action or expression fields; eye color, shape and "
+        "size remain forbidden. "
+        "Use emotions such as surprised, confused, smile in shot.tags. "
+        "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
+        + FIRST_SHOT_RULE + "Vary framing and camera_angle "
+        "between adjacent shots; identical pairs require a meaningful composition_reason. "
+        "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
+        "Props are background only. Put at most ONE ordinary object tag in shot.prop_tags, "
+        "or use [] when absent. Include every depicted prop there; scene.tags describe the setting, "
+        "time, weather and light, not extra objects. The script adds prop_tags to scene.tags. "
+        "Scene object budgets by framing: closeup keeps only setting/place/time tags and NO objects; "
+        "medium at most 2 object tags; full and wide at most 3. Never place action-invoking objects "
+        "(computer, keyboard, monitor, laptop, smartphone, book, cup, mug, pen, musical instrument) "
+        "in scene.tags unless that object is this shot's single declared prop. "
+        "Actions that imply closed eyes (sleeping, sleeping on desk) must never pair with open eyes; "
+        "the assembler adds the closed-eyes companion tag automatically. "
+        "Do not register objects, bind holders, or track ownership, state or left/right hands. "
+        "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
+        "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
+        "when the story states it has ended. No captions or dialogue. "
+        "v2 has one main person; others only anonymous backs, cropped parts or offscreen. "
+        "If the plot relies on mistaken possession, object ownership or mistaken identity, "
+        "rewrite it at the storyboard stage so actions and expressions convey the key change. "
+        "Record that adaptation in story_note as one concise Chinese sentence. If the inference "
+        "cannot be expressed this way, continue planning and state in story_note that this part "
+        "may not be readable. Otherwise set story_note to an empty string."
+    )
+    from storycg.story_rules import RULE_PROMPT
+    instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=2. Key story changes must be expressed in expression/action. Each shot permits at most ONE prop tag. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason.')
+    return instructions
 
 
 def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
@@ -302,50 +352,7 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     model = available[0]["id"]
     log_path = job_dir / "plan_log.json"
     log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"calls": []}
-    instructions = (
-        "Return only schema JSON. Plan exactly " + str(shot_count) + " visually causal shots. "
-        "Descriptions/action/expression are concise English for display and audit ONLY. "
-        "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
-        "No character names, franchises or physical appearance tags in any state. "
-        "Body parts may occur only as direct targets of the current physical action in pose, "
-        "spatial_relation and change_from_previous. Preserve the action's contact and direction. "
-        "Keep each body-target field as one plain action clause; place no other clauses or "
-        "appearance adjectives in that field. "
-        "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
-        "Eye states and actions on the eyes (closed eyes, half-closed eyes, one eye closed, "
-        "wiping eyes, tears) are allowed in action or expression fields; eye color, shape and "
-        "size remain forbidden. "
-        "Use emotions such as surprised, confused, smile in shot.tags. "
-        "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
-        "First shot has narrative_role establishing and owns the location. Use wide when this "
-        "tier's vocabulary has a STABLE wide combo, or when every other shot is STABLE so the "
-        "single SOMETIMES quota can be spent on the first shot; otherwise open with a STABLE "
-        "medium combo and let scene tags carry the environment (never closeup first; medium "
-        "object cap still applies). Vary framing and camera_angle "
-        "between adjacent shots; identical pairs require a meaningful composition_reason. "
-        "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
-        "Props are background only. Put at most ONE ordinary object tag in shot.prop_tags, "
-        "or use [] when absent. Include every depicted prop there; scene.tags describe the setting, "
-        "time, weather and light, not extra objects. The script adds prop_tags to scene.tags. "
-        "Scene object budgets by framing: closeup keeps only setting/place/time tags and NO objects; "
-        "medium at most 2 object tags; full and wide at most 3. Never place action-invoking objects "
-        "(computer, keyboard, monitor, laptop, smartphone, book, cup, mug, pen, musical instrument) "
-        "in scene.tags unless that object is this shot's single declared prop. "
-        "Actions that imply closed eyes (sleeping, sleeping on desk) must never pair with open eyes; "
-        "the assembler adds the closed-eyes companion tag automatically. "
-        "Do not register objects, bind holders, or track ownership, state or left/right hands. "
-        "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
-        "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
-        "when the story states it has ended. No captions or dialogue. "
-        "v2 has one main person; others only anonymous backs, cropped parts or offscreen. "
-        "If the plot relies on mistaken possession, object ownership or mistaken identity, "
-        "rewrite it at the storyboard stage so actions and expressions convey the key change. "
-        "Record that adaptation in story_note as one concise Chinese sentence. If the inference "
-        "cannot be expressed this way, continue planning and state in story_note that this part "
-        "may not be readable. Otherwise set story_note to an empty string."
-    )
-    from storycg.story_rules import RULE_PROMPT
-    instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=2. Key story changes must be expressed in expression/action. Each shot permits at most ONE prop tag. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason.')
+    instructions = writing_rules(shot_count)
     from storycg.shot_vocab import prompt_section
     instructions += prompt_section(identity.get('identity_tier'), config)
     from storycg.shot_contract import planner_schema, materialize

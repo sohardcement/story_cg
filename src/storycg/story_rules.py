@@ -15,6 +15,8 @@ class StoryRuleViolation(ValueError):
     def __init__(self, rule_id, fields, problem, correction):
         self.rule_id = rule_id
         self.fields = fields
+        self.problem = problem
+        self.correction = correction
         super().__init__(f"{rule_id}: {', '.join(fields)}: {problem}. Fix: {correction}")
 
 

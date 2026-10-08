@@ -1,0 +1,305 @@
+"""Compile an agent-written story beats file into a storyboard (V2-10, TASK-v2 §9).
+
+The beats file uses the planner JSON format (planner_schema(production_schema())).
+Compiling never calls a model: it runs the same checks as plan_story after the
+model response, in the same order, and reports every error it can find with its
+shot number and field instead of stopping at the first one.
+"""
+import copy
+import hashlib
+import json
+import re
+from pathlib import Path
+
+from jsonschema import Draft202012Validator
+
+from storycg.state import save_json_atomic
+
+OBSCURED_TAG = re.compile(r'back view|from behind|covered face|hidden face|face out of frame')
+ACTION_FIELDS = {'pose', 'action', 'description', 'spatial_relation', 'change_from_previous', 'tags'}
+
+
+class BeatsError(ValueError):
+    """Carries every compile error; str() lists them one per line."""
+
+    def __init__(self, errors):
+        self.errors = errors
+        super().__init__(f'beats 编译失败，共 {len(errors)} 条错误：\n' + '\n'.join(format_error(e) for e in errors))
+
+
+def format_error(error):
+    where = f"第 {error['shot']} 镜" if error.get('shot') else '全局'
+    return f"- {where}，字段 {error.get('field') or '-'}：{error['problem']}。修改：{error['fix']}"
+
+
+def _add(errors, shot, field, problem, fix):
+    errors.append({'shot': shot, 'field': field, 'problem': problem, 'fix': fix})
+
+
+def _shot_of_path(path):
+    """Map a jsonschema path such as ('shots', 2, 'shot', 'framing') to (3, 'shot.framing')."""
+    parts = list(path)
+    if len(parts) >= 2 and parts[0] == 'shots' and isinstance(parts[1], int):
+        return parts[1] + 1, '.'.join(str(p) for p in parts[2:]) or 'shots'
+    return None, '.'.join(str(p) for p in parts) or '-'
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def _obscured(entry):
+    shot = entry['shot']
+    tags = ' '.join([*shot['tags'], *entry.get('scene', {}).get('tags', [])]).replace('_', ' ').lower()
+    return (shot.get('subject_visibility') == 'obscured' or shot['camera_angle'] == 'behind'
+            or bool(OBSCURED_TAG.search(tags)))
+
+
+def _collect_errors(board, shot_count, identity, config):
+    """List every failing check on a materialized board. Never mutates the board.
+
+    Mirrors validate_storyboard, validate_contract, validate_story_rules and
+    validate_shot_vocab. Each check is listed for each shot it applies to; the
+    real validators run afterwards on the success path, so this list is for
+    reporting only.
+    """
+    from storycg.identity_enrichment import category_for, load_rules
+    from storycg.planning import appearance_forbidden, production_schema
+    from storycg.prompt_rules import companion_conflicts
+    from storycg.shot_contract import EXPRESSION_TAGS, moment
+    from storycg.shot_vocab import classify_shots, load_vocab, substitute_text
+    from storycg.story_rules import StoryRuleViolation, validate_story_rules
+    from storycg.tags import canonical_tag
+    from storycg.posture_tags import validate_posture_blocks
+
+    errors = []
+    shots = board.get('shots', [])
+    tier = (identity or {}).get('identity_tier')
+
+    if len(shots) != shot_count:
+        _add(errors, None, 'shots', f'镜数为 {len(shots)}，工单要求 {shot_count}', f'增删镜头，使镜数为 {shot_count}')
+    if [entry.get('number') for entry in shots] != list(range(1, len(shots) + 1)):
+        _add(errors, None, 'shots[].number', '镜号不是从 1 开始连续编号', '按顺序重新编号为 1, 2, 3, ...')
+
+    for index, entry in enumerate(shots):
+        number, shot = index + 1, entry['shot']
+        if len(shot.get('prop_tags', [])) + len(shot.get('key_props', [])) > 1:
+            _add(errors, number, 'shot.prop_tags', '每镜最多一个道具', '只保留一个背景道具，其余删除')
+    for conflict in companion_conflicts(board, config):
+        _add(errors, conflict['shot'], 'shot.tags',
+             f"tag {conflict['trigger']} 需要 {', '.join(conflict['require'])}，但同镜含有 {', '.join(conflict['conflicts'])}",
+             '删除冲突的 tag，或改用需要的 tag')
+
+    try:
+        validate_posture_blocks(board)
+    except ValueError as exc:
+        _add(errors, None, 'shot.tags', f'体位 tag 检查失败：{exc}', '按提示删除或替换体位外的 tag')
+
+    for index, entry in enumerate(shots):
+        number, shot = index + 1, entry['shot']
+        try:
+            moment(shot, f'$.shots[{index}].shot')
+        except StoryRuleViolation as exc:
+            _add(errors, number, ', '.join(f.split('.shot.')[-1] for f in exc.fields),
+                 exc.problem, exc.correction)
+        if any(canonical_tag(tag) in EXPRESSION_TAGS for tag in shot.get('prop_tags', [])):
+            _add(errors, number, 'shot.prop_tags', '背景道具 tag 不能承担表情', '表情只放在 shot.expression')
+
+    view = {key: value for key, value in board.items() if key not in (
+        'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items')}
+    for error in Draft202012Validator(production_schema()).iter_errors(view):
+        number, field = _shot_of_path(error.absolute_path)
+        _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
+
+    if shots:
+        first = shots[0]['shot']
+        if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
+            _add(errors, 1, 'shot.framing, shot.narrative_role',
+                 '首镜必须是 wide 加 establishing', '把第 1 镜改为 framing: wide、narrative_role: establishing')
+    for index in range(1, len(shots)):
+        number, shot, previous = index + 1, shots[index]['shot'], shots[index - 1]['shot']
+        if ((shot['framing'], shot['camera_angle']) == (previous['framing'], previous['camera_angle'])
+                and not shot['composition_reason'].strip()):
+            _add(errors, number, 'shot.composition_reason',
+                 '与上一镜景别和角度相同，需要 composition_reason',
+                 '改 framing 或 camera_angle，或填写 composition_reason')
+        if ((shot['expression'], shot['action']) == (previous['expression'], previous['action'])
+                and not shot.get('unchanged_person_reason', '').strip()):
+            _add(errors, number, 'shot.unchanged_person_reason',
+                 '与上一镜表情和动作相同，需要 unchanged_person_reason',
+                 '改表情或动作，或填写 unchanged_person_reason')
+
+    identity_terms = []
+    if identity:
+        identity_terms = [identity.get('character_tag'), identity.get('work_tag'), identity.get('input_name')]
+    rules = load_rules()
+    for index, entry in enumerate(shots):
+        number, shot = index + 1, entry['shot']
+        # Same clothing filter as validate_storyboard: accessories are exempt from the appearance check.
+        outfit = copy.deepcopy(entry['outfit'])
+        outfit['tags'] = [tag for tag in outfit['tags']
+                          if (category_for(canonical_tag(tag), rules) or {}).get('name') not in ('accessories', 'accessory_color')]
+        pairs = [(f'scene.{key}', value, False) for key, field in entry['scene'].items()
+                 for value in _strings(field)]
+        pairs += [(f'outfit.{key}', value, False) for key, field in outfit.items()
+                  for value in _strings(field)]
+        pairs += [(f'shot.{key}', value, key in ACTION_FIELDS) for key, field in shot.items()
+                  for value in _strings(field)]
+        for field, value, body_action in pairs:
+            if appearance_forbidden(value, body_action=body_action):
+                _add(errors, number, field, f'外貌描写 "{value}" 不允许',
+                     '删除外貌、发色、瞳色、体型等描写；眼睛状态和体位动作可以保留')
+            if any(term and re.search(rf"(?<!\w){re.escape(term.replace('_', ' '))}(?!\w)",
+                                      value.replace('_', ' '), re.I) for term in identity_terms):
+                _add(errors, number, field, f'角色名或作品名 "{value}" 不允许', '删除角色名、作品名')
+
+    for index, entry in enumerate(shots):
+        try:
+            validate_story_rules({'shots': [entry]}, allow_obscured=True)
+        except StoryRuleViolation as exc:
+            fields = ', '.join(exc.fields).replace('$.shots[0]', f'$.shots[{index}]')
+            _add(errors, index + 1, fields, exc.problem, exc.correction)
+    obscured = sum(1 for entry in shots if _obscured(entry))
+    if not (config or {}).get('allow_obscured_protagonist', False) and obscured > 1:
+        _add(errors, None, 'shots[].shot.subject_visibility',
+             f'遮挡主角或背对镜头的镜头有 {obscured} 个，上限 1',
+             '只保留 1 个背影或遮挡镜，其余改为正面或侧面可读')
+
+    vocab = load_vocab(config)
+    by_id = {item['id']: item for item in vocab['items']}
+    classified = classify_shots(board, tier, vocab=vocab)
+    for item in classified:
+        if item['grade'] == 'unusable':
+            entry = by_id[item['vocab_ids'][0]]
+            _add(errors, item['shot'], 'shot.pose, shot.framing, shot.camera_angle',
+                 f"动作 {item['action']} 在 {item['grade_basis']} 为不可用",
+                 f"改用替代组合：{substitute_text(entry, tier)}；或改用稳定组合")
+    sometimes = [item for item in classified if item['grade'] == 'sometimes']
+    if len(sometimes) > 1:
+        for item in sometimes:
+            _add(errors, item['shot'], 'shot.pose',
+                 f"动作 {item['action']} 为有时{'（表外）' if item['off_table'] else ''}；每组最多 1 镜有时（含表外）",
+                 '换用稳定组合；或保留 1 镜有时，其余改为稳定组合')
+    return errors
+
+
+def beats_guide(shot_count: int = 4) -> str:
+    """Writing guide for the agent: schema, the planner's writing rules, first-shot rule."""
+    from storycg.planning import FIRST_SHOT_RULE, production_schema, writing_rules
+    from storycg.shot_contract import planner_schema
+    schema = planner_schema(production_schema())
+    return '\n'.join([
+        '# 故事分镜（beats）写作说明',
+        '',
+        f'目标：{shot_count} 镜。输出一个 JSON 对象，符合下面的 schema；不要输出 schema 之外的字段，不要出现派生字段'
+        '（action、description、shot.tags 由程序生成）。',
+        '',
+        '## 1. JSON schema',
+        '```json',
+        json.dumps(schema, ensure_ascii=False, indent=2),
+        '```',
+        '',
+        '## 2. 写作规则（与模型分镜使用的规则相同）',
+        writing_rules(shot_count).strip(),
+        '',
+        '## 3. 首镜规则',
+        FIRST_SHOT_RULE.strip(),
+        '',
+        '## 4. 自查',
+        '写好后运行：storycg compile --character <角色> --beats <文件> --shots ' + str(shot_count),
+        '有错误按每条的镜号和字段修改，直到通过，再运行 storycg make --beats <文件>。',
+        '',
+    ])
+
+
+def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=None):
+    """Compile a beats file into storyboard.json without any model call.
+
+    Returns the storyboard. Raises BeatsError listing every error found; the
+    compile record (inputs' sha256, status, errors) is appended to plan_log.json.
+    """
+    from storycg.planning import derive_outfit_changes, production_schema, validate_storyboard
+    from storycg.shot_contract import materialize, planner_schema
+    from storycg.shot_vocab import validate_shot_vocab
+    from storycg.story_rules import validate_story_rules
+    from storycg.tags import TagRegistry, validate_tag_lists
+
+    job_dir = Path(job_dir)
+    beats_path = Path(beats)
+    raw = beats_path.read_bytes()
+    record = {'planning_contract': 'beats_compiled_v1', 'source_file': str(beats_path),
+              'input_sha256': hashlib.sha256(raw).hexdigest(), 'status': 'started'}
+    log_path = job_dir / 'plan_log.json'
+    log = json.loads(log_path.read_text(encoding='utf-8')) if log_path.exists() else {'calls': []}
+    log['calls'].append(record)
+    plan_path = job_dir / 'storyboard.json'
+    allow_obscured = (config or {}).get('allow_obscured_protagonist', False)
+    try:
+        if plan_path.exists():
+            # Same reuse rule as plan_story: an existing storyboard is re-validated, not recompiled.
+            board = json.loads(plan_path.read_text(encoding='utf-8'))
+            validate_storyboard(board, shot_count, identity, config)
+            validate_shot_vocab(board, identity.get('identity_tier'), config)
+            validate_story_rules(board, allow_obscured=allow_obscured)
+            record.update(status='reused', note='storyboard.json already exists and was re-validated')
+            save_json_atomic(log_path, log)
+            return board
+
+        parsed = json.loads(raw)
+        schema_errors = list(Draft202012Validator(planner_schema(production_schema())).iter_errors(parsed))
+        if schema_errors:
+            errors = []
+            for error in schema_errors:
+                number, field = _shot_of_path(error.absolute_path)
+                _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
+            raise BeatsError(errors)
+        board = materialize(parsed)
+        errors = _collect_errors(board, shot_count, identity, config)
+        if errors:
+            raise BeatsError(errors)
+
+        # The real checks, in plan_story's order. The collector above found nothing,
+        # so a failure here is a gap in the collector and is reported as one error.
+        validate_storyboard(board, shot_count, identity, config)
+        if tag_registry is None:
+            import httpx
+            with httpx.Client(base_url='https://danbooru.donmai.us', timeout=30, trust_env=False) as tag_client:
+                registry = TagRegistry(job_dir / 'cache' / 'tags', client=tag_client)
+                try:
+                    validate_tag_lists(board, registry, config, drop_unknown=True)
+                finally:
+                    record['tag_validation'] = registry.records
+        else:
+            before = len(tag_registry.records)
+            try:
+                validate_tag_lists(board, tag_registry, config, drop_unknown=True)
+            finally:
+                record['tag_validation'] = tag_registry.records[before:]
+        derive_outfit_changes(board)
+        record['outfit_changes'] = [{'shot': entry['number'], 'derived': entry['outfit'].get('change_at_shot')}
+                                    for entry in board['shots']]
+        board = validate_storyboard(board, shot_count, identity, config)
+        record['shot_vocab'] = validate_shot_vocab(board, identity.get('identity_tier'), config)
+        validate_story_rules(board, allow_obscured=allow_obscured)
+    except BeatsError as exc:
+        record.update(status='invalid', errors=exc.errors)
+        save_json_atomic(log_path, log)
+        raise
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        errors = [{'shot': getattr(exc, 'shot', None), 'field': ', '.join(getattr(exc, 'fields', []) or []) or '-',
+                   'problem': f'{type(exc).__name__}: {exc}',
+                   'fix': '按该错误信息修改 beats 文件后重新编译'}]
+        record.update(status='invalid', errors=errors)
+        save_json_atomic(log_path, log)
+        raise BeatsError(errors) from exc
+    record.update(status='valid')
+    save_json_atomic(log_path, log)
+    save_json_atomic(plan_path, board)
+    return board

@@ -2,8 +2,10 @@
 import argparse
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -19,6 +21,7 @@ from storycg.config import load_config
 from storycg.controls import apply_options
 from storycg.pipeline import new_job, resolve_job, plan_job, run_story_job, make_contact_sheet, tier_recheck_eligible
 from storycg.planning import plan_story, validate_storyboard
+from storycg.beats import BeatsError, beats_guide, compile_beats
 from storycg.state import save_json_atomic
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -221,6 +224,15 @@ def _ensure_tier_before_planning(root, config, identity):
         raise ResourceUnavailable('身份控制所需资源或层级实现不可用：' + str(identity.get('identity_tier')))
     return identity
 
+def _plan_from_beats(root, config):
+    """V2-10: compile the agent-written beats file; no model call is made."""
+    identity = resolve_job(root)
+    if identity.get('status') != 'locked':
+        raise ValueError('identity requires clarification before planning')
+    job = read(root, 'job.json')
+    return compile_beats(root, root/read(root, 'agent.json')['beats'], identity, job['shot_count'], config)
+
+
 def execute(root):
     config = read(root, 'job.json')['generation_config']
     config['repair_cycle_enabled'] = True
@@ -253,7 +265,7 @@ def execute(root):
         if identity is None:
             return
         update(root, phase='planning')
-        board = plan_job(root, config)
+        board = _plan_from_beats(root, config) if read(root, 'agent.json').get('beats') else plan_job(root, config)
         if not read(root, 'agent.json').get('storyboard'):
             present(root, config, board)
         if read(root, 'agent.json').get('storyboard_first') and not read(root, 'agent.json').get('approved'):
@@ -399,7 +411,46 @@ def edit_board(root, edit, config):
     save_json_atomic(root/'storyboard.json', candidate)
 
 
+def beats_cli(argv):
+    """`beats-guide` prints the writing guide; `compile` checks a beats file without generating images."""
+    parser = argparse.ArgumentParser(prog='storycg')
+    sub = parser.add_subparsers(dest='command', required=True)
+    guide = sub.add_parser('beats-guide', help='print the story beats writing guide')
+    guide.add_argument('--shots', type=int, default=4)
+    comp = sub.add_parser('compile', help='compile a beats file; reports every error; no image generation')
+    comp.add_argument('--character', required=True)
+    comp.add_argument('--beats', required=True, type=Path)
+    comp.add_argument('--shots', type=int, default=4)
+    comp.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
+    args = parser.parse_args(argv)
+    if args.command == 'beats-guide':
+        print(beats_guide(args.shots))
+        return 0
+    config = load_config(args.config)
+    # Scratch job directory: the tier and planning code expect a job.json; nothing here generates images.
+    root = PROJECT/'compile'/('cmp-'+uuid.uuid4().hex[:12])
+    new_job(root, args.character, 'beats compile check', args.shots, generation_config=config)
+    identity = resolve_job(root)
+    if identity.get('status') != 'locked':
+        print(json.dumps({'status': 'identity_not_locked', 'identity': identity}, ensure_ascii=False, indent=2))
+        return 2
+    identity = _ensure_tier_before_planning(root, config, identity)
+    if identity is None:
+        print(json.dumps({'status': 'needs_user', 'reason': read(root, 'agent.json').get('reason')}, ensure_ascii=False, indent=2))
+        return 2
+    try:
+        board = compile_beats(root, args.beats, identity, args.shots, config)
+    except BeatsError as exc:
+        print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc)}, ensure_ascii=False, indent=2))
+        return 2
+    print(json.dumps({'status': 'valid', 'identity_tier': identity.get('identity_tier'),
+                      'storyboard': board, 'job_dir': str(root)}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv):
+    if argv and argv[0] in ('beats-guide', 'compile'):
+        return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
     for name in ('make', 'approve', 'status', 'resume', 'deliver', '_worker'):
@@ -408,6 +459,7 @@ def main(argv):
         if name in ('make', 'approve', 'resume'):
             command.add_argument('--foreground', action='store_true')
         if name == 'make':
+            command.add_argument('--beats', type=Path)
             command.add_argument('--character', required=True)
             command.add_argument('--story', required=True)
             command.add_argument('--shots', type=int, default=4)
@@ -436,8 +488,15 @@ def main(argv):
             config = apply_options(load_config(args.config), options); config['repair_cycle_enabled'] = True
             if (root/'agent.json').exists():
                 raise ValueError('job already exists; use status/resume/approve')
+            beats_src = args.beats.resolve() if args.beats else None
+            if beats_src is not None and not beats_src.is_file():
+                raise ValueError(f'beats file not found: {args.beats}')
             new_job(root, args.character, args.story, args.shots, generation_options=options, generation_config=config)
-            update(root, phase='queued', needs_user=False, storyboard_first=args.storyboard_first, approved=False)
+            beats_fields = {}
+            if beats_src is not None:
+                shutil.copyfile(beats_src, root/'beats.json')
+                beats_fields = {'beats': 'beats.json', 'beats_sha256': hashlib.sha256((root/'beats.json').read_bytes()).hexdigest()}
+            update(root, phase='queued', needs_user=False, storyboard_first=args.storyboard_first, approved=False, **beats_fields)
         elif not (root/'job.json').exists():
             raise ValueError('story job not found')
         if args.command != 'status':
@@ -469,7 +528,6 @@ def main(argv):
                             prior=old
                             old=resolve_identity(job['character'],root/'cache/danbooru',character_tag=args.tag,work=args.work)
                             if any(prior.get(key)!=old.get(key) for key in ('character_tag','identity_block','default_outfit_tags')):
-                                import hashlib,shutil
                                 digest=hashlib.sha256(json.dumps(prior,sort_keys=True).encode()).hexdigest()[:16]
                                 archive=root/'edits'/('identity-'+digest);archive.mkdir(parents=True,exist_ok=True)
                                 for name in ('storyboard.json','plan_log.json'):
