@@ -53,7 +53,16 @@ def delivery_scope_notes(root):
     path = Path(root)/'storyboard.json'
     board = json.loads(path.read_text()) if path.exists() else {}
     note = board.get('story_note', '').strip()
-    return ['道具未经审核。'] + ([note] if note else [])
+    identity_path = Path(root)/'identity.json'
+    identity = json.loads(identity_path.read_text()) if identity_path.exists() else {}
+    cache = identity.get('tier_cache', {})
+    receipt_path = Path(root)/'tier/cache-reuse.json'
+    if not cache.get('hit') and receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        if receipt.get('key_inputs') == identity.get('tier_model_fingerprint'):
+            cache = receipt
+    tier_note = ['层级沿用缓存（'+cache['established_at_utc'][:10]+'）。'] if cache.get('hit') else []
+    return ['道具未经审核。'] + ([note] if note else []) + tier_note
 
 
 def render_delivery(root, report, gate, config=None):

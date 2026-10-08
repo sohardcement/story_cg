@@ -1,5 +1,6 @@
 """Deterministic tag-only prompts; human-readable state never enters conditioning."""
 from storycg.config import load_config
+from storycg.framing import framing_rule
 
 
 def spaces(text):
@@ -18,7 +19,7 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
         moment(shot, '$.shot')
     outfit_block = ', '.join(spaces(t) for t in outfit['tags'])
     scene_block = ', '.join(spaces(t) for t in scene['tags'])
-    composition = [*config['framing_tags'][shot['framing']],
+    composition = [*framing_rule(config, shot['framing'])['tags'],
                    *config['camera_tags'][shot['camera_angle']]]
     # Keep the identity block intact; avoid repeated clothing, scene and framing tags.
     supplied = {spaces(t).strip() for t in identity['identity_block'].split(',')}

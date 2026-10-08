@@ -184,6 +184,8 @@ class VisionClient:
 
 def identity_checklist(identity, outfit):
     """Script-owned keys/expectations: never let the VLM invent identity traits."""
+    from storycg.identity_enrichment import outfit_hair_ornaments
+    identity = outfit_hair_ornaments(identity)
     groups = {key: {'expected': [], 'source': 'identity.json'} for key in
               ['hair_color', 'hairstyle', 'eye_color', 'signature_features',
                'hair_ornaments', 'accessories']}
@@ -203,6 +205,8 @@ def identity_checklist(identity, outfit):
             category = 'signature_features'
         groups[category]['expected'].append(item)
     for item in identity.get('default_outfit_tags', []):
+        if item.get('state_scope') == 'outfit':
+            continue
         if any(word in item['tag'] for word in ('earring', 'necklace', 'bracelet', 'gem', 'accessory')):
             groups['accessories']['expected'].append(item)
         if any(word in item['tag'] for word in ('hair_ornament', 'hairclip', 'hairband', 'hair_bow', 'hair_ribbon')):
@@ -294,8 +298,9 @@ def visibility_summary(results):
                 for r in results))}
 
 
-def framing_grade(expected, observed, config):
-    allowed = config.get('framing_definitions', {}).get(expected)
+def framing_grade(expected, observed, config, *, pose=None):
+    from storycg.framing import allowed_parts
+    allowed = allowed_parts(config, expected, pose)
     return {'status': 'pass' if allowed and observed['lowest_visible'] in allowed else 'fail',
             'reason': f"expected={expected}; allowed={allowed}; observed={observed['lowest_visible']}; "
                       + observed['reason']}
@@ -360,7 +365,10 @@ def audit_single(vlm, path, entry, props, config, purpose):
     if result['status'] == 'pass' and 'framing_observation' in result['data']:
         observed = result['data'].pop('framing_observation')
         result['framing_observation'] = observed
-        result['data']['framing'] = framing_grade(entry['shot']['framing'], observed, config)
+        shot = entry['shot']
+        pose = shot.get('pose') if 'pose' in shot else shot.get('tags', [])
+        if shot.get('pose_tag_omitted'): pose = None
+        result['data']['framing'] = framing_grade(shot['framing'], observed, config, pose=pose)
     return annotate_reliability(result, load_reliability(config))
 
 

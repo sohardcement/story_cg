@@ -34,6 +34,37 @@ def posture_tags():
     return frozenset(tags)
 
 
+def compact_posture_groups(roots):
+    """Derive root subtrees; tags also used outside these subtrees are ambiguous.
+
+    In particular, a shared leg position does not establish sitting or lying.
+    Root names express the requested posture classes, never a test-case tag list.
+    """
+    vocabulary = posture_tags()  # Validates the existing source/provenance hash.
+    body = json.loads((CACHE/'posture.json').read_text())['body']
+    roots = {canonical_tag(root) for root in roots}
+    contexts = {}
+    stack = []
+    for line in body.splitlines():
+        if re.match(r'^h[1-6](?:#|\.)', line):
+            stack = []
+        match = re.match(r'^(\*+)\s+\[\[', line)
+        if not match:
+            continue
+        depth = len(match[1])
+        tags = extract_tags(line) & vocabulary
+        while stack and stack[-1][0] >= depth:
+            stack.pop()
+        ancestors = set().union(*(entry[1] for entry in stack)) if stack else set()
+        for tag in tags:
+            contexts.setdefault(tag, []).append(ancestors | {tag})
+        stack.append((depth, tags))
+    return {root: sorted(tag for tag, paths in contexts.items()
+                        if any(root in path for path in paths)
+                        and all(path & roots for path in paths))
+            for root in sorted(roots)}
+
+
 def tag_fields(board):
     for i,p in enumerate(board.get('props',[])):
         yield f'$.props[{i}].description_tags',p['description_tags']

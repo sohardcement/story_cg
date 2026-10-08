@@ -10,6 +10,8 @@ import httpx
 from storycg.identity_enrichment import load_rules
 from storycg.state import save_json_atomic
 
+DIAGNOSTIC_ITEMS = frozenset(('outfit', 'accessories', 'hair_ornaments'))
+
 
 def normalize_tag(tag):
     return re.sub(r'\s+','_',tag.strip().lower())
@@ -123,8 +125,8 @@ def reference_checklist(identity,reference):
     subject=default_outfit_subject(identity)
     applicable=bool(subject and subject in tags)
     return [{**row,'applicable':row['item']!='outfit' or applicable,
-             'scope':'outfit_diagnostic' if row['item']=='outfit' else 'appearance',
-             'affects_tier':row['item']!='outfit'} for row in identity_checklist(identity)]
+             'scope':'diagnostic' if row['item'] in DIAGNOSTIC_ITEMS else 'appearance',
+             'affects_tier':row['item'] not in DIAGNOSTIC_ITEMS} for row in identity_checklist(identity)]
 
 
 def select_reference_posts(identity,posts,*,rules=None):
@@ -206,6 +208,8 @@ def download_references(character_tag,job_dir,client,*,rules=None,identity=None)
 
 
 def identity_checklist(identity):
+    from storycg.identity_enrichment import outfit_hair_ornaments
+    identity = outfit_hair_ornaments(identity)
     mapping={'hair_color':'hair_color','eye_color':'eye_color','hair_length':'hairstyle',
              'hairstyle':'hairstyle','hair_details':'hairstyle','accessories':'accessories',
              'accessory_color':'accessories','features':'accessories'}
@@ -214,29 +218,29 @@ def identity_checklist(identity):
 
 
 def evaluate_l2(checklist,comparisons,reliability):
-    reliable=[];unverified=[];outfit=[]
+    reliable=[];unverified=[];outfit=[];accessories=[]
     for expected in checklist:
         rows=[x for x in comparisons if x.get('item')==expected['item'] and x.get('tag')==expected['tag']]
         record={**expected,'comparisons':rows}
-        if expected['item']=='outfit':
+        if expected['item'] in DIAGNOSTIC_ITEMS:
             record['affects_tier']=False
             active=[r for r in rows if r.get('applicable',True) and r.get('status')!='not_applicable']
             record['passed']=all(r.get('status')=='pass' for r in active)
             record['applicable']=bool(active)
-            record['reliability']=reliability.get('items',{}).get('outfit',{}).get('status','unverified')
-            outfit.append(record);continue
+            record['reliability']=reliability.get('items',{}).get(expected['item'],{}).get('status','unverified')
+            (outfit if expected['item']=='outfit' else accessories).append(record);continue
         if reliability.get('items',{}).get(expected['item'],{}).get('status')=='reliable':
             record['passed']=bool(rows) and all(x.get('status')=='pass' for x in rows)
             reliable.append(record)
         else:
             record['note']='未经可靠审核';unverified.append(record)
-    vetoes=[x for x in comparisons if x.get('item')!='outfit' and x.get('status')=='fail' and x.get('applicable',True)]
+    vetoes=[x for x in comparisons if x.get('item') not in DIAGNOSTIC_ITEMS and x.get('status')=='fail' and x.get('applicable',True)]
     not_visible=[x for x in comparisons if x.get('status')=='not_visible']
     passed=bool(reliable) and all(x['passed'] for x in reliable) and not vetoes
     return {'identity_tier':'L2' if passed else 'tier_pending_L3_L4',
-            'reliable':reliable,'unverified':unverified,'outfit_comparisons':outfit,
+            'reliable':reliable,'unverified':unverified,'outfit_comparisons':outfit,'accessory_comparisons':accessories,
             'vetoes':vetoes,'not_visible':not_visible,
-            'limitations':'D8b: all reliable appearance items must pass; any appearance fail vetoes; outfit is diagnostic only; not_visible neither vetoes nor confirms'}
+            'limitations':'D35: accessories and outfit are diagnostic only, neither veto nor confirmation; all reliable fixed appearance items must pass; not_visible neither vetoes nor confirms'}
 
 
 def _local_file(root,relative):
@@ -370,6 +374,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
     evidence['reliable']=conclusion['reliable']
     evidence['unverified']=conclusion['unverified']
     evidence['outfit_comparisons']=conclusion['outfit_comparisons']
+    evidence['accessory_comparisons']=conclusion['accessory_comparisons']
     evidence['limitations']=conclusion['limitations']
     evidence['vetoes']=conclusion['vetoes']
     evidence['not_visible']=conclusion['not_visible']
@@ -476,7 +481,7 @@ def live_inventory(config,client,reference_client,job_dir):
     return result
 
 
-def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,reference_client=None,vlm=None,allow_l3=True):
+def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,reference_client=None,vlm=None,allow_l3=True,force_probe=False):
     """One persistent probe. Pending results stop; no blind seed retries."""
     from storycg.identity import USER_AGENT,BASE_URL
     from storycg.runner import run_gen_one
@@ -484,11 +489,13 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
     root=Path(job_dir).resolve()
     if identity.get('status')!='locked':return identity
     from storycg.fallback import ensure_l3,needs_user,import_user_reference,comparison_available
-    if identity.get('identity_tier') not in ('L1','L2','L3','L4') and not (root/'portrait.json').exists():
+    if not force_probe and identity.get('identity_tier') not in ('L1','L2','L3','L4') and not (root/'portrait.json').exists():
         from storycg.reference import reuse_l3_portrait
         cached=reuse_l3_portrait(root,identity,tier_generation_config(config,dict(identity,identity_tier='L3')))
         if cached:return cached
-    probe=root/'tier'/f'probe_v{load_rules()["tier_review"]["version"]}_{root.name}'
+    from storycg.tier_cache import cache_key as model_cache_key
+    model_suffix='_'+model_cache_key(identity['tier_model_fingerprint'])[:16] if identity.get('tier_model_fingerprint') else ''
+    probe=root/'tier'/f'probe_v{load_rules()["tier_review"]["version"]}_{root.name}{model_suffix}'
     opts=json.loads((root/'job.json').read_text()).get('generation_options',{}) if (root/'job.json').exists() else {}
     try:user_ref=import_user_reference(root,opts['reference_path']) if opts.get('reference_path') else None
     except (ValueError,OSError) as exc:return needs_user(root,identity,'用户参考图无法读取：'+str(exc))
@@ -514,7 +521,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         if identity.get('identity_tier')=='tier_pending_L3_L4' and allow_l3:
             refs_path=probe/load_rules()['references']['directory']/'manifest.json'
             refs=[user_ref] if user_ref else json.loads(refs_path.read_text()) if refs_path.exists() else []
-            return ensure_l3(root,identity,config,client,references=refs,reference_root=root if user_ref else probe,vlm=vlm)
+            return ensure_l3(root,identity,config,client,references=refs,reference_root=root if user_ref else probe,vlm=vlm,force_probe=force_probe)
         return identity
     if identity.get('tier_evidence'):
         previous={'identity_tier':identity.get('identity_tier'),'tier_evidence':identity['tier_evidence']}
@@ -522,7 +529,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         save_json_atomic(root/f'tier/history/{digest}.json',previous)
     if reference_client is None:
         with httpx.Client(base_url=BASE_URL,timeout=30,trust_env=False,headers={'User-Agent':USER_AGENT}) as owned:
-            return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm,allow_l3=allow_l3)
+            return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm,allow_l3=allow_l3,force_probe=force_probe)
     try:
         inventory=inventory or live_inventory(config,client,reference_client,root)
         match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
@@ -535,7 +542,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         identity['tier_evidence']={'lora_match':match,'status':'awaiting_probe'}
         save_json_atomic(root/'identity.json',identity)
         protocol_suffix='_l1_source_validation' if lora else ''
-        probe=root/'tier'/f'probe_v{rules["tier_review"]["version"]}_{root.name}{protocol_suffix}'
+        probe=root/'tier'/f'probe_v{rules["tier_review"]["version"]}_{root.name}{protocol_suffix}{model_suffix}'
         refs_path=probe/rules['references'].get('directory','references')/'manifest.json'
         references=[] if user_ref else json.loads(refs_path.read_text()) if refs_path.exists() else download_references(identity['character_tag'],probe,reference_client,rules=rules,identity=identity)
         if user_ref:
@@ -579,7 +586,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
                 if not comparison_available(result):
                     return needs_user(root,identity,'L2 审核不可用，无法确认底模是否认识该角色；请恢复审核服务或提供可用参考图')
                 if allow_l3:
-                    return ensure_l3(root,identity,config,client,references=references,reference_root=probe,vlm=vlm)
+                    return ensure_l3(root,identity,config,client,references=references,reference_root=probe,vlm=vlm,force_probe=force_probe)
             return identity
         finally:
             if owned_vision:vlm.close()

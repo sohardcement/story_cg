@@ -49,23 +49,6 @@
     "max_job_minutes": 60,
     "stop_after_no_improvement_rounds": 2
   },
-  "framing_tags": {
-    "wide": [
-      "wide_shot",
-      "full_body",
-      "scenery"
-    ],
-    "full": [
-      "full_body"
-    ],
-    "medium": [
-      "cowboy_shot"
-    ],
-    "closeup": [
-      "upper_body",
-      "close-up"
-    ]
-  },
   "camera_tags": {
     "front": [],
     "above": [
@@ -146,27 +129,203 @@
   },
   "layout_mode": "none",
   "layout_denoise": 0.55,
-  "framing_definitions": {
-    "wide": [
-      "feet"
-    ],
-    "full": [
-      "feet"
-    ],
-    "medium": [
-      "waist",
-      "hips",
-      "thighs"
-    ],
-    "closeup": [
-      "face",
-      "shoulders",
-      "chest"
-    ]
-  },
   "supplementary_review": {
     "extra_protagonist": false,
     "accessories_zoom": false,
     "outfit_detail_vs_portrait": false
+  },
+  "framing": {
+    "wide": {
+      "tags": [
+        "wide_shot",
+        "full_body",
+        "scenery"
+      ],
+      "lowest_visible": [
+        "feet"
+      ],
+      "sources": {
+        "wide_shot": {
+          "tag": "wide_shot",
+          "url": "https://danbooru.donmai.us/wiki_pages/wide_shot.json",
+          "fetched_at_utc": "2026-10-04T16:42:57.676595+00:00",
+          "http_status": 200,
+          "sha256": "606765b358376368d2895bdb431aa74a5b5e1c3029742ab11820e22eecb6ec30",
+          "wiki_updated_at": "2024-08-18T01:43:53.153-04:00",
+          "cache_path": "cache/framing_wiki/wide_shot.json",
+          "definition_summary": "完整主体仅占画面较小部分；景物占主要空间。"
+        },
+        "full_body": {
+          "tag": "full_body",
+          "url": "https://danbooru.donmai.us/wiki_pages/full_body.json",
+          "fetched_at_utc": "2026-10-04T16:42:58.302340+00:00",
+          "http_status": 200,
+          "sha256": "670466efece852c0d49c08e6823bb1e42ef076ff5b10eeb099efc84c92553d81",
+          "wiki_updated_at": "2026-09-28T01:43:27.464-04:00",
+          "cache_path": "cache/framing_wiki/full_body.json",
+          "definition_summary": "主体整个身体可见；细小附属物不完整仍可成立。"
+        },
+        "scenery": {
+          "tag": "scenery",
+          "url": "https://danbooru.donmai.us/wiki_pages/scenery.json",
+          "fetched_at_utc": "2026-10-04T16:42:58.612028+00:00",
+          "http_status": 200,
+          "sha256": "141e27b6f06aecadc5573aac46cbe18d8243322133ccb343e108ae8b4a3f9d01",
+          "wiki_updated_at": "2026-09-08T11:34:19.479-04:00",
+          "cache_path": "cache/framing_wiki/scenery.json",
+          "definition_summary": "强调环境或景观，无单独的身体截断要求。"
+        }
+      }
+    },
+    "full": {
+      "tags": [
+        "full_body"
+      ],
+      "lowest_visible": [
+        "feet"
+      ],
+      "sources": {
+        "full_body": {
+          "tag": "full_body",
+          "url": "https://danbooru.donmai.us/wiki_pages/full_body.json",
+          "fetched_at_utc": "2026-10-04T16:42:58.302340+00:00",
+          "http_status": 200,
+          "sha256": "670466efece852c0d49c08e6823bb1e42ef076ff5b10eeb099efc84c92553d81",
+          "wiki_updated_at": "2026-09-28T01:43:27.464-04:00",
+          "cache_path": "cache/framing_wiki/full_body.json",
+          "definition_summary": "主体整个身体可见；细小附属物不完整仍可成立。"
+        }
+      }
+    },
+    "medium": {
+      "tags": [
+        "cowboy_shot"
+      ],
+      "lowest_visible": [
+        "waist",
+        "hips",
+        "thighs",
+        "knees"
+      ],
+      "sources": {
+        "cowboy_shot": {
+          "tag": "cowboy_shot",
+          "url": "https://danbooru.donmai.us/wiki_pages/cowboy_shot.json",
+          "fetched_at_utc": "2026-10-04T16:42:59.244347+00:00",
+          "http_status": 200,
+          "sha256": "f077781a98b36a2b42e50e7155786c89137b97d77b909ef6e05462a4bdf0d9d9",
+          "wiki_updated_at": "2026-04-24T04:31:50.805-04:00",
+          "cache_path": "cache/framing_wiki/cowboy_shot.json",
+          "definition_summary": "大腿以上的构图，下缘可低至膝盖或膝盖正上方。"
+        }
+      },
+      "compact_posture_lowest_visible": [
+        "waist",
+        "hips",
+        "thighs",
+        "knees",
+        "calves",
+        "feet"
+      ]
+    },
+    "closeup": {
+      "tags": [
+        "upper_body",
+        "close-up"
+      ],
+      "lowest_visible": [
+        "face",
+        "shoulders",
+        "chest",
+        "waist"
+      ],
+      "sources": {
+        "upper_body": {
+          "tag": "upper_body",
+          "url": "https://danbooru.donmai.us/wiki_pages/upper_body.json",
+          "fetched_at_utc": "2026-10-04T16:42:59.558380+00:00",
+          "http_status": 200,
+          "sha256": "83cd8734065e696b8d5ae5e30df0589c69b6db966ec6c31b0b16f85d09be1c9b",
+          "wiki_updated_at": "2026-09-15T11:20:40.534-04:00",
+          "cache_path": "cache/framing_wiki/upper_body.json",
+          "definition_summary": "约腰部以上的上半身构图，头部未必完整。"
+        },
+        "close-up": {
+          "tag": "close-up",
+          "url": "https://danbooru.donmai.us/wiki_pages/close-up.json",
+          "fetched_at_utc": "2026-10-04T16:43:00.188252+00:00",
+          "http_status": 200,
+          "sha256": "7da0a3a0a9dac87fbc0a4a06706d42e7eb793f0b8eab3bd37fa441ec49e73f36",
+          "wiki_updated_at": "2026-07-15T13:50:22.864-04:00",
+          "cache_path": "cache/framing_wiki/close-up.json",
+          "definition_summary": "主体呈现于很近的距离，无单独的身体截断要求。"
+        }
+      }
+    }
+  },
+  "framing_postures": {
+    "roots": [
+      "sitting",
+      "kneeling",
+      "squatting",
+      "hugging_own_legs",
+      "lying"
+    ],
+    "groups": {
+      "hugging_own_legs": [
+        "hugging_own_legs"
+      ],
+      "kneeling": [
+        "kneeling",
+        "on_one_knee"
+      ],
+      "lying": [
+        "fetal_position",
+        "lying",
+        "on_back",
+        "on_side",
+        "on_stomach"
+      ],
+      "sitting": [
+        "butterfly_sitting",
+        "figure_four_sitting",
+        "hugging_own_legs",
+        "human_chair",
+        "indian_style",
+        "lotus_position",
+        "reclining",
+        "seiza",
+        "sitting",
+        "sitting_on_head",
+        "sitting_on_lap",
+        "sitting_on_person",
+        "straddling",
+        "thigh_straddling",
+        "upright_straddle",
+        "wariza",
+        "yokozuwari"
+      ],
+      "squatting": [
+        "squatting"
+      ]
+    },
+    "source": {
+      "url": "https://danbooru.donmai.us/wiki_pages/tag_group:posture.json",
+      "fetched_at_utc": "2026-10-01T20:43:09Z",
+      "fetched_by": "supervisor (fallback cache)",
+      "sha256": "48b6e23801fe01242b6c5ea76e1d06a527f1d4a9e3293c1ab0c7490dea35678a",
+      "wiki_updated_at": "2026-05-01T18:31:59.268-04:00",
+      "copied_from": "verify/danbooru/tag_group_posture.json",
+      "cache_path": "cache/tag_groups/posture.json"
+    },
+    "derivation": "Wiki bullet descendants of configured roots; exclude tags with any occurrence outside these roots."
+  },
+  "tier_cache": {
+    "path": "cache/identity_tiers.json",
+    "model_files": {
+      "checkpoints": {},
+      "loras": {}
+    },
+    "hash_policy": "SHA256 of complete current model file bytes from read-only paths; missing paths disable cache, never substitute names, size, mtime or training hashes."
   }
 }

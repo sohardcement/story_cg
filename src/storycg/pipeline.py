@@ -210,6 +210,11 @@ def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
     return review_path
 
 
+def tier_recheck_eligible(identity, config):
+    return (bool(config.get('tier_cache')) and identity.get('status')=='needs_user'
+            and identity.get('identity_tier')=='L4' and bool(identity.get('character_tag')))
+
+
 def run_story_job(job_dir: str | Path, config: dict, client,
                   *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None) -> dict:
     job_dir = Path(job_dir)
@@ -217,9 +222,10 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         from storycg.runtime_gate import run_repair_cycle
         return run_repair_cycle(job_dir, load_state(job_dir)['config'], client)
     identity = resolve_job(job_dir)
-    if identity.get("status")=="needs_user":
+    recheck_tier = tier_recheck_eligible(identity, config)
+    if identity.get("status")=="needs_user" and not recheck_tier:
         return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[],"tier_evidence":identity.get("tier_evidence",{})}
-    if identity["status"] != "locked":
+    if identity["status"] != "locked" and not recheck_tier:
         raise ValueError("identity requires clarification before generation")
     if config.get("repair_cycle_enabled"):
         from storycg.budget import Budget
@@ -318,7 +324,7 @@ def resolve_and_validate_job(job_dir,config):
     from storycg.comfy import ComfyClient
     from storycg.tier_gate import ensure_identity_tier
     identity=resolve_job(job_dir)
-    if identity.get('status')!='locked':return identity
+    if identity.get('status')!='locked' and not tier_recheck_eligible(identity,config):return identity
     client=ComfyClient(config['comfyui_url'],config['http_timeout_seconds'])
     try:return ensure_identity_tier(job_dir,identity,config,client)
     finally:client.close()

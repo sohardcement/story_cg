@@ -77,6 +77,7 @@ def reuse_l3_portrait(job_dir, identity, config, *, search_roots=None):
                 record=json.loads(path.read_text());approved=record.get('approved_identity')
                 if (record.get('gate_policy')!='L3 reliable comparison' or not approved or
                     approved.get('identity_tier')!='L3' or
+                    approved.get('tier_model_fingerprint')!=identity.get('tier_model_fingerprint') or
                     any(approved.get(k)!=identity.get(k) for k in fields) or
                     record.get('cache_key')!=cache_key(approved,config) or
                     not current_l3_approval(approved)):continue
