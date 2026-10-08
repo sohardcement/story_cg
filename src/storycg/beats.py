@@ -171,6 +171,9 @@ def rewrite_board(board, tier, config):
             if not hits:
                 continue
             candidates = stable_candidates(shot['pose'], index, shot)
+            # A candidate with the shot's own framing and angle changes nothing (V2-12: such a
+            # rewrite would only log a no-op and leave the grade unchanged).
+            candidates = [c for c in candidates if (c['framing'], c['camera_angle']) != (shot['framing'], shot['camera_angle'])]
             if not candidates:
                 continue
             before = combo(shot)
@@ -330,8 +333,84 @@ def _collect_errors(board, shot_count, identity, config):
     return errors
 
 
-def beats_guide(shot_count: int = 4) -> str:
-    """Writing guide for the agent: schema, the planner's writing rules, first-shot rule."""
+OUTFIT_RULE = '剧情没换衣服时，服装 tag 原样用这几个；换衣服的镜头写新衣服的 tag。'
+
+
+def cached_identity_tier(identity, config):
+    """Tier from the verified tier cache only: no ComfyUI request, no probe (V2-12).
+
+    Entries for this character under the configured checkpoint are verified with
+    cached_tier (evidence hashes). Returns (tier, True) when they agree on one tier,
+    otherwise (None, False). The LoRA of the entry is not checked here.
+    """
+    from storycg.tier_cache import cache_path, cached_tier
+    tag = identity.get('character_tag')
+    path = cache_path(config or {})
+    if not tag or path is None or not path.exists():
+        return None, False
+    try:
+        entries = json.loads(path.read_text(encoding='utf-8')).get('entries', {})
+    except (OSError, ValueError):
+        return None, False
+    tiers = set()
+    for record in entries.values():
+        key_inputs = record.get('key_inputs', {})
+        if key_inputs.get('character') != tag or (key_inputs.get('checkpoint') or {}).get('name') != (config or {}).get('checkpoint'):
+            continue
+        verified = cached_tier(config, key_inputs)
+        if verified:
+            tiers.add(verified['identity_tier'])
+    if len(tiers) == 1:
+        return tiers.pop(), True
+    return None, False
+
+
+def collision_notes(config=None):
+    """Vocabulary entries that share framing, angle and action (V2-12: expression picks among them)."""
+    from storycg.shot_vocab import load_vocab
+    groups = {}
+    for item in load_vocab(config)['items']:
+        for action in item['action_tags']:
+            groups.setdefault((item['framing'], item['camera_angle'], action), []).append(item)
+    notes = []
+    for (framing, angle, action), items in sorted(groups.items()):
+        if len(items) < 2:
+            continue
+        parts = [f"第 {item['id']} 项表情 {'/'.join(item['expression_tags']) or '（无）'}" for item in items]
+        notes.append(f"{framing}/{angle}/{action}：" + '；'.join(parts)
+                     + '。本镜表情属于其中一部分时按那部分定档；都不属于时取保守档。')
+    return notes
+
+
+def character_guide(identity, config=None):
+    """Standard outfit tags and the vocabulary section for this character (V2-12).
+
+    The tier comes from the identity once determined, otherwise from the tier cache only.
+    Unknown tier: the conservative L1/L2 vocabulary is printed and the guide says so.
+    """
+    from storycg.shot_vocab import prompt_section
+    determined = identity.get('identity_tier')
+    if determined in ('L1', 'L2', 'L3', 'L4'):
+        tier, known, source = determined, True, '已判定'
+    else:
+        tier, known = cached_identity_tier(identity, config)
+        source = '来自缓存'
+    return {'character': identity.get('character_tag') or identity.get('input_name'),
+            'locked': identity.get('status') == 'locked',
+            'outfit_tags': [item['tag'] for item in identity.get('default_outfit_tags', [])],
+            'outfit_rule': OUTFIT_RULE,
+            'tier': tier if known else None,
+            'tier_known': known,
+            'tier_note': (f'层级 {tier}（{source}）' if known else '层级未知，按保守档（L1/L2 较保守的组合）'),
+            'vocab': prompt_section(tier if known else None, config),
+            'collision_notes': collision_notes(config)}
+
+
+def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
+    """Writing guide for the agent: schema, the planner's writing rules, first-shot rule.
+
+    With character_guide_info (from character_guide), also the standard outfit tags and the vocabulary.
+    """
     from storycg.planning import FIRST_SHOT_RULE, production_schema, writing_rules
     from storycg.shot_contract import planner_schema
     schema = planner_schema(production_schema())
@@ -352,11 +431,26 @@ def beats_guide(shot_count: int = 4) -> str:
         '## 3. 首镜规则',
         FIRST_SHOT_RULE.strip(),
         '',
-        '## 4. 自查',
+        *_character_section(character_guide_info),
+        '## 5. 自查',
         '写好后运行：storycg compile --character <角色> --beats <文件> --shots ' + str(shot_count),
         '有错误按每条的镜号和字段修改，直到通过，再运行 storycg make --beats <文件>。',
         '',
     ])
+
+
+def _character_section(info):
+    if not info:
+        return ['## 4. 角色（未指定 --character）', '未指定角色：标准服装与本层级词汇表未列出。'
+                '需要时运行 beats-guide --character 角色名。', '']
+    lines = ['## 4. 角色：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下信息仅供参考）'),
+             '标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）'),
+             info['outfit_rule'],
+             info['tier_note'],
+             info['vocab'].strip(),
+             '撞键说明（同一景别、角度、动作有多个条目时）：']
+    lines += ['- ' + note for note in info['collision_notes']] or ['- （无）']
+    return lines + ['']
 
 
 def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=None):

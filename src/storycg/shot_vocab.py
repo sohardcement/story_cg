@@ -3,7 +3,8 @@
 Grades come from config/shot_vocab.json (generated from the capability probe;
 see TASK-v2 §2.3). This module only enforces and reports those grades:
 - hit rule: framing + camera_angle + action tag all equal to an entry's;
-  scene and expression differences never affect the grade (noted instead);
+  scene differences never affect the grade; expression only picks among entries
+  that share framing, angle and action (V2-12, D57: see classify_shots);
   same action with a different framing/angle is off-table;
 - tier lookup: L1/L2 read their own grade; L3/L4/missing data take the more
   conservative of the two (stable > sometimes > unusable);
@@ -107,10 +108,14 @@ def classify_shots(board, tier, vocab=None):
         near = [item["id"] for item in by_action.get(action, [])
                 if item["framing"] != shot["framing"] or item["camera_angle"] != shot["camera_angle"]]
         if hits:
-            resolved = [resolve_grade(item, tier) for item in hits]
+            # V2-12 (D57): when the shot's expression belongs to only some of the matching entries,
+            # those entries decide the grade; when none or all of them list it, the conservative max applies.
+            expression_matches = [shot["expression"] in item["expression_tags"] for item in hits]
+            scoped = [item for item, matched in zip(hits, expression_matches) if matched]
+            scope = scoped if scoped else hits
+            resolved = [resolve_grade(item, tier) for item in scope]
             grade = max((g for g, _ in resolved), key=lambda g: GRADE_ORDER[g])
             basis = resolved[0][1]
-            expression_matches = [shot["expression"] in item["expression_tags"] for item in hits]
         else:
             grade, basis, expression_matches = "sometimes", tier if tier in ("L1", "L2") else "L1/L2 保守档", []
         shots.append({"shot": entry.get("number", index + 1), "action": action,

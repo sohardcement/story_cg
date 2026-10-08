@@ -7,9 +7,9 @@ description: 根据一个具名角色和剧情生成 4–6 张连续 CG；支持
 
 - 默认：`scripts/storycg make --character '角色名' --story '在山顶迎着朝阳伸懒腰，被风吹乱后有点生气，最后看着日出笑了' [--shots 4]`。
 - 分镜由 agent 自己写（新流程，优先使用）：
-  1. 运行 `scripts/storycg beats-guide --shots 4`，读完输出的 schema 和写作规则；
+  1. 运行 `scripts/storycg beats-guide --character '角色名' --shots 4`，读完输出的 schema、写作规则、该角色的标准服装 tag 和本层级的词汇表（含撞键说明）。剧情没换衣服时服装 tag 原样用标准服装；换衣服的镜头写新衣服的 tag；
   2. 按说明写好 beats 文件（一个 JSON 对象，保存为文件）；
-  3. 运行 `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4` 自查。它只解析身份、判定层级、编译分镜；层级缓存未命中时层级判定可能生成 1 张探针图，其余不出图。输出 `status`。`invalid` 时 `errors` 列出每一条错误，按其中的镜号和字段修改 beats 文件，再编译，直到 `status` 为 `valid`；
+  3. 运行 `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4` 自查（输出也附带同样的角色与词汇表说明）。它只解析身份、判定层级、编译分镜；层级缓存未命中时层级判定可能生成 1 张探针图，其余不出图。输出 `status`。`invalid` 时 `errors` 列出每一条错误，按其中的镜号和字段修改 beats 文件，再编译，直到 `status` 为 `valid`；
   4. 运行 `scripts/storycg make --character '角色名' --story '剧情' --beats '<beats 文件>' [--shots 4]`。编译失败时任务停在 `stopped`，`error` 写出全部错误：修改 beats 文件后重新 make（或先用 compile 确认）。
   分镜由 beats 文件决定，流水线不再为分镜调用本地模型。
 - 用户要求先看分镜：加 `--storyboard-first`。后台返回 `job_dir` 后轮询 `scripts/storycg status '<job_dir>'`（约 15–30 秒一次），不要阻塞等待长任务。到 `awaiting_approval` 展示 JSON 的中文 `storyboard`，等用户确认。

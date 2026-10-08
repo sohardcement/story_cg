@@ -21,7 +21,7 @@ from storycg.config import load_config
 from storycg.controls import apply_options
 from storycg.pipeline import new_job, resolve_job, plan_job, run_story_job, make_contact_sheet, tier_recheck_eligible
 from storycg.planning import plan_story, validate_storyboard
-from storycg.beats import BeatsError, beats_guide, compile_beats
+from storycg.beats import BeatsError, beats_guide, character_guide, compile_beats
 from storycg.state import save_json_atomic
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -417,6 +417,8 @@ def beats_cli(argv):
     sub = parser.add_subparsers(dest='command', required=True)
     guide = sub.add_parser('beats-guide', help='print the story beats writing guide')
     guide.add_argument('--shots', type=int, default=4)
+    guide.add_argument('--character', help='also print the standard outfit tags and the vocabulary for this character')
+    guide.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
     comp = sub.add_parser('compile', help='compile a beats file; reports every error; no image generation')
     comp.add_argument('--character', required=True)
     comp.add_argument('--beats', required=True, type=Path)
@@ -424,7 +426,13 @@ def beats_cli(argv):
     comp.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
     args = parser.parse_args(argv)
     if args.command == 'beats-guide':
-        print(beats_guide(args.shots))
+        info = None
+        if args.character:
+            from storycg.identity import resolve_identity
+            config = load_config(args.config)
+            identity = resolve_identity(args.character, PROJECT/'cache'/'danbooru')
+            info = character_guide(identity, config)
+        print(beats_guide(args.shots, info))
         return 0
     config = load_config(args.config)
     # Scratch job directory: the tier and planning code expect a job.json; nothing here generates images.
@@ -438,13 +446,16 @@ def beats_cli(argv):
     if identity is None:
         print(json.dumps({'status': 'needs_user', 'reason': read(root, 'agent.json').get('reason')}, ensure_ascii=False, indent=2))
         return 2
+    guide = character_guide(identity, config)
     try:
         board = compile_beats(root, args.beats, identity, args.shots, config)
     except BeatsError as exc:
-        print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc)}, ensure_ascii=False, indent=2))
+        print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc),
+                          'character_guide': guide}, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps({'status': 'valid', 'identity_tier': identity.get('identity_tier'),
-                      'storyboard': board, 'job_dir': str(root)}, ensure_ascii=False, indent=2))
+                      'storyboard': board, 'job_dir': str(root), 'character_guide': guide},
+                     ensure_ascii=False, indent=2))
     return 0
 
 

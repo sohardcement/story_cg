@@ -460,22 +460,65 @@ def tier_generation_config(config,identity):
     return cfg
 
 
-def live_inventory(config,client,reference_client,job_dir):
-    """Read every advertised LoRA; classify training tags with Danbooru categories."""
+LORA_CATEGORY_TTL_SECONDS=24*3600
+LORA_CATEGORY_RETRIES=3
+
+
+def _tags_json_with_backoff(reference_client,params,sleep=None):
+    """Danbooru tags.json; HTTP 429 is retried with 1s, 2s, 4s waits (at most 3 retries)."""
+    import time
+    sleep=sleep or time.sleep
+    for attempt in range(LORA_CATEGORY_RETRIES+1):
+        response=reference_client.get('/tags.json',params=params)
+        if response.status_code!=429 or attempt==LORA_CATEGORY_RETRIES:
+            response.raise_for_status()
+            return response
+        sleep(2**attempt)
+
+
+def _lora_category_cache_path(config):
+    """Next to the LoRA metadata cache, so each cache location keeps its own categories."""
+    if config.get('lora_category_cache'):return Path(config['lora_category_cache'])
+    if config.get('lora_metadata_cache'):return Path(config['lora_metadata_cache']).with_name('lora_category_cache.json')
+    return Path(__file__).resolve().parents[2]/'cache/lora_category_cache.json'
+
+
+def live_inventory(config,client,reference_client,job_dir,*,now=None,sleep=None):
+    """Read every advertised LoRA; classify training tags with Danbooru categories.
+
+    V2-12: the Danbooru category lookup is cached under the ComfyUI LoRA file list (name and
+    size) for 24 hours; tier/inventory.json records whether it was a cache hit.
+    """
     from datetime import datetime,timezone
     info=client.http.get('/object_info/LoraLoader');info.raise_for_status()
     names=lora_names(info.json())
     from storycg.model_metadata import cached_lora_metadata
     metadata,metadata_status=cached_lora_metadata(config,client,names)
     tags=sorted({t for m in metadata.values() for t in _frequencies(m)})
-    categories=[]
-    for offset in range(0,len(tags),80):
-        response=reference_client.get('/tags.json',params={'search[name_comma]':','.join(tags[offset:offset+80]),'limit':100})
-        response.raise_for_status()
-        categories.append({'url':str(response.url),'response':response.json()})
+    sizes={}
+    for file in client.list_model_files('loras'):sizes.setdefault(file['name'],file.get('size'))
+    key=hashlib.sha256(json.dumps([[name,sizes.get(name)] for name in sorted(names)],sort_keys=True).encode()).hexdigest()
+    current=now or datetime.now(timezone.utc)
+    cache_path=_lora_category_cache_path(config)
+    cache=json.loads(cache_path.read_text(encoding='utf-8')) if cache_path.exists() else {'version':1,'entries':{}}
+    entry=cache['entries'].get(key)
+    fresh=entry is not None and entry.get('tags')==tags and (
+        current-datetime.fromisoformat(entry['stored_at'])).total_seconds()<LORA_CATEGORY_TTL_SECONDS
+    if fresh:
+        categories=entry['categories'];category_cache={'key':key,'status':'hit','stored_at':entry['stored_at']}
+    else:
+        categories=[]
+        for offset in range(0,len(tags),80):
+            response=_tags_json_with_backoff(reference_client,{'search[name_comma]':','.join(tags[offset:offset+80]),'limit':100},sleep=sleep)
+            categories.append({'url':str(response.url),'response':response.json()})
+        status='expired' if entry is not None and entry.get('tags')==tags else 'miss'
+        category_cache={'key':key,'status':status,'stored_at':current.isoformat()}
+        cache['entries'][key]={'stored_at':current.isoformat(),'tags':tags,'categories':categories}
+        save_json_atomic(cache_path,cache)
     result={'retrieved_at':datetime.now(timezone.utc).isoformat(),
             'object_info_url':config['comfyui_url']+'/object_info/LoraLoader',
             'names':names,'metadata':metadata,'metadata_status':metadata_status,'categories':categories,
+            'category_cache':category_cache,
             'character_tags':sorted({t['name'] for r in categories for t in r['response'] if t['category']==4})}
     save_json_atomic(Path(job_dir)/'tier/inventory.json',result)
     return result
