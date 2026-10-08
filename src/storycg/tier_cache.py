@@ -1,9 +1,11 @@
-"""Evidence-backed tier reuse keyed by character and complete model file hashes."""
+"""Evidence-backed tier reuse keyed by character and ComfyUI-reported model identity."""
 import copy
 import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+
+import httpx
 
 from storycg.runner import _job_lock
 from storycg.state import save_json_atomic
@@ -11,11 +13,12 @@ from storycg.state import save_json_atomic
 PROJECT = Path(__file__).resolve().parents[2]
 
 
-class ModelHashUnavailable(ValueError):
+class ModelIdentityUnavailable(ValueError):
     pass
 
 
 def file_sha256(path):
+    """Local evidence files only; model files live on the ComfyUI host."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
         for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b''):
@@ -23,26 +26,37 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def model_fingerprint(identity, config):
-    """Hash current bytes every time; filenames/mtime/training hashes never suffice.
+def model_identity(client, folder, name):
+    """Name plus size as reported by this run's ComfyUI inventory response.
 
-    Read-only model paths may be mounts. No remote service/configuration is changed.
-    An absent complete-file source disables caching instead of inventing a hash.
+    A failed request, an entry the inventory does not list, or a missing size leaves the
+    identity unknown. Nothing else (local bytes, mtime, training hashes) may substitute it.
     """
-    files = config.get('tier_cache', {}).get('model_files', {})
-    def model_hash(folder, name):
-        path = files.get(folder, {}).get(name)
-        if not path:
-            raise ModelHashUnavailable(f'complete model file path unavailable: {folder}/{name}')
-        path = Path(path).expanduser()
-        if not path.is_absolute(): path = PROJECT/path
-        try: return file_sha256(path)
-        except OSError as exc: raise ModelHashUnavailable(f'cannot hash {folder}/{name}: {exc}') from exc
+    try:
+        files = client.list_model_files(folder)
+    except (AttributeError, httpx.HTTPError, OSError, ValueError, KeyError) as exc:
+        raise ModelIdentityUnavailable(f'ComfyUI {folder} inventory unavailable: {exc}') from exc
+    match = next((item for item in files or [] if item.get('name') == name), None)
+    if match is None:
+        raise ModelIdentityUnavailable(f'{name} is not listed in the ComfyUI {folder} inventory')
+    size = match.get('size')
+    if size is None:
+        raise ModelIdentityUnavailable(f'ComfyUI {folder} reported no size for {name}')
+    return {'name': name, 'size': size}
+
+
+def model_fingerprint(identity, config, client):
+    """Key inputs: character tag, checkpoint {name, size} and character LoRA {name, size}.
+
+    Both names and sizes come from the inventory response of this run. `modified` is
+    deliberately absent: copying a file changes it without changing the model.
+    """
     character = identity.get('character_tag')
-    if not character: raise ModelHashUnavailable('canonical character tag unavailable')
+    if not character: raise ModelIdentityUnavailable('canonical character tag unavailable')
     lora = identity.get('lora')
-    return {'character': character, 'checkpoint_sha256': model_hash('checkpoints', config['checkpoint']),
-            'lora_sha256': model_hash('loras', lora['name']) if lora else ''}
+    return {'character': character,
+            'checkpoint': model_identity(client, 'checkpoints', config['checkpoint']),
+            'lora': model_identity(client, 'loras', lora['name']) if lora else ''}
 
 
 def cache_key(fingerprint):
@@ -183,8 +197,7 @@ def reuse_tier(root, identity, record):
     result = copy.deepcopy(identity)
     source = record['identity']
     result['identity_tier'] = record['identity_tier']
-    # The same bytes may have a new inventory filename. Keep evidence provenance
-    # in the snapshot while generation uses the current available LoRA name.
+    # The key carries the inventory name, so a hit means the current selection matches.
     result['lora'] = copy.deepcopy(identity.get('lora'))
     result['tier_evidence'] = copy.deepcopy(source['tier_evidence'])
     artifact = result['tier_evidence'].pop('artifact_root', None)

@@ -326,10 +326,6 @@
   },
   "tier_cache": {
     "path": "cache/identity_tiers.json",
-    "model_files": {
-      "checkpoints": {},
-      "loras": {}
-    },
-    "hash_policy": "SHA256 of complete current model file bytes from read-only paths; missing paths disable cache, never substitute names, size, mtime or training hashes."
+    "identity_policy": "Model identity comes from the ComfyUI inventory (GET /experiment/models/<folder>): the exact file name plus the size that request reports. A failed request, an entry the inventory does not list, or a missing size disables caching for that run; local bytes, mtime and training hashes are never substituted."
   }
 }

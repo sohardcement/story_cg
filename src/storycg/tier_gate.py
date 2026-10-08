@@ -69,8 +69,8 @@ def _determine_identity_tier(job_dir,identity,config,client,**kwargs):
 
 
 def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
-    """Reuse a model-hash tier before any generation or visual comparison."""
-    from storycg.tier_cache import (ModelHashUnavailable, model_fingerprint,
+    """Reuse an evidence-backed tier keyed by the reported model identity."""
+    from storycg.tier_cache import (ModelIdentityUnavailable, model_fingerprint,
         cached_tier, store_tier, reuse_tier)
     from storycg.identity_enrichment import outfit_hair_ornaments
     root = Path(job_dir).resolve()
@@ -78,8 +78,8 @@ def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
     if not config.get('tier_cache') or not identity.get('character_tag'):
         return _determine_identity_tier(root, identity, config, client, **kwargs)
     try:
-        # Establish a full checkpoint source before doing extra inventory work.
-        model_fingerprint({**identity, 'lora': None}, config)
+        # Establish the checkpoint identity before doing extra inventory work.
+        model_fingerprint({**identity, 'lora': None}, config, client)
         inventory = kwargs.get('inventory')
         if inventory is None:
             from storycg.identity import BASE_URL, USER_AGENT
@@ -94,8 +94,8 @@ def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
         match = frozen.match_character_loras(identity['character_tag'], inventory['names'],
                     inventory['metadata'], character_tags=inventory['character_tags'])
         current = {**identity, 'lora': match['selected']}
-        fingerprint = model_fingerprint(current, config)
-    except ModelHashUnavailable as exc:
+        fingerprint = model_fingerprint(current, config, client)
+    except ModelIdentityUnavailable as exc:
         save_json_atomic(root/'tier/cache-status.json', {'status': 'unavailable', 'reason': str(exc)})
         if identity.get('tier_model_fingerprint'):
             result = copy.deepcopy(identity)
@@ -112,7 +112,7 @@ def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
         return result
     record = cached_tier(config, fingerprint)
     if record: return reuse_tier(root, current, record)
-    save_json_atomic(root/'tier/cache-reuse.json', {'hit': False})
+    save_json_atomic(root/'tier/cache-reuse.json', {'hit': False, 'key_inputs': fingerprint})
     identity = copy.deepcopy(current)
     previous = identity.get('tier_model_fingerprint')
     if previous != fingerprint:
