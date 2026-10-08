@@ -236,8 +236,9 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
             if APPEARANCE_EN.search(value.replace('_', ' ')) or APPEARANCE_ZH.search(value):
                 raise ValueError(f"appearance description is forbidden in props: {value}")
     first = board['shots'][0]['shot']
-    if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
-        raise ValueError("first shot must establish the environment: wide framing and establishing role")
+    if first['narrative_role'] != 'establishing' or first['framing'] not in ('wide', 'medium'):
+        raise ValueError("first shot must establish the environment: establishing role "
+                         "with wide or medium framing (closeup forbidden)")
     derive_outfit_changes(board)
     previous = None
     for entry in board["shots"]:
@@ -316,7 +317,11 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
         "size remain forbidden. "
         "Use emotions such as surprised, confused, smile in shot.tags. "
         "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
-        "First shot MUST be wide with narrative_role establishing. Vary framing and camera_angle "
+        "First shot has narrative_role establishing and owns the location. Use wide when this "
+        "tier's vocabulary has a STABLE wide combo, or when every other shot is STABLE so the "
+        "single SOMETIMES quota can be spent on the first shot; otherwise open with a STABLE "
+        "medium combo and let scene tags carry the environment (never closeup first; medium "
+        "object cap still applies). Vary framing and camera_angle "
         "between adjacent shots; identical pairs require a meaningful composition_reason. "
         "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
         "Props are background only. Put at most ONE ordinary object tag in shot.prop_tags, "
