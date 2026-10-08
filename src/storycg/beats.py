@@ -62,6 +62,136 @@ def _obscured(entry):
             or bool(OBSCURED_TAG.search(tags)))
 
 
+def _pose_key(pose):
+    return '_'.join(str(pose).strip().lower().split())
+
+
+def _set_combo(shot, framing, angle, pose):
+    """Write a combo the way materialize derives it (pose drives action, description and tags)."""
+    shot.update(framing=framing, camera_angle=angle, pose=pose, action=pose, description=pose,
+                tags=list(dict.fromkeys([pose, shot['expression']])))
+
+
+def _append_note(board, sentence):
+    note = board.get('story_note', '')
+    board['story_note'] = (note + ' ' if note else '') + sentence
+
+
+def rewrite_board(board, tier, config):
+    """Deterministic rewrites before validation (V2-11, TASK-v2 §9). Mutates and returns board.
+
+    Returns (board, rewrites). Each rewrite is logged as "第 N 镜：原值 → 新值，原因" and
+    a Chinese sentence is appended to story_note. Rules: off-table pose to the stable
+    combo (1), unusable combo to its registered substitute id (2), sometimes-overflow
+    convergence from the back (3), indoor precipitation gets a window (5). Clothing (6)
+    and the substitute-without-id error are validation errors, see _collect_errors.
+    """
+    from storycg.prompt_rules import indoor_precipitation
+    from storycg.shot_vocab import classify_shots, load_vocab, replacement_for, resolve_grade
+    from storycg.tags import canonical_tag
+
+    vocab = load_vocab(config)
+    items = vocab['items']
+    by_id = {item['id']: item for item in items}
+    rewrites = []
+
+    def log(shot_no, rule, field, before, after, reason):
+        text = f'第 {shot_no} 镜：{before} → {after}，{reason}'
+        rewrites.append({'shot': shot_no, 'rule': rule, 'field': field, 'from': before, 'to': after,
+                         'reason': reason, 'text': text})
+        _append_note(board, text + '。')
+
+    def _hits(all_items, shot):
+        # Same matching as classify_shots: any action tag, same framing and angle.
+        action = _pose_key(shot['pose'])
+        return [item for item in all_items if action in [_pose_key(a) for a in item['action_tags']]
+                and item['framing'] == shot['framing'] and item['camera_angle'] == shot['camera_angle']]
+
+    def combo(shot):
+        return f"{shot['framing']}/{shot['camera_angle']}/{shot['pose']}"
+
+    def stable_candidates(pose, shot_index, shot):
+        """Stable entries for this pose; the first shot may only use wide. Order: framing, angle, id."""
+        found = [item for item in items if _pose_key(pose) in
+                 [_pose_key(a) for a in item['action_tags']]
+                 and resolve_grade(item, tier)[0] == 'stable']
+        if shot_index == 0:
+            found = [item for item in found if item['framing'] == 'wide']
+        return sorted(found, key=lambda item: (item['framing'] != shot['framing'],
+                                               item['camera_angle'] != shot['camera_angle'], item['id']))
+
+    shots = board['shots']
+    # Rule 1: an off-table combo takes the best stable entry for its pose.
+    for index, entry in enumerate(shots):
+        shot = entry['shot']
+        hits = _hits(items, shot)
+        if hits:
+            continue
+        candidates = stable_candidates(shot['pose'], index, shot)
+        if not candidates:
+            continue
+        before = combo(shot)
+        best = candidates[0]
+        _set_combo(shot, best['framing'], best['camera_angle'], shot['pose'])
+        log(entry['number'], 'off_table_stable', 'shot.framing, shot.camera_angle',
+            before, combo(shot), '表外组合改用本层级的稳定组合（同一动作）')
+
+    # Rule 2: an unusable combo with a registered substitute id takes that entry's combo.
+    for index, entry in enumerate(shots):
+        shot = entry['shot']
+        hits = _hits(items, shot)
+        unusable = [item for item in hits if resolve_grade(item, tier)[0] == 'unusable']
+        if not unusable:
+            continue
+        row = replacement_for(unusable[0], tier)
+        if not row or row.get('substitute_id') is None or row['substitute_id'] not in by_id:
+            continue  # rewrite-only or unknown substitute: the validation error reports the text
+        substitute = by_id[row['substitute_id']]
+        if index == 0 and substitute['framing'] != 'wide':
+            continue  # the first shot must stay wide
+        if not substitute['action_tags']:
+            continue
+        before = combo(shot)
+        _set_combo(shot, substitute['framing'], substitute['camera_angle'], _pose_key(substitute['action_tags'][0]))
+        log(entry['number'], 'unusable_substitute', 'shot.framing, shot.camera_angle, shot.pose',
+            before, combo(shot), f"不可用组合按登记替代 {substitute['id']} 改写")
+
+    # Rule 3: more than one sometimes shot, convert from the back (never the first shot).
+    def sometimes_shots():
+        return [c for c in classify_shots(board, tier, vocab=vocab) if c['grade'] == 'sometimes']
+
+    if len(sometimes_shots()) > 1:
+        for index in range(len(shots) - 1, 0, -1):
+            if len(sometimes_shots()) <= 1:
+                break
+            entry = shots[index]
+            shot = entry['shot']
+            hits = [c for c in classify_shots({'shots': [entry]}, tier, vocab=vocab)[:1]
+                    if c['grade'] == 'sometimes' and not c['off_table']]
+            if not hits:
+                continue
+            candidates = stable_candidates(shot['pose'], index, shot)
+            if not candidates:
+                continue
+            before = combo(shot)
+            best = candidates[0]
+            _set_combo(shot, best['framing'], best['camera_angle'], shot['pose'])
+            log(entry['number'], 'sometimes_overflow', 'shot.framing, shot.camera_angle',
+                before, combo(shot), '有时组合超额，改用同一动作的稳定组合')
+
+    # Rule 5: indoor precipitation gets a window (budget-exempt in the filter, so it stays in closeups).
+    scene_rules = (config or {}).get('scene_rules') or {}
+    if scene_rules:
+        for entry in shots:
+            tags = [canonical_tag(tag) for tag in entry['scene']['tags']]
+            if 'window' in tags or not indoor_precipitation(tags, scene_rules):
+                continue
+            entry['scene']['tags'] = [*entry['scene']['tags'], 'window']
+            log(entry['number'], 'indoor_window', 'scene.tags', 'scene.tags 无 window',
+                'scene.tags 加 window', '室内场景出现降水 tag，补窗户')
+    return board, rewrites
+
+
 def _collect_errors(board, shot_count, identity, config):
     """List every failing check on a materialized board. Never mutates the board.
 
@@ -135,6 +265,16 @@ def _collect_errors(board, shot_count, identity, config):
             _add(errors, number, 'shot.unchanged_person_reason',
                  '与上一镜表情和动作相同，需要 unchanged_person_reason',
                  '改表情或动作，或填写 unchanged_person_reason')
+
+    previous_outfit = None
+    for index, entry in enumerate(shots):
+        state = entry['outfit']['clothing_state']
+        outfit_tags = {canonical_tag(tag) for tag in entry['outfit']['tags']}
+        if previous_outfit is not None and state != previous_outfit[0] and outfit_tags == previous_outfit[1]:
+            _add(errors, index + 1, 'outfit.clothing_state',
+                 f'第 {index + 1} 镜的服装状态变成了 {state}，但服装 tag 没变，请写出 {state} 对应的服装 tag',
+                 f'把 {state} 对应的服装 tag 写进 outfit.tags，或保持服装状态与上一镜相同')
+        previous_outfit = (state, outfit_tags)
 
     identity_terms = []
     if identity:
@@ -261,6 +401,8 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
                 _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
             raise BeatsError(errors)
         board = materialize(parsed)
+        board, rewrites = rewrite_board(board, identity.get('identity_tier'), config)
+        record['rewrites'] = rewrites
         errors = _collect_errors(board, shot_count, identity, config)
         if errors:
             raise BeatsError(errors)

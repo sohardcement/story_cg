@@ -28,6 +28,15 @@ def _action_invoking_set(rules):
     return {canonical_tag(tag) for tag in (rules.get('action_invoking_props') or {})}
 
 
+def indoor_precipitation(scene_tags, rules):
+    """True when the scene is indoors (indoors tag or Indoors-section location) and has a precipitation tag (V2-11)."""
+    from storycg.scene_groups import indoor_location_tags
+    present = {canonical_tag(tag) for tag in scene_tags}
+    indoor = set(indoor_location_tags(rules)) | {'indoors'}
+    precipitation = {canonical_tag(tag) for tag in rules.get('indoor_precipitation_tags', [])}
+    return bool(present & indoor) and bool(present & precipitation)
+
+
 def filter_scene_tags(framing, scene_tags, prop_tags, config=None):
     """Return (kept, dropped) scene tags under the framing's object budget.
 
@@ -38,6 +47,10 @@ def filter_scene_tags(framing, scene_tags, prop_tags, config=None):
     rules = scene_rules(config)
     limit = _object_limit(framing, rules)
     non_objects = _non_object_set(rules)
+    # V2-11: the window added for indoor precipitation is never counted (and kept in closeups).
+    # Only that case: a planner-written window elsewhere still takes a slot, as before.
+    if indoor_precipitation(scene_tags, rules):
+        non_objects = non_objects | {canonical_tag(tag) for tag in rules.get('budget_exempt_tags', [])}
     action_invoking = _action_invoking_set(rules)
     declared = {canonical_tag(tag) for tag in (prop_tags or [])}
     entries = [(tag, canonical_tag(tag)) for tag in scene_tags]
@@ -48,6 +61,12 @@ def filter_scene_tags(framing, scene_tags, prop_tags, config=None):
             keep.add(tag)
         elif value in declared and budget < limit:
             keep.add(tag); budget += 1
+    if framing == 'closeup':
+        # V2-11: a closeup keeps its one declared prop (the object cap of 0 still covers every other object).
+        for tag, value in entries:
+            if tag not in keep and value in declared and value not in non_objects:
+                keep.add(tag)
+                break
     for tag, value in entries:
         if tag in keep or value in non_objects:
             continue

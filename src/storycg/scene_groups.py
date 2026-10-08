@@ -70,3 +70,34 @@ def non_object_group_tags(rules):
     for name, meta in ((rules or {}).get('non_object_tag_groups') or {}).items():
         union |= _snapshot_tags(name, meta['wiki_title'], meta['sha256'])
     return frozenset(union)
+
+
+@lru_cache(maxsize=None)
+def _section_tags(name, wiki_title, sha256, start, end):
+    """Tags of one wiki section, from the verified snapshot body (V2-11)."""
+    _snapshot_tags(name, wiki_title, sha256)  # checksum and title re-verified on every load
+    body = json.loads((CACHE / f'{name}.json').read_bytes())['body']
+    lines = body.splitlines()
+    begin = next((i for i, line in enumerate(lines) if line.startswith(start)), None)
+    finish = next((i for i, line in enumerate(lines) if line.startswith(end)), None)
+    if begin is None or finish is None or finish <= begin:
+        raise ValueError(f'{name} source has no section {start}..{end}')
+    tags = extract_tags('\n'.join(lines[begin:finish]))
+    if not tags:
+        raise ValueError(f'{name} section {start} has no tag bullets')
+    return frozenset(tags)
+
+
+def indoor_location_tags(rules):
+    """Location tags from the Indoors section of tag_group:locations (V2-11).
+
+    Only the section between its anchors is used, so Outdoors/Buildings/Fictional
+    locations are never indoor. Bare (unlinked) bullets are not tags and are skipped.
+    """
+    rules = rules or {}
+    meta = (rules.get('non_object_tag_groups') or {}).get('locations')
+    section = rules.get('indoor_location_section') or {}
+    if not meta or not section:
+        return frozenset()
+    return _section_tags(
+        'locations', meta['wiki_title'], meta['sha256'], section['start'], section['end'])

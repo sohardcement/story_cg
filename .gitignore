@@ -10,3 +10,6 @@ runs/**/.lock
 models/detect/*.pt
 models/detect/*.download
 .cache/detect/
+
+# V2-10/V2-11: scratch job dirs created by `storycg compile`
+compile/

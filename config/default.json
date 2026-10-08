@@ -90,6 +90,11 @@
       "wide": 3
     },
     "object_limits_source": "工单 V2-06s 第 1 条。CAP-04 证据：近景改写只留 indoors+地点；中景 06 恰留 desk+chair 两件；远景放宽到 3 件。",
+    "indoor_location_section": {"start": "h4#indoors", "end": "h4#outdoors", "source": "V2-11：tag_group:locations 快照中 Indoors 段（h4#indoors 到 h4#outdoors 之间），仅取其中的 [[链接]]；快照的 sha256 与标题在每次加载时校验。"},
+    "indoor_precipitation_tags": ["rain", "raindrops", "snow", "snowing", "thunderstorm", "hail", "drizzle"],
+    "indoor_precipitation_source": "V2-11：Danbooru tags.json 查询（2026-10-09，只读）：rain 49427、snow 56638、snowing 37971、thunderstorm 40、hail 28 篇；raindrops、drizzle 为真实 tag 但 0 篇，保留以覆盖工单列出的词。室内补 window 时使用此清单。",
+    "budget_exempt_tags": ["window"],
+    "budget_exempt_source": "V2-11：室内降水补的 window 不占物件名额，近景中保留（工单 V2-11 第 5 条）。在 filter_scene_tags 中按非物件处理，因此规划器自己写的 window 也同样不计数。",
     "non_object_tags": [
       "indoors", "outdoors", "day", "night", "noon", "morning", "afternoon", "evening", "midnight",
       "snowing", "fog", "wind", "sunlight", "moonlight", "starry_sky", "night_sky", "blue_sky",
