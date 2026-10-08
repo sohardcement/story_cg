@@ -17,7 +17,7 @@ from storycg.budget import Budget, BudgetExceeded, GuardedComfy, count_usage
 from storycg.comfy import ComfyClient
 from storycg.config import load_config
 from storycg.controls import apply_options
-from storycg.pipeline import new_job, resolve_job, plan_job, run_story_job, make_contact_sheet
+from storycg.pipeline import new_job, resolve_job, plan_job, run_story_job, make_contact_sheet, tier_recheck_eligible
 from storycg.planning import plan_story, validate_storyboard
 from storycg.state import save_json_atomic
 
@@ -182,6 +182,45 @@ def generate(root, config):
     update(root, phase='completed' if complete else 'stopped', finished_at=datetime.now(timezone.utc).isoformat())
 
 
+
+def _ensure_tier_before_planning(root, config, identity):
+    """Determine the identity tier before planning (v2: shot vocab needs it).
+
+    Planning grades every shot against the shot vocabulary by tier, so the
+    tier must be final before the storyboard call; a pending tier would
+    silently downgrade L2 characters to the conservative L1/L2 grades. Stops
+    before planning on needs_user/L4, and reuses an already-determined tier
+    on resume without opening clients or probing again.
+    """
+    if identity.get('identity_tier') in ('L1', 'L2', 'L3'):
+        return identity
+    recheck = tier_recheck_eligible(identity, config)
+    if identity.get('status') == 'needs_user' and not recheck:
+        question(root, identity['reason'], identity['question'])
+        return None
+    from storycg.cycle import settings
+    from storycg.budget import CycleClient
+    from storycg.tier_gate import ensure_identity_tier
+    gate = Budget(root, settings())
+    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), gate)
+    vlm = CycleClient(root.resolve(), config['model_service_url'], budget=gate,
+                      max_calls=24, max_seconds=gate.remaining_seconds())
+    try:
+        identity = ensure_identity_tier(root, identity, config, client, vlm=vlm)
+    finally:
+        vlm.close()
+        client.close()
+    if identity.get('status') == 'needs_user':
+        question(root, identity.get('reason', 'identity_unsupported'), identity['question'])
+        return None
+    if identity.get('identity_tier') == 'L4':
+        question(root, identity.get('reason', 'identity_tier_L4'),
+                 identity.get('question') or '底模不认识该角色，且层级判定已用尽自动尝试；请提供可用的角色 LoRA 或参考图后 resume。')
+        return None
+    if identity.get('identity_tier') not in ('L1', 'L2', 'L3'):
+        raise ResourceUnavailable('身份控制所需资源或层级实现不可用：' + str(identity.get('identity_tier')))
+    return identity
+
 def execute(root):
     config = read(root, 'job.json')['generation_config']
     config['repair_cycle_enabled'] = True
@@ -208,6 +247,10 @@ def execute(root):
             return
         if identity.get('status') != 'locked':
             question(root, 'identity_ambiguous', '角色身份无法确定，请选择候选或提供作品名／角色 tag。', identity.get('candidates', []))
+            return
+        update(root, phase='determining_tier')
+        identity = _ensure_tier_before_planning(root, config, identity)
+        if identity is None:
             return
         update(root, phase='planning')
         board = plan_job(root, config)

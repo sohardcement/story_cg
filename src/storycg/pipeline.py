@@ -314,6 +314,9 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         if all(any(a["status"] == "completed" and a["shot_id"] == f'shot{entry["number"]:02d}'
                    for a in state["attempts"]) for entry in board["shots"]):
             make_contact_sheet(job_dir, review_dir)
+            if not config.get("repair_cycle_enabled"):
+                from storycg.shot_vocab import record_observations
+                record_observations(job_dir, config)
     if config.get("repair_cycle_enabled") and state is not None and (job_dir/"contact_sheet.jpg").exists():
         from storycg.runtime_gate import run_repair_cycle
         return run_repair_cycle(job_dir,config,client)

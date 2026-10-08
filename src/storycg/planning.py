@@ -179,9 +179,11 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     plan_path = job_dir / "storyboard.json"
     if plan_path.exists():
         board = json.loads(plan_path.read_text(encoding="utf-8"))
-        validate_storyboard(board,shot_count,identity)
+        validate_storyboard(board, shot_count, identity)
+        from storycg.shot_vocab import validate_shot_vocab
+        validate_shot_vocab(board, identity.get('identity_tier'), config)
         from storycg.story_rules import validate_story_rules
-        return validate_story_rules(board,allow_obscured=(config or {}).get("allow_obscured_protagonist",False))
+        return validate_story_rules(board, allow_obscured=(config or {}).get("allow_obscured_protagonist", False))
     if client is None:
         with httpx.Client(base_url=model_url.rstrip("/"), timeout=180,
                           trust_env=False) as owned:
@@ -228,6 +230,8 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
     )
     from storycg.story_rules import RULE_PROMPT
     instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=2. Key story changes must be expressed in expression/action. Each shot permits at most ONE prop tag. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason.')
+    from storycg.shot_vocab import prompt_section
+    instructions += prompt_section(identity.get('identity_tier'), config)
     from storycg.shot_contract import planner_schema, materialize
     schema=planner_schema(production_schema())
     outfit_tags = [item["tag"].replace("_", " ") for item in
@@ -319,7 +323,9 @@ def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
                     validate_tag_lists(board, tag_registry, config, drop_unknown=True)
                 finally:
                     call['tag_validation'] = tag_registry.records[before:]
+            from storycg.shot_vocab import validate_shot_vocab
             board = validate_storyboard(board, shot_count, identity)
+            call['shot_vocab'] = validate_shot_vocab(board, identity.get('identity_tier'), config)
             from storycg.story_rules import validate_story_rules
             validate_story_rules(board, allow_obscured=(config or {}).get('allow_obscured_protagonist', False))
         except (ValueError, KeyError, IndexError, httpx.HTTPError) as exc:

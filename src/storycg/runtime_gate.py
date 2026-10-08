@@ -272,6 +272,8 @@ def run_repair_cycle(job_dir,config,client):
         cycle['phase']='complete'
         cycle['finished_at']=datetime.now(timezone.utc).isoformat()
         persist()
+        from storycg.shot_vocab import record_observations
+        record_observations(root, config)
     except Exception as exc:
         cycle['blocked']=f'{type(exc).__name__}: {exc}';persist()
         if len(cycle['shots'])==len(board['shots']):deliver(root,cycle,config,client)
