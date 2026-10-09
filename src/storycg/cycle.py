@@ -35,7 +35,7 @@ def reliable_failures(results):
 
 
 def failure_tier(key):
-    if key=='protagonist_count':return 0
+    if key in ('protagonist_count','extra_body_part'):return 0  # V2-16: same level as the count gate (D29)
     if key in REPAIR_IDENTITY_ITEMS:return 1
     if review.reliability_key(key)=='outfit' or key=='outfit_detail_vs_portrait':return 2
     return 3
@@ -120,6 +120,7 @@ def issues(results):
 
 def problem_key(key):
     if key in REPAIR_PROBLEM_ALIASES:return REPAIR_PROBLEM_ALIASES[key]
+    if key=='extra_body_part':return key
     mapped=review.reliability_key(key)
     if key.startswith('scene_'):return 'scene'
     if key=='body':return 'hands'
@@ -342,6 +343,9 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
             review.face_pair(ref_path,face_path,pair);paths.append(pair)
     detection_items=audit_detection(source,identity,entry,reference_path=paths[0], review_config=config)
     consistency=consistency_review(vlm,paths,identity,entry,config,label+'_identity_outfit')
+    from storycg import extra_part
+    if extra_part.should_check(detection_items):  # V2-16: one vision question, skipped on a reliable duplicate count
+        consistency=extra_part.merge_into(consistency,extra_part.check(vlm,source,identity,label+'_extra_body_part'))
     # Use the same supplementary reviewer as delivery before selecting a repair.
     # Otherwise a reliable detailed clothing failure first appears after the loop.
     from storycg import review_v3
@@ -416,6 +420,8 @@ def deliver(root,cycle,config,client):
             lines.append(f'- {issue["key"]}: {issue["status"]} — {issue["reason"]}{note}')
         unreliable=[k for r in [audit['single'],audit['consistency']] for k,v in r.get('data',{}).items() if v.get('reliability')!='reliable']
         lines.append('该项未经可靠审核：'+', '.join(unreliable))
+        from storycg import extra_part
+        if extra_part.is_positive(audit):lines.append(extra_part.known_issue(int(number),audit))
         for observation in human.get(number,[]):
             lines.append('- 人眼已知问题（不改冻结结论）：'+observation)
         for h in slot['history']:

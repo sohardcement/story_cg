@@ -535,6 +535,11 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             result = audit_consistency(vlm, compare_paths, checks, config, f'consistency_{number:02d}', reference_note)
             if eyes_not_applicable:
                 mark_eye_colour_not_applicable(result)
+            # V2-16 (D59): the delivery-time review also asks the extra-body-part question (skipped on a duplicate count).
+            from storycg import extra_part
+            count_item = next(d for d in report['detection_items'] if d['shot'] == number)
+            if extra_part.should_check(count_item):
+                result = extra_part.merge_into(result, extra_part.check(vlm, path, identity, f'consistency_{number:02d}_extra_body_part'))
             if pair:
                 result['face_pair'] = str(pair.relative_to(job_dir))
             from storycg import review_v3

@@ -34,11 +34,17 @@ def count_diagnosis_schema(entry):
         'shot':{'type':'null'},'target_shot':{'const':entry['number']}})
 
 
-def count_reseed_decision(root,number,audit,entry,slot):
-    """Deterministic first repair for a reliable duplicate count: new seed, same conditioning."""
+def count_reseed_decision(root,number,audit,entry,slot,problem='protagonist_count'):
+    """Deterministic first repair for a reliable duplicate count (or an extra body part, V2-16): new seed."""
     import secrets
-    observation=slot.get('best_audit',{}).get('detection_items',{}).get('protagonist_count',{})
-    observed=observation.get('protagonist_count');allowed=observation.get('allowed_count',1)
+    if problem=='extra_body_part':
+        from storycg import extra_part
+        item=slot.get('best_audit',{}).get('consistency',{}).get('data',{}).get(extra_part.ITEM,{})
+        diagnosis=f"extra-body-part check positive at {item.get('location','unknown')}: {item.get('reason','')}"
+    else:
+        observation=slot.get('best_audit',{}).get('detection_items',{}).get('protagonist_count',{})
+        observed=observation.get('protagonist_count');allowed=observation.get('allowed_count',1)
+        diagnosis=f'local count gate observed {observed} protagonist instances (allowed {allowed})'
     seed=secrets.randbits(63)
     try:
         source=next(a for a in load_state(root)['attempts']
@@ -46,8 +52,8 @@ def count_reseed_decision(root,number,audit,entry,slot):
         while seed==source.get('seed'):seed=secrets.randbits(63)
     except (OSError, StopIteration, ValueError):
         pass  # No persisted source attempt to differ from; any fresh seed is valid.
-    return {'problem':'protagonist_count','primitive':'seed','seed':seed,
-            'diagnosis':f'local count gate observed {observed} protagonist instances (allowed {allowed})',
+    return {'problem':problem,'primitive':'seed','seed':seed,
+            'diagnosis':diagnosis,
             'hypothesis':'duplicate protagonist is seed-level sampling noise (TASK-v2 §2.2-3); '
                          'identical conditioning with a new seed is the required first repair',
             'changes':'re-roll the sampling seed only; no prompt, storyboard or scene change',
@@ -70,6 +76,10 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
         if result.get('status')!='pass':raise ValueError('count diagnostic LLM failed: '+str(result.get('error')))
         Draft202012Validator(count_diagnosis_schema(entry)).validate(result['data'])
         return frozen.validate_decision(result['data'],number,audit,entry,board,identity,cycle)
+    # V2-16: an extra body part is re-rolled once with a new seed, like a reliable duplicate count.
+    if not narrative and 'extra_body_part' in preferred_problems(audit,cycle,number) and 'protagonist_count' not in preferred_problems(audit,cycle,number):
+        decision=count_reseed_decision(root,number,audit,entry,cycle['shots'][str(number)],problem='extra_body_part')
+        return validate_decision(decision,number,audit,entry,board,identity,cycle)
     return diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
 
 
@@ -252,6 +262,9 @@ def run_repair_cycle(job_dir,config,client):
             if cycle.get('repair_scope') and number not in cycle['repair_scope']['shots']:continue
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
                 before=slot['best_audit'];results=repair_findings(before)
+                from storycg import extra_part
+                if any(h['decision'].get('problem')=='extra_body_part' and not h.get('skipped') for h in slot['history']):
+                    results=extra_part.strip(results)  # V2-16: one re-roll only; the known issue stays in delivery
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
                 if pending:
                     from storycg.repairs import REPAIR_PRIMITIVES
@@ -360,6 +373,12 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
     before=[*comparison_findings(slot['best_audit']),*before_neighbors];after=[*comparison_findings(audited),*adjacent]
     better=candidate_improved(before,after) and rec.get("boundary_check",{"passed":True})["passed"]
+    extra_record=None
+    if decision['problem']=='extra_body_part':
+        from storycg import extra_part
+        before_positive=extra_part.is_positive(slot['best_audit']);after_positive=extra_part.is_positive(audited)
+        better=better and extra_part.adopt(before_positive,after_positive)
+        extra_record={'before_positive':before_positive,'after_positive':after_positive}
     from storycg.cycle import reliable_regressions
     regressions=reliable_regressions([person_findings(r) for r in before],[person_findings(r) for r in after])
     if decision['problem']=='protagonist_count':
@@ -374,7 +393,7 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
                 'reliable_failure_vector_after':list(reliable_failure_vector(after)),
                 'failure_tiers':list(REPAIR_FAILURE_TIER_NAMES),
                 'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after),
-                'reliable_regressions':regressions})
+                'reliable_regressions':regressions,'extra_body_part':extra_record})
     key=f'shot{number:02d}_cycle{pending["round"]}'
     record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
     if better:
