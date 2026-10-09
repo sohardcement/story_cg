@@ -234,7 +234,6 @@ def _finish(root, config, client, identity, board, store, cycle_cfg):
     return load_state(root)
 
 
-SECTION_MARKER = '\n## 候选挑选（V2-21）'
 THUMB_LONG_SIDE = 512
 SCREEN_CODES = (('人数检测', 'count'), ('多余身体局部', 'extra_part'), ('生成未完成', 'generation'))
 
@@ -246,39 +245,112 @@ def screen_code(reason):
     return 'other'
 
 
-def result_note_lines(store):
-    lines = ['', '## 候选挑选（V2-21）', '']
-    for key, slot in sorted(store.items(), key=lambda kv: int(kv[0])):
-        number = int(key)
-        passed = any(r['status'] == 'completed' and not r['screen'] for r in slot['candidates'])
-        lines.append(f"第{number}镜：选用候选{slot['selected']}（第 {slot['rounds']} 轮生成）。理由：{slot['reason']}")
-        if slot['rounds'] == 2 and not any(r['status'] == 'completed' and not r['screen']
-                                           for r in slot['candidates'] if r['round'] == 1):
-            lines.append(f'第{number}镜：第一轮 3 张全部被筛掉，已补一轮。')
-        if not passed:
-            lines.append(f'第{number}镜：所有候选都没通过筛选，交付的是按排序取到的最好候选，请人工复看。')
-        lines.append('其余候选见 candidate_sheet.jpg 与 manifest.json 的 candidates，可以换（换候选命令下一单做）。')
-    lines.append('')
-    return lines
+def _read_json(path, default=None):
+    path = Path(path)
+    if not path.exists():
+        return {} if default is None else default
+    return json.loads(path.read_text(encoding='utf-8'))
 
 
-def append_result_notes(root, store=None):
-    """Write the candidate section into result.md, once. Safe to call after any rewrite of result.md."""
+def _passed(slot):
+    return any(r['status'] == 'completed' and not r['screen'] for r in slot['candidates'])
+
+
+def result_text(root, store=None):
+    """V2-24 (TASK-v2 §10.3 / §10.4 notes): the whole result.md of a candidate job, in the order
+    overview, files, each shot, blind narrative, known issues, detail pointer. No group verdict and no
+    per-item 'not reliably reviewed' lines; those stay in review.md."""
     root = Path(root)
-    if store is None:
-        if not _store_path(root).exists():
-            return
-        store = _load_store(root)
-    result = root / 'result.md'
-    text = result.read_text(encoding='utf-8') if result.exists() else ''
-    if SECTION_MARKER in text:
-        text = text[:text.index(SECTION_MARKER)]
-    result.write_text(text.rstrip('\n') + '\n' + '\n'.join(result_note_lines(store)) + '\n', encoding='utf-8')
+    store = _load_store(root) if store is None else store
+    job = _read_json(root / 'job.json')
+    identity = _read_json(root / 'identity.json')
+    board = _read_json(root / 'storyboard.json')
+    cycle = _read_json(root / 'cycle.json')
+    manifest = _read_json(root / 'manifest.json')
+    agent = _read_json(root / 'agent.json')
+    portrait_attempts = _read_json(root / 'portrait_attempts.json', [])
+    usage = manifest.get('usage', {})
+    numbers = [e['number'] for e in board.get('shots', [])] or sorted(int(k) for k in store)
+    shot_images = sum(1 for slot in store.values() for r in slot['candidates'] if r['status'] == 'completed')
+    seconds = usage.get('wall_elapsed_seconds', usage.get('elapsed_seconds'))
+    delivery_files = sorted(p.name for p in (root / 'delivery').glob('*.jpg') if p.name != 'candidate_sheet.jpg') \
+        if (root / 'delivery').is_dir() else []
+    lines = ['# 结果说明', '', '## 概况', '',
+             f"- 角色：{job.get('character', '')}（{identity.get('character_tag', '')}）",
+             f"- 剧情：{job.get('story', '')}",
+             f"- 层级：{identity.get('identity_tier', '未知')}",
+             f"- 镜数：{len(numbers)}",
+             f"- 本组出图：{shot_images + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，定妆图 {len(portrait_attempts)} 张）",
+             f"- 用时：{round(seconds / 60, 1)} 分钟" if seconds is not None else '- 用时：未记录',
+             '', '## 文件', '']
+    lines.append('- 拼图：' + (f"delivery/{delivery_files[0]}" if delivery_files else 'contact_sheet.jpg'))
+    lines.append('- 候选总图：candidate_sheet.jpg（delivery/candidate_sheet.jpg 同图）')
+    lines += ['', '## 每镜', '']
+    for number in numbers:
+        slot = store.get(str(number))
+        if slot is None:
+            lines.append(f'### 第 {number} 镜')
+            lines.append('- 没有候选记录。')
+            lines.append('')
+            continue
+        lines.append(f'### 第 {number} 镜')
+        selected = next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
+        lines.append(f"- 选中：候选 {slot['selected']}（第 {slot['rounds']} 轮生成）" if selected else '- 选中：无')
+        lines.append(f"- 挑选理由：{slot['reason']}")
+        if selected is not None and selected['screen'] and _passed(slot):
+            lines.append(f"- 提示：选中的候选 {slot['selected']} 没有通过筛选（{'；'.join(selected['screen'])}），是用户指定的。")
+        screened = [r for r in slot['candidates'] if r['status'] == 'completed' and r['screen']]
+        failed = [r for r in slot['candidates'] if r['status'] != 'completed']
+        for r in screened:
+            lines.append(f"- 被筛掉：候选 {r['candidate']}（{'；'.join(r['screen'])}）")
+        for r in failed:
+            lines.append(f"- 未完成：候选 {r['candidate']}（{'；'.join(r['screen'])}）")
+        if not _passed(slot):
+            lines.append('- 所有候选都没通过筛选：交付的是按排序取到的最好候选，请人工复看。')
+        auto = slot.get('auto_selected', slot['selected'])
+        if slot.get('user_pick') is not None and slot['user_pick'] != auto:
+            lines.append(f"- 由用户换过：第 {number} 镜由用户换成候选 {slot['selected']}；看图复述是换之前那组图的。"
+                         f"（审核器原选候选 {auto}）")
+        else:
+            lines.append('- 由用户换过：否')
+        lines.append('')
+    blind = (cycle.get('final_review') or {}).get('narrative_blind', {}).get('data', {})
+    lines += ['## 看图复述', '', '以下是终审的盲审模型只看图写的，不是剧情原文：', '']
+    if blind:
+        lines += [f"- event：{blind.get('event', '')}", f"- action：{blind.get('action', '')}",
+                  f"- ending：{blind.get('ending', '')}"]
+    else:
+        lines.append('- 终审没有给出看图复述。')
+    lines.append('')
+    issues = []
+    if (board.get('props') or any(e['shot'].get('key_props') or e['shot'].get('prop_tags') for e in board.get('shots', []))):
+        issues.append('道具未经审核，只作陪衬，数量、归属、状态不保证。')
+    for number in numbers:
+        slot = store.get(str(number))
+        if slot is not None and not _passed(slot):
+            issues.append(f'第 {number} 镜所有候选都没通过筛选，交付的是按排序取到的最好候选，请人工复看。')
+    issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
+    if identity.get('identity_tier') == 'L3':
+        issues.append('层级 L3：底模不认识该角色，这一组用的是参考图路线（IPAdapter 参考定妆图，不用 LoRA）。')
+    if 'Budget' in str(agent.get('error') or '') or 'budget' in str(agent.get('error') or ''):
+        issues.append(f"预算或时间耗尽，任务提前结束：{agent.get('error')}")
+    lines += ['## 已知问题', '']
+    lines += [f'- {x}' for x in issues]
+    lines += ['', '## 详细审核', '', '见 review.md 和 manifest.json。', '']
+    return '\n'.join(lines)
+
+
+def write_result_md(root, store=None):
+    """Rewrite result.md of a candidate job; a no-op for jobs without candidates.json (repair jobs)."""
+    root = Path(root)
+    if not _store_path(root).exists():
+        return
+    (root / 'result.md').write_text(result_text(root, store), encoding='utf-8')
 
 
 def publish_candidates(root):
-    """Candidate artefacts for every delivery write: sheet at the job root and in delivery/, result.md
-    section, manifest records. A no-op for jobs without a candidate store (repair jobs)."""
+    """Candidate artefacts for every delivery write: sheet at the job root and in delivery/, result.md,
+    manifest records. A no-op for jobs without a candidate store (repair jobs)."""
     root = Path(root)
     if not _store_path(root).exists():
         return None
@@ -288,7 +360,7 @@ def publish_candidates(root):
         delivery = root / 'delivery'
         delivery.mkdir(parents=True, exist_ok=True)
         (delivery / 'candidate_sheet.jpg').write_bytes(sheet.read_bytes())
-    append_result_notes(root, store)
+    write_result_md(root, store)
     manifest_path = root / 'manifest.json'
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
@@ -296,6 +368,33 @@ def publish_candidates(root):
         manifest['candidate_sheet'] = 'candidate_sheet.jpg'
         save_json_atomic(manifest_path, manifest)
     return sheet
+
+
+def pick_candidate(root, number, candidate):
+    """V2-24: the user swaps the selected candidate of one shot. Only candidates.json changes here; the caller
+    rebuilds the delivery. The first swap remembers the reviewer's choice so repeated calls stay identical."""
+    root = Path(root)
+    store = _load_store(root)
+    slot = store.get(str(number))
+    if slot is None:
+        raise ValueError(f'shot {number} has no candidates')
+    record = next((r for r in slot['candidates'] if r['candidate'] == candidate), None)
+    if record is None:
+        raise ValueError(f'shot {number} has no candidate {candidate}')
+    if record['status'] != 'completed' or not record.get('image'):
+        raise ValueError(f'candidate {candidate} of shot {number} is not a completed image')
+    if 'auto_selected' not in slot:
+        slot['auto_selected'] = slot['selected']
+        slot['auto_reason'] = slot['reason']
+    auto = slot['auto_selected']
+    slot['selected'] = candidate
+    slot['user_pick'] = candidate
+    slot['reason'] = (slot['auto_reason'] if candidate == auto
+                      else f'由用户换成候选{candidate}（审核器原选候选{auto}）')
+    _save_store(root, store)
+    return {'shot': int(number), 'candidate': candidate, 'auto_selected': auto,
+            'screened': bool(record['screen']), 'audit_label': record['audit_label'],
+            'attempt_number': record['attempt_number']}
 
 
 def candidate_records(store):
@@ -309,6 +408,7 @@ def candidate_records(store):
                             'screen_codes': [screen_code(x) for x in r['screen']], 'rank': r['rank'],
                             'conclusion': r['conclusion'], 'selected': r['candidate'] == slot['selected'],
                             'reason': slot['reason'] if r['candidate'] == slot['selected'] else None,
+                            'user_pick': r['candidate'] == slot['selected'] and slot.get('user_pick') is not None,
                             'prompt_id': r.get('prompt_id')})
     return records
 
@@ -320,7 +420,7 @@ def annotate(root, store):
     manifest['candidates'] = candidate_records(store)
     manifest['candidate_sheet'] = 'candidate_sheet.jpg'
     save_json_atomic(manifest_path, manifest)
-    append_result_notes(root, store)
+    write_result_md(root, store)
 
 
 def write_candidate_sheet(root, store):

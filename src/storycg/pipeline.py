@@ -216,7 +216,11 @@ def tier_recheck_eligible(identity, config):
 
 
 def run_story_job(job_dir: str | Path, config: dict, client,
-                  *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None) -> dict:
+                  *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None,
+                  stop_after_portrait: bool = False, redo_portrait: bool = False) -> dict:
+    """V2-24: `stop_after_portrait` returns right after the portrait stage (status 'portrait_ready') so the
+    beats confirmation can show the portrait before any shot is generated; `redo_portrait` makes one more
+    portrait attempt (single mode) and stops the same way."""
     job_dir = Path(job_dir)
     if (job_dir/'cycle.json').exists():
         from storycg.runtime_gate import run_repair_cycle
@@ -250,17 +254,24 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     from storycg.portrait_gate import recover_d7_portrait
     recovered_portrait=recover_d7_portrait(job_dir,identity,config)
     if config.get("repair_cycle_enabled"):gate.check()
+    portrait_kwargs = {"redo": True} if redo_portrait else {}
+    if redo_portrait:
+        recovered_portrait = None
     if config.get("repair_cycle_enabled"):
         portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
         try:
-            try:portrait=recovered_portrait or ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm)
+            try:portrait=recovered_portrait or ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm,**portrait_kwargs)
             except ValueError:
+                if redo_portrait: raise
                 portrait=recover_d7_portrait(job_dir,identity,config)
                 if portrait is None:raise
         finally:portrait_vlm.close()
     else:
-        portrait = ensure_portrait(job_dir, identity, config, client)
+        portrait = ensure_portrait(job_dir, identity, config, client, **portrait_kwargs)
     if config.get("repair_cycle_enabled"):gate.check()
+    if stop_after_portrait or redo_portrait:
+        return {"job_id": job_dir.name, "status": "portrait_ready", "needs_user": False, "reason": None,
+                "question": None, "attempts": [], "tier_evidence": identity.get("tier_evidence", {})}
     board = plan_job(job_dir, config)
     if (job_dir / "state.json").exists():
         config = load_state(job_dir)["config"]

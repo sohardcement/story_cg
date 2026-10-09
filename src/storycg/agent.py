@@ -234,6 +234,65 @@ def _plan_from_beats(root, config):
     return compile_beats(root, root/read(root, 'agent.json')['beats'], identity, job['shot_count'], config)
 
 
+def beat_summaries(board):
+    """V2-24 (TASK-v2 §10.1): one line per shot, built only from the compiled storyboard fields; no model call."""
+    rows = []
+    for entry in board['shots']:
+        shot, scene, outfit = entry['shot'], entry['scene'], entry['outfit']
+        change = (f"第 {entry['number']} 镜换装：{outfit['clothing_state']}" if outfit.get('change_at_shot') == entry['number']
+                  else '换装：无（沿用上一镜）' if entry['number'] > 1 else '换装：无（默认服装）')
+        rows.append({'number': entry['number'], 'summary': (
+            f"第{entry['number']}镜：景别 {shot['framing']}，角度 {shot['camera_angle']}；"
+            f"动作 {shot['action']}；表情 {shot['expression']}；"
+            f"场景 {scene['location']}（{scene['time']}）；{change}")})
+    return rows
+
+
+def make_portrait(root, config, *, redo=False):
+    """V2-24: produce (or with redo, one more) portrait and stop; no shot is submitted."""
+    check_resources(config)
+    from storycg.cycle import settings
+    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()))
+    try:
+        state = run_story_job(root, config, client, review_dir=root/'delivery', stop_after_portrait=True, redo_portrait=redo)
+    finally:
+        client.close()
+    if state.get('status') == 'needs_user':
+        question(root, state.get('reason', 'identity_unsupported'), state['question'])
+        return state
+    if state.get('status') != 'portrait_ready':
+        raise ResourceUnavailable('身份控制所需资源或层级实现不可用：' + str(state.get('status')))
+    return state
+
+
+def recompile_beats(root, beats_src, config):
+    """V2-24: `approve --beats FILE`. Compile the new file in place of the old storyboard; the old storyboard and
+    beats file are restored if the compile fails. The portrait is not touched: its cache key is identity and style only."""
+    beats_src = Path(beats_src).resolve()
+    if not beats_src.is_file():
+        raise ValueError(f'beats file not found: {beats_src}')
+    old_board = (root/'storyboard.json').read_bytes() if (root/'storyboard.json').exists() else None
+    old_beats = (root/'beats.json').read_bytes() if (root/'beats.json').exists() else None
+    archive = root/'edits'/('beats-'+hashlib.sha256(beats_src.read_bytes()).hexdigest()[:12])
+    archive.mkdir(parents=True, exist_ok=True)
+    if old_board is not None:
+        (archive/'storyboard_before.json').write_bytes(old_board)
+    (root/'storyboard.json').unlink(missing_ok=True)  # compile_beats reuses an existing storyboard
+    shutil.copyfile(beats_src, root/'beats.json')
+    try:
+        board = _plan_from_beats(root, config)
+    except Exception:
+        (root/'storyboard.json').unlink(missing_ok=True)
+        if old_board is not None:
+            (root/'storyboard.json').write_bytes(old_board)
+        if old_beats is not None:
+            (root/'beats.json').write_bytes(old_beats)
+        raise
+    update(root, beats='beats.json', beats_sha256=hashlib.sha256((root/'beats.json').read_bytes()).hexdigest(),
+           storyboard=beat_summaries(board))
+    return board
+
+
 def execute(root):
     config = read(root, 'job.json')['generation_config']
     config['repair_cycle_enabled'] = True
@@ -266,9 +325,22 @@ def execute(root):
         if identity is None:
             return
         update(root, phase='planning')
-        board = _plan_from_beats(root, config) if read(root, 'agent.json').get('beats') else plan_job(root, config)
-        if not read(root, 'agent.json').get('storyboard'):
-            present(root, config, board)
+        record = read(root, 'agent.json')
+        if record.get('beats'):
+            # V2-24: beats mode never calls the local model for the summary; confirmation waits for the portrait too.
+            board = _plan_from_beats(root, config)
+            update(root, storyboard=beat_summaries(board))
+            if record.get('storyboard_first') and not record.get('approved'):
+                update(root, phase='preparing_portrait')
+                make_portrait(root, config)
+                if read(root, 'agent.json').get('needs_user'):
+                    return
+                update(root, phase='awaiting_approval', waiting_since=datetime.now(timezone.utc).isoformat())
+                return
+        else:
+            board = plan_job(root, config)
+            if not record.get('storyboard'):
+                present(root, config, board)
         if read(root, 'agent.json').get('storyboard_first') and not read(root, 'agent.json').get('approved'):
             update(root, phase='awaiting_approval', waiting_since=datetime.now(timezone.utc).isoformat())
             return
@@ -282,14 +354,8 @@ def execute(root):
         print(f'storycg: {type(exc).__name__}: {exc}', file=sys.stderr)
 
 
-def deliver(root):
-    """Rebuild from persisted selected attempts only: no HTTP, generation or review."""
-    board = read(root, 'storyboard.json')
-    state = read(root, 'state.json')
-    if not board or not state:
-        raise ValueError('no generated storyboard images to deliver')
-    cycle = read(root, 'cycle.json')
-    manifest = read(root, 'manifest.json')
+def _delivery_images(root, board, state, cycle, manifest):
+    """The image record of every shot, from the selected (cycle best) attempts."""
     images, drop_lines = [], []
     for e in board['shots']:
         number = e['number']; selected = cycle.get('shots', {}).get(str(number), {}).get('best_attempt')
@@ -305,6 +371,50 @@ def deliver(root):
         dropped = attempt.get('dropped_scene_tags') or []
         if dropped:
             drop_lines.append(f'第 {number} 镜因景别物件上限省略了：{"、".join(dropped)}')
+    return images, drop_lines
+
+
+def pick_delivery(root, number, candidate):
+    """V2-24 (TASK-v2 §10.3 换候选): swap one shot's candidate and rebuild the delivery files. No model call,
+    no image, no final review: cycle.json, the contact sheet, manifest and result.md are re-derived."""
+    root = Path(root)
+    if not (root/'candidates.json').exists() or read(root, 'cycle.json').get('delivery_mode') != 'candidates':
+        raise ValueError('pick is only for a completed candidate-mode job')
+    if read(root, 'agent.json').get('phase') != 'completed':
+        raise ValueError('pick requires a completed job')
+    from storycg.candidates import pick_candidate, publish_candidates
+    change = pick_candidate(root, number, candidate)
+    cycle = read(root, 'cycle.json')
+    slot = cycle['shots'][str(number)]
+    slot['best_attempt'] = change['attempt_number']
+    slot['best_audit'] = read(root/'cycle_artifacts', f"{change['audit_label']}.json")
+    save_json_atomic(root/'cycle.json', cycle)
+    board, state, manifest = read(root, 'storyboard.json'), read(root, 'state.json'), read(root, 'manifest.json')
+    images, _ = _delivery_images(root, board, state, cycle, manifest)
+    manifest.update(images=images, attempts=state['attempts'])
+    save_json_atomic(root/'manifest.json', manifest)
+    # Contact sheet: rebuilt in a scratch folder, then written over the job's own delivery file.
+    import tempfile
+    with tempfile.TemporaryDirectory(dir=root) as scratch:
+        sheet_path = make_contact_sheet(root, Path(scratch))
+        delivery = root/'delivery'; delivery.mkdir(exist_ok=True)
+        for old in delivery.glob(f"{read(root, 'job.json')['character']}-*.jpg"):
+            if old.name != sheet_path.name:
+                old.unlink()
+        (delivery/sheet_path.name).write_bytes(sheet_path.read_bytes())
+    publish_candidates(root)
+    return change
+
+
+def deliver(root):
+    """Rebuild from persisted selected attempts only: no HTTP, generation or review."""
+    board = read(root, 'storyboard.json')
+    state = read(root, 'state.json')
+    if not board or not state:
+        raise ValueError('no generated storyboard images to deliver')
+    cycle = read(root, 'cycle.json')
+    manifest = read(root, 'manifest.json')
+    images, drop_lines = _delivery_images(root, board, state, cycle, manifest)
     make_contact_sheet(root, root/'delivery')
     manifest.update(images=images, usage=count_usage(root), attempts=state['attempts'])
     manifest.setdefault('identity_file', 'identity.json')
@@ -363,7 +473,7 @@ def status(root):
         except BlockingIOError:
             active = True
     active = active or worker_alive(root)
-    if not active and phase in ('checking_requirements', 'resolving_identity', 'planning', 'generating_and_repairing'):
+    if not active and phase in ('checking_requirements', 'resolving_identity', 'planning', 'preparing_portrait', 'generating_and_repairing'):
         phase = 'interrupted'
     paths = {'preview': str(root/'contact_sheet.jpg') if (root/'contact_sheet.jpg').exists() else None,
              'images': [str(root/x['path']) for x in manifest.get('images', [])],
@@ -382,7 +492,22 @@ def status(root):
             'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
             'repair_blocked': cycle.get('blocked'), 'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
             'attempts': [{k: a.get(k) for k in ('shot_id', 'attempt_number', 'status', 'prompt_id', 'image', 'error')}
-                         for a in state.get('attempts', [])]}
+                         for a in state.get('attempts', [])],
+            'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
+
+
+def _confirmation(root):
+    """V2-24: what the user confirms at awaiting_approval: tier, portrait, candidates per shot."""
+    from storycg.config import candidates_per_shot, portrait_mode
+    portrait = read(root, 'portrait.json')
+    config = read(root, 'job.json').get('generation_config', {})
+    return {'identity_tier': read(root, 'identity.json').get('identity_tier'),
+            'portrait_status': portrait.get('raw_status', portrait.get('status')),
+            'portrait_image': str(root/portrait['image']['path']) if portrait.get('image') else None,
+            'portrait_face': str(root/portrait['face']['path']) if portrait.get('face') else None,
+            'portrait_attempts': len(read(root, 'portrait_attempts.json', []) or []),
+            'portrait_mode': portrait_mode(config),
+            'candidates_per_shot': candidates_per_shot(config)}
 
 
 def launch(root):
@@ -468,7 +593,7 @@ def main(argv):
         return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ('make', 'approve', 'status', 'resume', 'deliver', '_worker'):
+    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
         if name in ('make', 'approve', 'resume'):
@@ -479,6 +604,8 @@ def main(argv):
             command.add_argument('--story', required=True)
             command.add_argument('--shots', type=int, default=4)
             command.add_argument('--storyboard-first', action='store_true')
+            command.add_argument('--no-confirm', action='store_true',
+                                 help='beats mode stops for confirmation by default; this runs straight through')
             command.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
             command.add_argument('--identity-control', choices=['none', 'ipadapter'])
             command.add_argument('--layout-mode', choices=['none', 'qwen'])
@@ -492,9 +619,15 @@ def main(argv):
             command.add_argument('--work')
         if name == 'approve':
             command.add_argument('--edit')
+            command.add_argument('--beats', type=Path, help='recompile with a new beats file; stays awaiting_approval')
+            command.add_argument('--redo-portrait', action='store_true', help='one more portrait; stays awaiting_approval')
+        if name == 'pick':
+            command.add_argument('--shot', type=int)
+            command.add_argument('--candidate', type=int)
     args = parser.parse_args(argv)
     root = (args.job_dir or PROJECT/'jobs'/('cg-'+uuid.uuid4().hex[:12])).resolve()
     code = 0
+    picked = None
     try:
         if not root.is_relative_to(PROJECT):
             raise ValueError('agent job paths must be inside the project workspace')
@@ -511,7 +644,9 @@ def main(argv):
             if beats_src is not None:
                 shutil.copyfile(beats_src, root/'beats.json')
                 beats_fields = {'beats': 'beats.json', 'beats_sha256': hashlib.sha256((root/'beats.json').read_bytes()).hexdigest()}
-            update(root, phase='queued', needs_user=False, storyboard_first=args.storyboard_first, approved=False, **beats_fields)
+            # V2-24: beats mode confirms by default; --no-confirm runs straight through.
+            confirm = (beats_src is not None or args.storyboard_first) and not args.no_confirm
+            update(root, phase='queued', needs_user=False, storyboard_first=confirm, approved=False, **beats_fields)
         elif not (root/'job.json').exists():
             raise ValueError('story job not found')
         if args.command != 'status':
@@ -560,9 +695,30 @@ def main(argv):
                     update(root,phase='queued',finished_at=None)
                 if args.command == 'deliver':
                     deliver(root)
+                elif args.command == 'pick':
+                    if args.shot is None or args.candidate is None:
+                        raise ValueError('pick needs --shot and --candidate')
+                    picked = pick_delivery(root, args.shot, args.candidate)
+                elif args.command == 'approve' and (args.beats is not None or args.redo_portrait):
+                    # V2-24: confirmation steps that stay at awaiting_approval.
+                    record = read(root, 'agent.json')
+                    if record.get('phase') != 'awaiting_approval':
+                        raise ValueError('approve requires awaiting_approval')
+                    if args.edit:
+                        raise ValueError('--edit cannot be combined with --beats or --redo-portrait')
+                    if args.beats is not None and not record.get('beats'):
+                        raise ValueError('approve --beats is only for beats-mode jobs')
+                    job_config = read(root, 'job.json')['generation_config']
+                    job_config['repair_cycle_enabled'] = True
+                    if args.beats is not None:
+                        recompile_beats(root, args.beats, job_config)
+                    if args.redo_portrait:
+                        make_portrait(root, job_config, redo=True)
                 elif args.command == 'approve':
                     if read(root, 'agent.json').get('phase') != 'awaiting_approval':
                         raise ValueError('approve requires awaiting_approval')
+                    if args.edit and read(root, 'agent.json').get('beats'):
+                        raise ValueError('beats 方式不支持 --edit：请写新的 beats 文件，用 approve --beats FILE 重新编译')
                     if args.edit:
                         try:
                             is_file = Path(args.edit).is_file()
@@ -586,6 +742,8 @@ def main(argv):
                     update(root, phase='queued')
                     launch(root)
         result = status(root)
+        if picked is not None:
+            result['pick'] = picked
         if result.get('error'):
             code = 1
     except Exception as exc:

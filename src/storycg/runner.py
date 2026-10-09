@@ -244,7 +244,8 @@ def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
                 config: dict, client, *, negative_prompt: str | None = None,
                 repair_diagnosis: dict | None = None, generation_reference: dict | None = None,
-                dropped_scene_tags: list | None = None, indoor_negative: dict | None = None) -> dict:
+                dropped_scene_tags: list | None = None, indoor_negative: dict | None = None,
+                seed: int | None = None) -> dict:
     job_dir = Path(job_dir)
     job_id = job_dir.name
     make_prefix(job_id, shot_id, 1, root=config.get("comfy_prefix_root", ""))
@@ -285,7 +286,7 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                 _process(job_dir, state, attempt, client, recovering=True)
             _retry_if_failed(job_dir, state, attempt, client)
             return state
-        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags, indoor_negative=indoor_negative)
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags, indoor_negative=indoor_negative, seed=seed)
         _process(job_dir, state, attempt, client, recovering=False)
         _retry_if_failed(job_dir, state, attempt, client)
         return state
