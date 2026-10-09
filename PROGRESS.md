@@ -159,7 +159,7 @@
   - 第 1 条：分镜要求闭眼的镜头（pose、expression、tags 或 companion 补出的 tag 含 closed_eyes）不请求瞳色，记为 not_applicable。修图审核和交付审核两处都生效（返工 2 补了交付审核），共用 `closed_eyes.py`。
   - 第 2 条按 D29 分级：可靠项从 pass 退化为 minor 或 fail，只有退化项级别不低于决定级时才否决改善；所有退化都记进修复结果。
   - 旧测试恢复原样。
-  - 857 → 890 passed，监工复跑一致。
+  - 872 → 890 passed，监工复跑一致。
   - 回放：56 轮修复里，新规则只改判 1 轮。cg-e06effaabdd4 第 4 镜的动作 relayout，服装连续性 pass → minor，服装级高于动作级，被否决。
   - cg-e65914ca08fb 第 4 镜在第 1 条下不会再触发瞳色修复。 | 2 | a5c7ab49f24a13322 | `.v2/reports/V2-14.md`，493d42c |
 | V2-15 多余身体局部的检测（离线评估，不改正式代码） | 排队（V2-14 之后派）。评估集由监工标注：`verify/v2/labels/extra_parts.json`，80 张，其中正例 6、不确定 1、反例 73 | 0 | — | `orders/V2-15.md` |
