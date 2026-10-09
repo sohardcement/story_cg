@@ -155,6 +155,7 @@
 | V2-12 写分镜所需信息（标准服装、词汇表）+ 撞键按表情区分 + LoRA 清单缓存 | **通过**（0b3fac0）：`beats-guide --character` 打印标准服装 tag、本层级词汇表和撞键说明（层级只读缓存，不做探针）；`compile` 的输出也附上这些。撞键只有第 19、20 项一组，L1 中景正面站着笑现在判稳定。LoRA 分类查询缓存 24 小时，遇到 429 退避重试。顺带修了 V2-11 规则 3 一处无效改写。监工复跑 857 passed，主线、Hermes 和 `.v2/jobs` 都未被改动。已知：编译不强制检查服装是否属于标准服装 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-12.md` |
 | V2-13 修图诊断异常输出不再崩溃；修图不得加道具；beats-guide 近景道具规则改正 | **通过**（c0511b5）：诊断输出的 key_props 条目按字段校验（v2 的 production schema 把条目当作不透明对象，错格式能过 schema），校验中的 KeyError/TypeError/IndexError 转为"诊断被拒"；relayout 的 key_props 必须不变、prop_tags 只能删；beats-guide 近景允许本镜声明的那一个道具，写明剧情要画出来的物件必须写进 prop_tags。857 → 872 passed，监工复跑一致；离线对 cg-44fa1c8a334e 的诊断输出得到"修图不得新增道具"的 ValueError。执行者 V2-10 时留下一个卡在 stdin 的 `cat` 进程（pid 412791/412794，跑了约 4 小时），监工已结束它 | 0 | a5c7ab49f24a13322 | `.v2/reports/V2-13.md`，c0511b5 |
 | V2-14 闭眼镜头不审瞳色；修图不得让可靠项退化 | 进行中（2026-10-09 14:00 派给 Haiku 5.5 执行者） | 0 | a5c7ab49f24a13322 | `orders/V2-14.md` |
+| V2-15 多余身体局部的检测（离线评估，不改正式代码） | 排队（V2-14 之后派）。评估集由监工标注：`verify/v2/labels/extra_parts.json`，80 张，其中正例 6、不确定 1、反例 73 | 0 | — | `orders/V2-15.md` |
 
 
 ## 晨报（能力摸底阶段，2026-10-04 定稿）
