@@ -305,7 +305,8 @@ def run_story_job(job_dir: str | Path, config: dict, client,
                             parts['framing'], config, client, negative_prompt=shot_config['negative_prompt'],
                             generation_reference=relation,
                             repair_diagnosis=(repair_diagnoses or {}).get(str(entry['number'])),
-                            dropped_scene_tags=parts['dropped_scene_tags'])
+                            dropped_scene_tags=parts['dropped_scene_tags'],
+                            indoor_negative=parts['indoor_precipitation_negative'])
         latest = next(a for a in reversed(state["attempts"])
                       if a["shot_id"] == f'shot{entry["number"]:02d}')
         if latest["status"] != "completed":

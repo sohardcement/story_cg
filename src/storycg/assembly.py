@@ -2,7 +2,7 @@
 from storycg.config import load_config
 from storycg.framing import framing_rule
 from storycg.prompt_rules import (companion_tags_for_shot, filter_scene_tags,
-                                  negative_tag_list)
+                                  indoor_precipitation_negatives, negative_tag_list)
 
 
 def spaces(text):
@@ -48,8 +48,13 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
     negative_tags = negative_tag_list(scene['negative_tags'],
                                       config.get('framing_negative_tags', {}).get(shot['framing'], []),
                                       config)
+    positive_tags = ', '.join([identity_block, outfit_block, scene_block, shot_block])
+    # V2-18 (D60): indoor precipitation adds ground-water negatives (same trigger as the V2-11 window).
+    indoor_negative = indoor_precipitation_negatives(scene['tags'], positive_tags, negative_tags, config)
+    negative_tags = [*negative_tags, *indoor_negative['added']]
     return {'identity_block': identity_block, 'outfit_block': outfit_block,
             'scene_block': scene_block, 'shot_block': shot_block,
-            'positive_tags': ', '.join([identity_block, outfit_block, scene_block, shot_block]),
+            'positive_tags': positive_tags,
             'negative_tags': ', '.join(spaces(t) for t in negative_tags),
-            'dropped_scene_tags': dropped_scene, 'framing': shot['framing']}
+            'dropped_scene_tags': dropped_scene, 'framing': shot['framing'],
+            'indoor_precipitation_negative': indoor_negative}

@@ -37,6 +37,34 @@ def indoor_precipitation(scene_tags, rules):
     return bool(present & indoor) and bool(present & precipitation)
 
 
+def indoor_precipitation_negatives(scene_tags, positive_tags, negative_tags, config=None):
+    """V2-18 (D60): ground-water negatives for an indoor precipitation shot.
+
+    The trigger is the V2-11 rule itself (indoor_precipitation), so the window and this rule agree.
+    A tag is skipped, with a reason, when the positive prompt already has it or a listed synonym, or
+    when the negative prompt already has it. Returns the flag, the added tags and the skipped tags.
+    """
+    cfg = (config or {}).get('indoor_precipitation_negative') or {}
+    result = {'indoor_precipitation': False, 'added': [], 'skipped': []}
+    if not cfg or not indoor_precipitation(scene_tags, scene_rules(config)):
+        return result
+    result['indoor_precipitation'] = True
+    positive = {canonical_tag(token) for token in str(positive_tags).split(',') if token.strip()}
+    negative = {canonical_tag(token) for token in negative_tags}
+    for tag in cfg['tags']:
+        canon = canonical_tag(tag)
+        synonyms = [canonical_tag(s) for s in cfg.get('synonyms', {}).get(tag, [])]
+        present = [s for s in [canon, *synonyms] if s in positive]
+        if present:
+            note = '' if present[0] == canon else '（同义的地面湿 tag）'
+            result['skipped'].append({'tag': tag, 'reason': f'正向已有 {present[0]}{note}'})
+        elif canon in negative:
+            result['skipped'].append({'tag': tag, 'reason': '负向已有该 tag'})
+        else:
+            result['added'].append(tag)
+    return result
+
+
 def filter_scene_tags(framing, scene_tags, prop_tags, config=None):
     """Return (kept, dropped) scene tags under the framing's object budget.
 

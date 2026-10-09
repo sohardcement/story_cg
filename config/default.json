@@ -82,6 +82,11 @@
     "multiple views"
   ],
   "fixed_negative_tags_source": "TASK-v2 §2.2-8c（CAP-04 实测：加后重复主角仍在，仅作常规写法保留，不去重）",
+  "indoor_precipitation_negative": {
+    "tags": ["puddle", "wet_floor", "wet_ground"],
+    "synonyms": {"puddle": ["puddles", "water_puddle"], "wet_floor": [], "wet_ground": []},
+    "source": "V2-17 experiment (reports/V2-17.md, method A) and decision D60 (V2-18). Tag existence and post counts: reports/assets/V2-17/tag_check.json (Danbooru tags.json, read-only, 2026-10-09): puddle 8158, wet_floor 798, wet_ground 101. Synonym checks (read-only, 2026-10-09): puddles 0 posts, water_puddle 0 posts; no verified synonym for wet_floor or wet_ground."
+  },
   "scene_rules": {
     "object_limits": {
       "closeup": 0,
