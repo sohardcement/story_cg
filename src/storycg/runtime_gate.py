@@ -73,17 +73,39 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     return diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
 
 
+KEY_PROP_ITEM = {'type': 'object', 'required': ['prop_id', 'relation_tags', 'location_tags'],
+                 'properties': {'prop_id': {'type': 'string'},
+                                'relation_tags': {'type': 'array', 'items': {'type': 'string'}},
+                                'location_tags': {'type': 'array', 'items': {'type': 'string'}}}}
+
+
 def diagnosis_schema(cfg, *, state=None, problems=None):
     from storycg.planning import production_schema
     if problems is not None:
         if not problems:raise ValueError('no mapped actionable FAIL item')
     schema=frozen.diagnosis_schema(cfg,state=state,problems=problems)
-    schema['properties']['shot']={'anyOf':[
-        production_schema()['properties']['shots']['items']['properties']['shot'], {'type':'null'}]}
+    shot=production_schema()['properties']['shots']['items']['properties']['shot']
+    # V2-13: key_props entries must carry the fields the validators read (prop_id, relation_tags, location_tags).
+    shot['properties']['key_props']={'type':'array','items':KEY_PROP_ITEM}
+    schema['properties']['shot']={'anyOf':[shot, {'type':'null'}]}
     return schema
 
 
+def relayout_prop_guard(revised, current):
+    """V2-13 (TASK-v2 §0): a relayout may delete props but never add or change them."""
+    from storycg.tags import canonical_tag
+    if json.dumps(revised.get('key_props', []), sort_keys=True, ensure_ascii=False) != json.dumps(
+            current.get('key_props', []), sort_keys=True, ensure_ascii=False):
+        raise ValueError('修图不得新增道具：key_props 与当前镜头不同，修图只能改动作、表情等（key_props 必须与当前镜头一致）')
+    allowed = {canonical_tag(tag) for tag in current.get('prop_tags', [])}
+    added = [tag for tag in revised.get('prop_tags', []) if canonical_tag(tag) not in allowed]
+    if added:
+        raise ValueError('修图不得新增道具：prop_tags 新增了 ' + ', '.join(added) + '；修图只能从当前 prop_tags 中删除')
+
+
 def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):
+    if decision.get('primitive')=='relayout' and decision.get('shot') is not None:
+        relayout_prop_guard(decision['shot'],entry['shot'])
     if narrative:
         revised=decision.get('shot') or {}
         if (revised.get('action'),revised.get('expression'))==(entry['shot']['action'],entry['shot']['expression']):raise ValueError('narrative repair must change expression/action')
@@ -125,6 +147,8 @@ def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrati
         'relayout: edit=null, return the complete revised shot; changes must target expression/action. '
         'Return ALL fields, including pose, action, description, tags, reflection, protagonist_instances, '
         'subject_visibility, other_people, hand_owners, and prop_tags. '
+        'A relayout must keep key_props exactly as the current shot has them and may only remove entries from prop_tags; '
+        'never add a prop or change a prop. '
         'action and description equal pose; tags contain only pose/expression. '
         'face_detail: edit=null and shot=null; faces are detected locally. '
         'Do not merely change seed or synonyms. '+RULE_PROMPT.replace(
@@ -140,10 +164,13 @@ def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrati
             if result.get('status')!='pass':raise ValueError('diagnostic LLM failed: '+str(result.get('error')))
             Draft202012Validator(schema).validate(result['data'])
             return validate_decision(result['data'],number,audit,entry,board,identity,cycle,narrative=narrative)
-        except (ValueError, __import__('jsonschema').ValidationError) as exc:
+        except (ValueError, __import__('jsonschema').ValidationError, KeyError, TypeError, IndexError) as exc:
+            # V2-13: a malformed diagnosis (missing or wrong-typed fields) is a rejection, never a task crash.
+            if isinstance(exc, (KeyError, TypeError, IndexError)):
+                exc = ValueError(f'diagnosis output malformed ({type(exc).__name__}): {exc}')
             save_json_atomic(root/'cycle_artifacts'/f'{name}_rejected.json',{'error':str(exc),'original_response_file':f'{name}.json'})
             feedback='\nScript rejected previous output: '+str(exc)+'. Correct the specific field; retain registered state. Previous output: '+json.dumps(result.get('data'),ensure_ascii=False)
-            if revision==cfg.get('diagnosis_validation_retries',1):raise
+            if revision==cfg.get('diagnosis_validation_retries',1):raise exc
 
 def deliver(root,cycle,config,client):
     state=frozen.deliver(root,cycle,config,client)
