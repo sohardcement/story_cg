@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from storycg.config import character_lora_matching_enabled
 from storycg.identity_enrichment import load_rules
 from storycg.state import save_json_atomic
 
@@ -82,17 +83,17 @@ def match_character_loras(character_tag, names, metadata, *, character_tags=None
             'rejected':rejected,'selection_rule':'character share, non eval/intermediate artifact, training count, filename support, lexical tie break'}
 
 
-def add_character_lora(workflow,lora):
+def add_character_lora(workflow,lora,model_ref,clip_ref):
+    """Insert the character LoRA after the style chain whose tails are model_ref and clip_ref (V2-20)."""
     workflow=copy.deepcopy(workflow)
-    # Insert after the two style LoRAs, preserving both MODEL and CLIP chains.
     workflow['30']={'class_type':'LoraLoader','inputs':{
-        'model':['3',0],'clip':['3',1],'lora_name':lora['name'],
+        'model':model_ref,'clip':clip_ref,'lora_name':lora['name'],
         'strength_model':lora['strength_model'],'strength_clip':lora['strength_clip']}}
     for key,node in workflow.items():
         if key=='30':continue
         for field,value in node['inputs'].items():
-            if value==['3',0]:node['inputs'][field]=['30',0]
-            elif value==['3',1]:node['inputs'][field]=['30',1]
+            if value==model_ref:node['inputs'][field]=['30',0]
+            elif value==clip_ref:node['inputs'][field]=['30',1]
     return workflow
 
 
@@ -574,10 +575,15 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         with httpx.Client(base_url=BASE_URL,timeout=30,trust_env=False,headers={'User-Agent':USER_AGENT}) as owned:
             return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm,allow_l3=allow_l3,force_probe=force_probe)
     try:
-        inventory=inventory or live_inventory(config,client,reference_client,root)
-        match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
-                                    character_tags=inventory['character_tags'],rules=rules)
-        match['inventory_source']={'object_info_url':inventory['object_info_url'],'retrieved_at':inventory['retrieved_at']}
+        if character_lora_matching_enabled(config):
+            inventory=inventory or live_inventory(config,client,reference_client,root)
+            match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
+                                        character_tags=inventory['character_tags'],rules=rules)
+            match['inventory_source']={'object_info_url':inventory['object_info_url'],'retrieved_at':inventory['retrieved_at']}
+        else:
+            # V2-20: character LoRA matching is off, so no LoRA can be selected and L1 cannot be reached.
+            match={'selected':None,'matches':[],'disabled':True,
+                   'reason':'character_lora_matching is off (TASK-v2 §10.4); no LoRA inventory was read'}
         save_json_atomic(root/'tier/lora-match.json',match)
         lora=match['selected']
         identity['lora']=lora

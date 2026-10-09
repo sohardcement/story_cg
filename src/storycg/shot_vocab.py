@@ -18,6 +18,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from storycg.config import character_lora_matching_enabled
 from storycg.story_rules import StoryRuleViolation
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -45,6 +46,17 @@ def observation_log_path(config=None):
 
 def load_vocab(config=None):
     return json.loads(vocab_path(config).read_text(encoding="utf-8"))
+
+
+def vocab_tier(tier, config=None):
+    """The tier whose grade column is read (V2-20, TASK-v2 §10.4).
+
+    Character LoRA matching on: the tier is used as before. Off (the default): no L1 column
+    is read, and unknown, L3 and L4 read the L2 column as well.
+    """
+    if character_lora_matching_enabled(config):
+        return tier
+    return "L2"
 
 
 def resolve_grade(item, tier):
@@ -138,6 +150,7 @@ def validate_shot_vocab(board, tier, config=None, vocab=None):
     if board.get("scope_version") != V2_SCOPE:
         return []
     vocab = vocab or load_vocab(config)
+    tier = vocab_tier(tier, config)
     by_id = {item["id"]: item for item in vocab["items"]}
     shots = classify_shots(board, tier, vocab=vocab)
     for classified in shots:
@@ -178,11 +191,14 @@ def prompt_section(tier, config=None, vocab=None):
     """Instruction block listing this tier's stable/sometimes/unusable combos."""
     vocab = vocab or load_vocab(config)
     items = vocab["items"]
+    tier = vocab_tier(tier, config)
     resolved = [(item, resolve_grade(item, tier)) for item in items]
     header = (" Shot vocabulary for this character tier from the capability probe "
               "(a shot matches an entry when framing, camera_angle and the pose tag all agree; "
               "the expression may differ).")
-    if tier not in ("L1", "L2"):
+    if not character_lora_matching_enabled(config):
+        header += " Character LoRA is off: the L2 column applies to every tier."
+    elif tier not in ("L1", "L2"):
         header += (" No probe data for this tier; the conservative L1/L2 grade applies, "
                    "so do not plan around tier-specific rescues.")
     stable = [f"{_combo(item)}" for item, (grade, _) in resolved if grade == "stable"]
@@ -259,8 +275,9 @@ def record_observations(job_dir, config=None, *, vocab=None, now=None):
     identity_path = root / "identity.json"
     identity = json.loads(identity_path.read_text(encoding="utf-8")) if identity_path.exists() else {}
     tier = identity.get("identity_tier")
+    column = vocab_tier(tier, config)
     recorded = []
-    for classified in classify_shots(board, tier, vocab=vocab):
+    for classified in classify_shots(board, column, vocab=vocab):
         if not classified["off_table"]:
             continue
         recorded.append({
@@ -272,6 +289,7 @@ def record_observations(job_dir, config=None, *, vocab=None, now=None):
             "camera_angle": classified["camera_angle"],
             "expression": classified["expression"],
             "tier": tier,
+            "grade_column": column,
             "grade": classified["grade"],
             "grade_basis": classified["grade_basis"],
             "off_table": True,

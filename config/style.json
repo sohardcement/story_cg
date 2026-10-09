@@ -1,17 +1,6 @@
 {
   "checkpoint": "waiIllustriousSDXL_v170.safetensors",
-  "style_loras": [
-    {
-      "name": "Iwao178.safetensors",
-      "strength_model": 0.4,
-      "strength_clip": 0.4
-    },
-    {
-      "name": "akaimelon.safetensors",
-      "strength_model": 0.3,
-      "strength_clip": 0.3
-    }
-  ],
+  "style_loras": [],
   "sampler": {
     "steps": 28,
     "cfg": 5.5,

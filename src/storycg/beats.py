@@ -87,9 +87,10 @@ def rewrite_board(board, tier, config):
     and the substitute-without-id error are validation errors, see _collect_errors.
     """
     from storycg.prompt_rules import indoor_precipitation
-    from storycg.shot_vocab import classify_shots, load_vocab, replacement_for, resolve_grade
+    from storycg.shot_vocab import classify_shots, load_vocab, replacement_for, resolve_grade, vocab_tier
     from storycg.tags import canonical_tag
 
+    tier = vocab_tier(tier, config)
     vocab = load_vocab(config)
     items = vocab['items']
     by_id = {item['id']: item for item in items}
@@ -207,14 +208,14 @@ def _collect_errors(board, shot_count, identity, config):
     from storycg.planning import appearance_forbidden, production_schema
     from storycg.prompt_rules import companion_conflicts
     from storycg.shot_contract import EXPRESSION_TAGS, moment
-    from storycg.shot_vocab import classify_shots, load_vocab, substitute_text
+    from storycg.shot_vocab import classify_shots, load_vocab, substitute_text, vocab_tier
     from storycg.story_rules import StoryRuleViolation, validate_story_rules
     from storycg.tags import canonical_tag
     from storycg.posture_tags import validate_posture_blocks
 
     errors = []
     shots = board.get('shots', [])
-    tier = (identity or {}).get('identity_tier')
+    tier = vocab_tier((identity or {}).get('identity_tier'), config)
 
     if len(shots) != shot_count:
         _add(errors, None, 'shots', f'镜数为 {len(shots)}，工单要求 {shot_count}', f'增删镜头，使镜数为 {shot_count}')
@@ -353,9 +354,14 @@ def cached_identity_tier(identity, config):
     except (OSError, ValueError):
         return None, False
     tiers = set()
+    style_now = [(item['name'], item['strength_model'], item['strength_clip']) for item in (config or {}).get('style_loras', [])]
     for record in entries.values():
         key_inputs = record.get('key_inputs', {})
         if key_inputs.get('character') != tag or (key_inputs.get('checkpoint') or {}).get('name') != (config or {}).get('checkpoint'):
+            continue
+        # V2-20: entries judged before the style LoRA set joined the key (or under another set) are not reused.
+        style_entry = key_inputs.get('style_loras')
+        if not isinstance(style_entry, list) or [(i.get('name'), i.get('strength_model'), i.get('strength_clip')) for i in style_entry] != style_now:
             continue
         verified = cached_tier(config, key_inputs)
         if verified:
@@ -388,20 +394,29 @@ def character_guide(identity, config=None):
     The tier comes from the identity once determined, otherwise from the tier cache only.
     Unknown tier: the conservative L1/L2 vocabulary is printed and the guide says so.
     """
-    from storycg.shot_vocab import prompt_section
+    from storycg.config import character_lora_matching_enabled
+    from storycg.shot_vocab import prompt_section, vocab_tier
     determined = identity.get('identity_tier')
     if determined in ('L1', 'L2', 'L3', 'L4'):
         tier, known, source = determined, True, '已判定'
     else:
         tier, known = cached_identity_tier(identity, config)
         source = '来自缓存'
+    if character_lora_matching_enabled(config):
+        column = tier if known else 'L1/L2 保守档'
+        note = (f'层级 {tier}（{source}）' if known else '层级未知，按保守档（L1/L2 较保守的组合）')
+    else:
+        column = 'L2'
+        note = (f'层级 {tier}（{source}）' if known else '层级未知')
+        note += '；取档按 L2 一列（角色 LoRA 关闭，不读 L1 一列）'
     return {'character': identity.get('character_tag') or identity.get('input_name'),
             'locked': identity.get('status') == 'locked',
             'outfit_tags': [item['tag'] for item in identity.get('default_outfit_tags', [])],
             'outfit_rule': OUTFIT_RULE,
             'tier': tier if known else None,
             'tier_known': known,
-            'tier_note': (f'层级 {tier}（{source}）' if known else '层级未知，按保守档（L1/L2 较保守的组合）'),
+            'vocab_column': column,
+            'tier_note': note,
             'vocab': prompt_section(tier if known else None, config),
             'collision_notes': collision_notes(config)}
 

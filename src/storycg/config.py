@@ -26,8 +26,17 @@ def load_config(path: str | Path) -> dict:
         width, height = config["resolutions"][framing]
         if width <= 0 or height <= 0 or width % 64 or height % 64:
             raise ValueError(f"invalid SDXL resolution for {framing}: {width}x{height}")
-    if len(config["style_loras"]) != 2:
-        raise ValueError("exactly two style LoRAs are required")
+    if not isinstance(config["style_loras"], list):
+        raise ValueError("style_loras must be a list; an empty list means no style LoRA (V2-20)")
     if config["budget"]["max_images_per_job"] < 1:
         raise ValueError("max_images_per_job must be positive")
     return config
+
+
+def character_lora_matching_enabled(config: dict | None) -> bool:
+    """Whether dedicated character LoRAs are matched and may yield L1 (V2-20, TASK-v2 §10.4).
+
+    Off by default: no character LoRA is matched, L1 is never produced and the L1 vocabulary
+    column is not read. Turning it back on is a config change only.
+    """
+    return bool((config or {}).get("character_lora_matching", False))

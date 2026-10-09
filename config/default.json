@@ -22,18 +22,7 @@
     ]
   },
   "checkpoint": "waiIllustriousSDXL_v170.safetensors",
-  "style_loras": [
-    {
-      "name": "Iwao178.safetensors",
-      "strength_model": 0.4,
-      "strength_clip": 0.4
-    },
-    {
-      "name": "akaimelon.safetensors",
-      "strength_model": 0.3,
-      "strength_clip": 0.3
-    }
-  ],
+  "style_loras": [],
   "positive_prefix": "masterpiece, best quality, safe, sfw",
   "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
   "sampler": {
@@ -233,6 +222,7 @@
       "wide_shot"
     ]
   },
+  "character_lora_matching": false,
   "style_file": "style.json",
   "portrait": {
     "framing": "full",

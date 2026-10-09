@@ -46,17 +46,23 @@ def model_identity(client, folder, name):
 
 
 def model_fingerprint(identity, config, client):
-    """Key inputs: character tag, checkpoint {name, size} and character LoRA {name, size}.
+    """Key inputs: character tag, checkpoint {name, size}, character LoRA {name, size} and the
+    style LoRA set (V2-20): {name, size, strength_model, strength_clip} per style LoRA, in
+    config order. An empty style list is part of the key too.
 
-    Both names and sizes come from the inventory response of this run. `modified` is
+    Names and sizes come from the inventory response of this run. `modified` is
     deliberately absent: copying a file changes it without changing the model.
     """
     character = identity.get('character_tag')
     if not character: raise ModelIdentityUnavailable('canonical character tag unavailable')
     lora = identity.get('lora')
+    style = [{**model_identity(client, 'loras', item['name']),
+              'strength_model': item['strength_model'], 'strength_clip': item['strength_clip']}
+             for item in config.get('style_loras', [])]
     return {'character': character,
             'checkpoint': model_identity(client, 'checkpoints', config['checkpoint']),
-            'lora': model_identity(client, 'loras', lora['name']) if lora else ''}
+            'lora': model_identity(client, 'loras', lora['name']) if lora else '',
+            'style_loras': style}
 
 
 def cache_key(fingerprint):

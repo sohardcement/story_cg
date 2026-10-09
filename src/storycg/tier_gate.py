@@ -4,6 +4,7 @@ import json
 import httpx
 from pathlib import Path
 from storycg import tiers as frozen
+from storycg.config import character_lora_matching_enabled
 from storycg.state import save_json_atomic
 
 
@@ -80,20 +81,24 @@ def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
     try:
         # Establish the checkpoint identity before doing extra inventory work.
         model_fingerprint({**identity, 'lora': None}, config, client)
-        inventory = kwargs.get('inventory')
-        if inventory is None:
-            from storycg.identity import BASE_URL, USER_AGENT
-            reference = kwargs.get('reference_client')
-            if reference is None:
-                with httpx.Client(base_url=BASE_URL, timeout=30, trust_env=False,
-                                  headers={'User-Agent': USER_AGENT}) as owned:
-                    inventory = frozen.live_inventory(config, client, owned, root)
-            else:
-                inventory = frozen.live_inventory(config, client, reference, root)
-        kwargs = {**kwargs, 'inventory': inventory}
-        match = frozen.match_character_loras(identity['character_tag'], inventory['names'],
-                    inventory['metadata'], character_tags=inventory['character_tags'])
-        current = {**identity, 'lora': match['selected']}
+        if character_lora_matching_enabled(config):
+            inventory = kwargs.get('inventory')
+            if inventory is None:
+                from storycg.identity import BASE_URL, USER_AGENT
+                reference = kwargs.get('reference_client')
+                if reference is None:
+                    with httpx.Client(base_url=BASE_URL, timeout=30, trust_env=False,
+                                      headers={'User-Agent': USER_AGENT}) as owned:
+                        inventory = frozen.live_inventory(config, client, owned, root)
+                else:
+                    inventory = frozen.live_inventory(config, client, reference, root)
+            kwargs = {**kwargs, 'inventory': inventory}
+            selected = frozen.match_character_loras(identity['character_tag'], inventory['names'],
+                    inventory['metadata'], character_tags=inventory['character_tags'])['selected']
+        else:
+            # V2-20: no LoRA inventory is read and no character LoRA is selected.
+            selected = None
+        current = {**identity, 'lora': selected}
         fingerprint = model_fingerprint(current, config, client)
     except ModelIdentityUnavailable as exc:
         save_json_atomic(root/'tier/cache-status.json', {'status': 'unavailable', 'reason': str(exc)})

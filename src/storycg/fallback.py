@@ -59,7 +59,8 @@ def _injected_workflow(workflow,record):
             workflow['7']['inputs']['latent_image']==['6',0] and
             workflow['7']['inputs']['denoise']==1 and
             workflow.get('6',{}).get('class_type')=='EmptyLatentImage' and
-            len([n for n in workflow.values() if n.get('class_type')=='LoraLoader'])==2)
+            'style_lora_names' in record and
+            len([n for n in workflow.values() if n.get('class_type')=='LoraLoader'])==len(record['style_lora_names']))
 
 
 def compare_injected(root,identity,tests,refs,reliability,vlm):
