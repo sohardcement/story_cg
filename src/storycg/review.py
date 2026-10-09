@@ -15,6 +15,7 @@ import httpx
 from jsonschema import Draft202012Validator
 from PIL import Image, ImageOps
 
+from storycg.closed_eyes import drop_eye_colour_check, mark_eye_colour_not_applicable
 from storycg.state import save_json_atomic
 
 TEXT = {'type': 'string', 'minLength': 1}
@@ -418,7 +419,8 @@ def face_pair(reference, target, output):
 def result_statuses(result):
     if result['status'] != 'pass':
         return ['fail']
-    return [item['status'] for item in result['data'].values()]
+    # V2-14: not_applicable items are neither pass nor fail; they never decide the group.
+    return [item['status'] for item in result['data'].values() if item.get('status') != 'not_applicable']
 
 
 BBOX_SCHEMA = object_schema({
@@ -528,7 +530,11 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                 face_pair(reference_face if portrait else job_dir / report['faces'][0]['path'],
                           job_dir / face['path'], pair)
                 compare_paths.append(pair)
+            # V2-14 rework 2 (D58): a closed-eye shot requests no eye colour in the delivery-time review either.
+            eyes_not_applicable = drop_eye_colour_check(checks, entry['shot'], config)
             result = audit_consistency(vlm, compare_paths, checks, config, f'consistency_{number:02d}', reference_note)
+            if eyes_not_applicable:
+                mark_eye_colour_not_applicable(result)
             if pair:
                 result['face_pair'] = str(pair.relative_to(job_dir))
             from storycg import review_v3

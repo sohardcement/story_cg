@@ -360,6 +360,8 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
     before=[*comparison_findings(slot['best_audit']),*before_neighbors];after=[*comparison_findings(audited),*adjacent]
     better=candidate_improved(before,after) and rec.get("boundary_check",{"passed":True})["passed"]
+    from storycg.cycle import reliable_regressions
+    regressions=reliable_regressions([person_findings(r) for r in before],[person_findings(r) for r in after])
     if decision['problem']=='protagonist_count':
         recheck=audited.get('detection_items',{}).get('protagonist_count',{})
         better=better and recheck.get('status')=='ok'
@@ -371,7 +373,8 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
                 'reliable_failure_vector_before':list(reliable_failure_vector(before)),
                 'reliable_failure_vector_after':list(reliable_failure_vector(after)),
                 'failure_tiers':list(REPAIR_FAILURE_TIER_NAMES),
-                'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
+                'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after),
+                'reliable_regressions':regressions})
     key=f'shot{number:02d}_cycle{pending["round"]}'
     record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
     if better:

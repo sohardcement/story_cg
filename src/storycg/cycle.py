@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
 from storycg import review
+from storycg.closed_eyes import requires_closed_eyes, drop_eye_colour_check, mark_eye_colour_not_applicable
 from storycg.state import load_state, save_json_atomic
 from storycg.reference import digest
 from storycg.editing import EDIT_SCHEMA, state_descriptions, grounded_instruction
@@ -160,8 +161,38 @@ def validate_problem(problem,audit,narrative=False):
     if problem not in observed:raise ValueError('diagnosis problem does not match observed failures')
 
 
+def regression_records(before,after):
+    """V2-14 (返工 1): reliable pass -> minor/fail items, each with its tier and whether it vetoes.
+
+    A regression vetoes an improvement only when its tier is at or above the decisive tier, the first
+    failure-vector position that changed (D29: count > identity > outfit > action/composition). A lower-tier
+    regression never vetoes a higher-tier fix, as with not_visible in candidate_improved.
+    """
+    old_vector=reliable_failure_vector(before);new_vector=reliable_failure_vector(after)
+    decisive=next((i for i,(old,new) in enumerate(zip(old_vector,new_vector)) if old!=new),None)
+    records=[]
+    for old,new in zip(before,after):
+        for key,item in new.get('data',{}).items():
+            prior=old.get('data',{}).get(key)
+            if (isinstance(item,dict) and isinstance(prior,dict) and prior.get('status')=='pass'
+                    and item.get('reliability')=='reliable' and item.get('status') in ('minor','fail')):
+                tier=failure_tier(key)
+                records.append({'item':key,'from':'pass','to':item['status'],
+                    'tier':REPAIR_FAILURE_TIER_NAMES[tier],
+                    'decisive_tier':None if decisive is None else REPAIR_FAILURE_TIER_NAMES[decisive],
+                    'vetoes':decisive is not None and tier<=decisive})
+    return records
+
+
+def reliable_regressions(before,after):
+    """Readable form of regression_records, each marked as vetoing or not."""
+    return [f"{r['item']}: {r['from']} → {r['to']}（可靠项退化，{'否决改善' if r['vetoes'] else '不否决'}）"
+            for r in regression_records(before,after)]
+
+
 def candidate_improved(before,after):
     if not improved(before,after):return False
+    if any(record['vetoes'] for record in regression_records(before,after)):return False
     old_vector=reliable_failure_vector(before);new_vector=reliable_failure_vector(after)
     decisive=next(i for i,(old,new) in enumerate(zip(old_vector,new_vector)) if old!=new)
     for old,new in zip(before,after):
@@ -279,6 +310,15 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
     return decision
 
 
+def consistency_review(vlm,paths,identity,entry,config,purpose):
+    """Identity/outfit consistency review. V2-14 (D58): a closed-eye shot has no eye colour to judge."""
+    checks=review.identity_checklist(identity,entry['outfit'])
+    eyes_not_applicable=drop_eye_colour_check(checks,entry['shot'],config)
+    consistency=review.audit_consistency(vlm,paths,checks,config,purpose)
+    if eyes_not_applicable:mark_eye_colour_not_applicable(consistency)
+    return consistency
+
+
 def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
     path=root/'cycle_artifacts'/f'{label}.json'
     if path.exists():
@@ -301,7 +341,7 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
         if ref_face:
             review.face_pair(ref_path,face_path,pair);paths.append(pair)
     detection_items=audit_detection(source,identity,entry,reference_path=paths[0], review_config=config)
-    consistency=review.audit_consistency(vlm,paths,review.identity_checklist(identity,entry['outfit']),config,label+'_identity_outfit')
+    consistency=consistency_review(vlm,paths,identity,entry,config,label+'_identity_outfit')
     # Use the same supplementary reviewer as delivery before selecting a repair.
     # Otherwise a reliable detailed clothing failure first appears after the loop.
     from storycg import review_v3
