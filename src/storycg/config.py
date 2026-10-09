@@ -40,3 +40,33 @@ def character_lora_matching_enabled(config: dict | None) -> bool:
     column is not read. Turning it back on is a config change only.
     """
     return bool((config or {}).get("character_lora_matching", False))
+
+
+DELIVERY_MODES = ("candidates", "repair")
+
+
+def delivery_mode(config: dict | None) -> str:
+    """V2-21 (TASK-v2 §10.3): "candidates" (default: 3 candidates per shot, screen, pick one) or
+    "repair" (the legacy repair cycle, kept behind this switch)."""
+    value = (config or {}).get("delivery_mode", "candidates")
+    if value not in DELIVERY_MODES:
+        raise ValueError(f"delivery_mode must be one of {DELIVERY_MODES}")
+    return value
+
+
+def portrait_mode(config: dict | None) -> str:
+    """"single": the portrait is used once, its audit is only recorded (default in candidate mode);
+    "gated": the legacy D7 gate with Qwen repairs. Defaults follow delivery_mode."""
+    default = "single" if delivery_mode(config) == "candidates" else "gated"
+    value = (config or {}).get("portrait_mode", default)
+    if value not in ("single", "gated"):
+        raise ValueError("portrait_mode must be 'single' or 'gated'")
+    return value
+
+
+def candidates_per_shot(config: dict | None) -> int:
+    value = (config or {}).get("candidates_per_shot", 3)
+    if not isinstance(value, int) or value < 1:
+        raise ValueError("candidates_per_shot must be a positive integer")
+    return value
+

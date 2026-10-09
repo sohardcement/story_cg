@@ -191,7 +191,8 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
 
 def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
                  framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None,
-                 dropped_scene_tags: list | None = None, indoor_negative: dict | None = None) -> dict:
+                 dropped_scene_tags: list | None = None, indoor_negative: dict | None = None,
+                 seed: int | None = None, candidate: int | None = None) -> dict:
     if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job image budget exhausted")
     if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
@@ -200,7 +201,8 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
                               if a["shot_id"] == shot_id), default=0)
     prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number,
                          root=state["config"].get("comfy_prefix_root", ""))
-    seed = state["config"].get("generation_seed")
+    if seed is None:  # V2-21: candidates pass their own seed
+        seed = state["config"].get("generation_seed")
     if seed is None:
         seed = secrets.randbits(63)
     if not isinstance(seed, int) or not 0 <= seed < 2**64:
@@ -221,6 +223,8 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         "dropped_scene_tags": list(dropped_scene_tags or []),
         # V2-18 (D60): the indoor-precipitation negatives added to this shot, and the tags skipped with a reason.
         "indoor_precipitation_negative": indoor_negative,
+        # V2-21: candidate number within the shot (None for ordinary and repair attempts).
+        "candidate": candidate,
     }
     state["attempts"].append(attempt)
     _save(job_dir, state)
@@ -284,6 +288,36 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
         attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags, indoor_negative=indoor_negative)
         _process(job_dir, state, attempt, client, recovering=False)
         _retry_if_failed(job_dir, state, attempt, client)
+        return state
+
+
+def run_candidate(job_dir: str | Path, shot_id: str, candidate: int, seed: int, positive_tags: str, framing: str,
+                  config: dict, client, *, negative_prompt: str | None = None,
+                  generation_reference: dict | None = None, dropped_scene_tags: list | None = None,
+                  indoor_negative: dict | None = None) -> dict:
+    """V2-21: one candidate image for a shot, with its own seed. Idempotent per (shot, candidate)."""
+    job_dir = Path(job_dir)
+    job_id = job_dir.name
+    make_prefix(job_id, shot_id, 1, root=config.get("comfy_prefix_root", ""))
+    with _job_lock(job_dir):
+        state_path = job_dir / "state.json"
+        if state_path.exists():
+            state = load_state(job_dir)
+            if state["job_id"] != job_id:
+                raise ValueError("job directory and saved job ID differ")
+        else:
+            state = {"schema_version": 1, "job_id": job_id, "config": config,
+                     "created_at": _now(), "attempts": []}
+        matching = [a for a in state["attempts"] if a["shot_id"] == shot_id and a.get("candidate") == candidate]
+        if matching:
+            attempt = matching[-1]
+            if attempt["status"] not in ("completed", "failed"):
+                _process(job_dir, state, attempt, client, recovering=True)
+            return state
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt,
+                               generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags,
+                               indoor_negative=indoor_negative, seed=seed, candidate=candidate)
+        _process(job_dir, state, attempt, client, recovering=False)
         return state
 
 

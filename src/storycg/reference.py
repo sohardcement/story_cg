@@ -166,12 +166,30 @@ def portrait_repair_instruction(identity, result):
     return ' '.join(instructions),edits
 
 
+def _finish_single(root, key, identity, record, cache_dir):
+    """V2-21 (TASK-v2 §10.3 a): the portrait is used as is; the audit result is recorded, never a veto.
+
+    `record` is one attempt entry as ensure_portrait writes it: {'attempt', 'image' (the ComfyUI image,
+    path relative to portrait/), 'status', 'conclusion', 'face' (path relative to the job), ...}.
+    """
+    if not record.get('face'):raise ValueError('portrait has no localized face; IPAdapter reference needs it')
+    save_json_atomic(root/'portrait.json',{'status':'pass','gate_policy':'single_no_gate','raw_status':record['status'],
+        'raw_conclusion':record['conclusion'],'gate_notes':['定妆图只出 1 张，审核结论只记录，不否决、不修复（TASK-v2 §10.3 a）'],
+        'cache_key':key,'identity_hash':hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest(),
+        'source_task':str(root),'cache_hit':False,
+        'image':{**record['image'],'path':'portrait/'+record['image']['path']},
+        'face':record['face'],'audit_file':'portrait_attempts.json','approved_attempt':record['attempt']})
+    store_portrait(root,cache_dir)
+    return require_portrait(root)
+
+
 def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portrait_cache', vlm=None):
     import copy
     from storycg.runner import run_gen_one
     from storycg.review import VisionClient
     from storycg.portrait_gate import gate_accepts
     from storycg.controls import upload_reference
+    from storycg.config import portrait_mode
     root=Path(job_dir).resolve();root.mkdir(parents=True,exist_ok=True)
     key=cache_key(identity,config)
     prior={}
@@ -194,6 +212,10 @@ def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portra
     attempts=json.loads(path.read_text()) if path.exists() else []
     try:
         while True:
+            if attempts and portrait_mode(config)=='single':
+                # V2-21 rework 2: single mode adopts the last completed attempt on every path (fresh or
+                # resumed); no gate, no instruction edit, no new submission.
+                return _finish_single(root,key,identity,attempts[-1],cache_dir)
             if attempts:
                 result=attempts[-1]
                 accepted,notes=gate_accepts(result)
@@ -234,6 +256,8 @@ def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portra
                 diagnosis['result']={'status':result['status'],'conclusion':result['conclusion'],'audit':result['audit']}
                 record['diagnostic_repair']=diagnosis
             attempts.append(record);save_json_atomic(path,attempts)
+            if portrait_mode(config)=='single':
+                return _finish_single(root,key,identity,record,cache_dir)
         save_json_atomic(root/'portrait.json',{'status':'fail','cache_key':key,'source_task':str(root),'attempts':len(attempts),
             'reason':'portrait did not pass every required check; repair cap exhausted or no grounded repair target'})
         raise ValueError('portrait audit failed; story generation stopped')

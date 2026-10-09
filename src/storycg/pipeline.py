@@ -279,6 +279,11 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     control = config['identity_control']
     face_ref = (portrait_reference(job_dir, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'])
                 if control['mechanism'] == 'ipadapter' else None)
+    from storycg.config import delivery_mode
+    if delivery_mode(config) == 'candidates':
+        # V2-21 (TASK-v2 §10.3): candidates, screening, selection; no repair loop and no Qwen layout.
+        from storycg.candidates import run_candidate_delivery
+        return run_candidate_delivery(job_dir, config, client, identity, board, face_ref)
     full_ref = (portrait_reference(job_dir, portrait, 'image', client, 'qwen_edit', 1.0)
                 if config['layout_mode'] == 'qwen' else None)
     state = None

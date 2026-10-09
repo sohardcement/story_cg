@@ -144,7 +144,8 @@ def check_resources(config):
         required.extend([('IPAdapterModelLoader', 'ipadapter_file', reference['ipadapter']),
                          ('CLIPVisionLoader', 'clip_name', reference['clip_vision'])])
         node_only.extend(('IPAdapterAdvanced', 'LoadImage'))
-    if config.get('layout_mode') == 'qwen' or config.get('repair_cycle_enabled'):
+    from storycg.config import delivery_mode
+    if config.get('layout_mode') == 'qwen' or (config.get('repair_cycle_enabled') and delivery_mode(config) == 'repair'):
         required.extend([('UnetLoaderGGUF', 'unet_name', reference['qwen_unet']),
                          ('LoraLoaderModelOnly', 'lora_name', reference['qwen_lightning']),
                          ('CLIPLoader', 'clip_name', reference['qwen_clip']),
@@ -344,6 +345,9 @@ def deliver(root):
         new_lines = [line for line in drop_lines if line not in existing.splitlines()]
         if new_lines:
             result.write_text(existing + '\n'.join(new_lines) + '\n')
+    # V2-21 rework 3: candidate sheet, its copy in delivery/, and the candidate section come last.
+    from storycg.candidates import publish_candidates
+    publish_candidates(root)
 
 
 def status(root):

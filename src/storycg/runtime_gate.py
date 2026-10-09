@@ -189,6 +189,9 @@ def deliver(root,cycle,config,client):
         manifest=read(root/'manifest.json');manifest['review_gate']=gate
         save_json_atomic(root/'manifest.json',manifest)
         render_delivery(root,cycle['final_review'],gate,config)
+    # V2-21 rework 3: every rewrite of result.md keeps the candidate section; a no-op for repair jobs.
+    from storycg.candidates import publish_candidates
+    publish_candidates(root)
     return state
 
 
