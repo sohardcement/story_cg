@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from storycg import cycle as frozen
 from storycg import extra_part
 from storycg.budget import Budget, CycleClient
-from storycg.config import candidates_per_shot
+from storycg.config import candidates_per_shot, pairwise_enabled
 from storycg.review import load_reliability, reliability_key
 from storycg.v1_scope import is_prop_item
 from storycg.state import load_state, save_json_atomic
@@ -187,6 +187,10 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
                 slot['rounds'] = 2
                 _run_round(*args, range(per + 1, 2 * per + 1), 2, face_ref)
             chosen, reason = pick(slot['candidates'])
+            if chosen is not None and pairwise_enabled(config):
+                # V2-23 (D65): the side-by-side pick may replace the ranking result; it never fails the shot.
+                from storycg.pairwise import resolve
+                chosen, reason, slot['pairwise'] = resolve(root, number, entry, slot['candidates'], chosen, reason, vlm)
             slot['selected'] = chosen['candidate'] if chosen else None
             slot['reason'] = reason
             _save_store(root, store)

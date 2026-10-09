@@ -225,6 +225,7 @@
   "character_lora_matching": false,
   "delivery_mode": "candidates",
   "candidates_per_shot": 3,
+  "pairwise_pick": true,
   "portrait_mode": "single",
   "style_file": "style.json",
   "portrait": {

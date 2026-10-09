@@ -70,3 +70,8 @@ def candidates_per_shot(config: dict | None) -> int:
         raise ValueError("candidates_per_shot must be a positive integer")
     return value
 
+
+def pairwise_enabled(config: dict | None) -> bool:
+    """V2-23 (D65): side-by-side pick between tied top candidates. Off gives the V2-21 behaviour."""
+    return bool((config or {}).get("pairwise_pick", True))
+
