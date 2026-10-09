@@ -5,7 +5,7 @@ import math
 import shutil
 from pathlib import Path, PurePosixPath
 from PIL import Image, ImageDraw, ImageFilter
-from storycg.assembly import assemble_prompt
+from storycg.assembly import assemble_prompt, full_negative_prompt
 from storycg.controls import portrait_reference, upload_reference
 from storycg.reference import digest, edit_instruction
 from storycg.runner import _job_lock, _new_attempt, _process, _save, _now
@@ -174,7 +174,8 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
         face_settings={**settings.get('inpaint',{}),**settings['face_detail']}
         rec['settings']=settings
         parts=assemble_prompt(identity,entry,props=board['props'],config=config)
-        negative=None
+        # V2-19: repair attempts carry the same full negative as the first round (qwen edit workflows ignore it).
+        negative=full_negative_prompt(config,parts)
         face=portrait_reference(root,portrait,'face',client,'ipadapter',config['identity_control']['ipadapter_strength'])
         if seed is not None: config['generation_seed']=seed
         if primitive=='face_detail' and settings['face_detail'].get('cfg') is not None: config['sampler']['cfg']=settings['face_detail']['cfg']
@@ -227,7 +228,7 @@ def repair(root, shot_number, primitive, diagnosis, client, *, bbox=None, region
             if prior is None:
                 # Build through the same runner API, then persist the full repair workflow before POST.
                 old=state['config'];state['config']=config
-                try: a=_new_attempt(root,state,stage_id,text,framing,negative,generation_reference=ref,dropped_scene_tags=parts['dropped_scene_tags'])
+                try: a=_new_attempt(root,state,stage_id,text,framing,negative,generation_reference=ref,dropped_scene_tags=parts['dropped_scene_tags'],indoor_negative=parts['indoor_precipitation_negative'])
                 finally: state['config']=old
                 a['repair_key']=key;a['repair_stage']=kind;a['repair_diagnosis']=rec['diagnosis']
                 if primitive=='seed':

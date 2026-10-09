@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from storycg.assembly import assemble_prompt
+from storycg.assembly import assemble_prompt, full_negative_prompt
 from storycg.config import load_config
 from storycg.identity import resolve_identity
 from storycg.planning import plan_story
@@ -287,7 +287,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         parts = assemble_prompt(identity, entry, config=config,
                                 **({'props': board['props']} if board.get('props') else {}))
         shot_config = copy.deepcopy(config)
-        shot_config["negative_prompt"] = ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
+        shot_config["negative_prompt"] = full_negative_prompt(config, parts)
         shot_id = f'shot{entry["number"]:02d}'
         relation = face_ref
         if full_ref:

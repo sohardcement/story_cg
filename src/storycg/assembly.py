@@ -9,6 +9,14 @@ def spaces(text):
     return text.replace('_', ' ')
 
 
+def full_negative_prompt(config, parts):
+    """The negative prompt a shot is submitted with: config negative, then the assembled shot negatives.
+
+    Shared by the first round (pipeline) and the repair attempts (repairs), so a repair cannot drop tags (V2-19).
+    """
+    return ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
+
+
 def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> dict:
     config = config or load_config('config/default.json')
     if 'pose' in entry['shot']:
