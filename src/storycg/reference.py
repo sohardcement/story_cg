@@ -77,6 +77,7 @@ def reuse_l3_portrait(job_dir, identity, config, *, search_roots=None):
                 record=json.loads(path.read_text());approved=record.get('approved_identity')
                 if (record.get('gate_policy')!='L3 reliable comparison' or not approved or
                     approved.get('identity_tier')!='L3' or
+                    approved.get('tier_model_fingerprint')!=identity.get('tier_model_fingerprint') or
                     any(approved.get(k)!=identity.get(k) for k in fields) or
                     record.get('cache_key')!=cache_key(approved,config) or
                     not current_l3_approval(approved)):continue
@@ -165,20 +166,51 @@ def portrait_repair_instruction(identity, result):
     return ' '.join(instructions),edits
 
 
-def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portrait_cache', vlm=None):
+def _finish_single(root, key, identity, record, cache_dir):
+    """V2-21 (TASK-v2 §10.3 a): the portrait is used as is; the audit result is recorded, never a veto.
+
+    `record` is one attempt entry as ensure_portrait writes it: {'attempt', 'image' (the ComfyUI image,
+    path relative to portrait/), 'status', 'conclusion', 'face' (path relative to the job), ...}.
+    """
+    if not record.get('face'):raise ValueError('portrait has no localized face; IPAdapter reference needs it')
+    save_json_atomic(root/'portrait.json',{'status':'pass','gate_policy':'single_no_gate','raw_status':record['status'],
+        'raw_conclusion':record['conclusion'],'gate_notes':['定妆图只出 1 张，审核结论只记录，不否决、不修复（TASK-v2 §10.3 a）'],
+        'cache_key':key,'identity_hash':hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest(),
+        'source_task':str(root),'cache_hit':False,
+        'image':{**record['image'],'path':'portrait/'+record['image']['path']},
+        'face':record['face'],'audit_file':'portrait_attempts.json','approved_attempt':record['attempt']})
+    store_portrait(root,cache_dir)
+    return require_portrait(root)
+
+
+def portrait_redo_seed(config, job_id, number):
+    """V2-24: seed of a redone portrait (attempt `number`); a function of the job's base seed and the attempt."""
+    base = config.get('generation_seed')
+    if base is None:
+        base = int(hashlib.sha256(job_id.encode()).hexdigest()[:15], 16)
+    digest = hashlib.sha256(f'{int(base)}/portrait/{number}'.encode()).digest()
+    return int.from_bytes(digest[:8], 'big') & ((1 << 63) - 1)
+
+
+def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portrait_cache', vlm=None, redo=False):
+    """`redo` (V2-24, single mode only): generate one more portrait with a new deterministic seed and make it
+    the approved one. It skips the reuse cache and the completed-portrait shortcut."""
     import copy
     from storycg.runner import run_gen_one
     from storycg.review import VisionClient
     from storycg.portrait_gate import gate_accepts
     from storycg.controls import upload_reference
+    from storycg.config import portrait_mode
     root=Path(job_dir).resolve();root.mkdir(parents=True,exist_ok=True)
+    if redo and portrait_mode(config)!='single':
+        raise ValueError('redo_portrait requires the single portrait mode')
     key=cache_key(identity,config)
     prior={}
     if (root/'portrait.json').exists():
         prior=json.loads((root/'portrait.json').read_text())
         if prior.get('cache_key')!=key:raise ValueError('portrait identity/style cache mismatch')
-        if prior.get('status')=='pass':return require_portrait(root)
-    cached=reuse_portrait(root,cache_dir,key)
+        if prior.get('status')=='pass' and not redo:return require_portrait(root)
+    cached=None if redo else reuse_portrait(root,cache_dir,key)
     if cached:return cached
     repair_settings=json.loads((Path(__file__).resolve().parents[2]/'config/repairs.json').read_text())
     limit=repair_settings['portrait']['max_repairs']
@@ -191,9 +223,20 @@ def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portra
     cfg['budget']['max_images_per_job']=min(limit+1,config['budget']['max_images_per_job'])
     path=root/'portrait_attempts.json'
     attempts=json.loads(path.read_text()) if path.exists() else []
+    if redo and not attempts:raise ValueError('no portrait attempt to redo')
+    pending_redo=redo
     try:
         while True:
-            if attempts:
+            if pending_redo:
+                # V2-24: a fresh attempt with its own seed; the audit is recorded, never a veto (single mode).
+                number=len(attempts)+1;diagnosis=None
+                state=run_gen_one(root/'portrait',f'portrait{number}',portrait_prompt(identity,cfg),cfg['portrait']['framing'],cfg,client,
+                                  seed=portrait_redo_seed(config,root.name,number))
+            elif attempts and portrait_mode(config)=='single':
+                # V2-21 rework 2: single mode adopts the last completed attempt on every path (fresh or
+                # resumed); no gate, no instruction edit, no new submission.
+                return _finish_single(root,key,identity,attempts[-1],cache_dir)
+            elif attempts:
                 result=attempts[-1]
                 accepted,notes=gate_accepts(result)
                 if accepted:
@@ -225,6 +268,7 @@ def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portra
             else:
                 number=1;diagnosis=None
                 state=run_gen_one(root/'portrait','portrait1',portrait_prompt(identity,cfg),cfg['portrait']['framing'],cfg,client)
+            pending_redo=False
             a=state['attempts'][-1]
             if a['status']!='completed':raise ValueError('portrait generation did not complete')
             result=audit_portrait(root,root/'portrait'/a['image']['path'],identity,cfg,vlm,number)
@@ -233,6 +277,8 @@ def ensure_portrait(job_dir, identity, config, client, *, cache_dir='runs/portra
                 diagnosis['result']={'status':result['status'],'conclusion':result['conclusion'],'audit':result['audit']}
                 record['diagnostic_repair']=diagnosis
             attempts.append(record);save_json_atomic(path,attempts)
+            if portrait_mode(config)=='single':
+                return _finish_single(root,key,identity,record,cache_dir)
         save_json_atomic(root/'portrait.json',{'status':'fail','cache_key':key,'source_task':str(root),'attempts':len(attempts),
             'reason':'portrait did not pass every required check; repair cap exhausted or no grounded repair target'})
         raise ValueError('portrait audit failed; story generation stopped')

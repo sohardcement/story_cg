@@ -6,17 +6,7 @@
       1024,
       1024
     ],
-    "feather_pixels": 12
-  },
-  "inpaint": {
-    "denoise": 0.75,
-    "resolution": [
-      1024,
-      1024
-    ],
     "feather_pixels": 12,
-    "max_area_fraction": 0.6,
-    "context_margin": 0.12,
     "boundary_band": 4,
     "boundary_threshold": 24,
     "seam": {

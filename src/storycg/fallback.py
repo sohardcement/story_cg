@@ -59,7 +59,8 @@ def _injected_workflow(workflow,record):
             workflow['7']['inputs']['latent_image']==['6',0] and
             workflow['7']['inputs']['denoise']==1 and
             workflow.get('6',{}).get('class_type')=='EmptyLatentImage' and
-            len([n for n in workflow.values() if n.get('class_type')=='LoraLoader'])==2)
+            'style_lora_names' in record and
+            len([n for n in workflow.values() if n.get('class_type')=='LoraLoader'])==len(record['style_lora_names']))
 
 
 def compare_injected(root,identity,tests,refs,reliability,vlm):
@@ -111,7 +112,18 @@ def current_l3_approval(approved):
     return l3_comparison_passes({'identity_tier':gate['identity_tier'],'tier_evidence':gate})
 
 
-def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None):
+def l3_session(identity, references):
+    """Keep resume stable within one model fingerprint, separate changed bytes."""
+    from storycg.identity_enrichment import load_rules
+    session_input={'comparison_version':load_rules()['tier_review']['version'],
+        'references':[r['sha256'] for r in references], 'identity_block':identity['identity_block'],
+        'outfit_tags':[r['tag'] for r in identity['default_outfit_tags']]}
+    if identity.get('tier_model_fingerprint'):
+        session_input['model_fingerprint']=identity['tier_model_fingerprint']
+    return Path('l3')/hashlib.sha256(json.dumps(session_input,sort_keys=True).encode()).hexdigest()[:16]
+
+
+def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None,force_probe=False):
     from storycg.identity_enrichment import load_rules
     from storycg.reference import cache_key,require_portrait
     from storycg.controls import upload_reference
@@ -121,7 +133,9 @@ def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None):
     if (root/'portrait.json').exists():
         record=json.loads((root/'portrait.json').read_text())
         approved=record.get('approved_identity')
-        if record.get('status')=='pass' and record.get('gate_policy')=='L3 reliable comparison' and approved and current_l3_approval(approved):
+        if (not force_probe and record.get('status')=='pass' and record.get('gate_policy')=='L3 reliable comparison'
+                and approved and approved.get('tier_model_fingerprint')==identity.get('tier_model_fingerprint')
+                and current_l3_approval(approved)):
             if any(approved.get(key)!=identity.get(key) for key in ('character_tag','work_tag','identity_block','outfit_block','appearance_tags','default_outfit_tags','default_outfit_selection')):
                 raise ValueError('approved L3 identity source mismatch')
             require_portrait(root)
@@ -145,9 +159,7 @@ def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None):
     if not any(row['item']!='outfit' and reliability.get('items',{}).get(row['item'],{}).get('status')=='reliable' for row in identity_checklist(identity)):
         return needs_user(root,identity,'缺少能可靠比对的来源外貌资料；无法验证参考注入结果')
     # The selected policy ranking is preserved. No visual cherry-picking.
-    session_input={'comparison_version':load_rules()['tier_review']['version'],'references':[r['sha256'] for r in refs],'identity_block':identity['identity_block'],
-                   'outfit_tags':[r['tag'] for r in identity['default_outfit_tags']]}
-    session=Path('l3')/hashlib.sha256(json.dumps(session_input,sort_keys=True).encode()).hexdigest()[:16]
+    session=l3_session(identity,refs)
     copied=[]
     for r in refs:
         path=(reference_root/r['path']).resolve()
@@ -246,6 +258,15 @@ def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None):
         failed=sorted({r['tag'] for r in last.get('reliable',[]) if not r.get('passed')})
         failed+=sorted({r['tag'] for r in last.get('vetoes',[])})
         failed+=sorted({r['tag'] for r in last.get('outfit_comparisons',[]) if r.get('reliability')=='reliable' and any(x.get('applicable') and x.get('status')!='pass' for x in r['comparisons'])})
+        # Only exhausted, available failures establish model-specific L4 evidence.
+        if (len(attempts)==policy['max_attempts'] and
+                all(comparison_available(a['comparison']) and not l3_comparison_passes(a['comparison']) for a in attempts)):
+            terminal={'status':'exhausted','model_fingerprint':identity.get('tier_model_fingerprint'),
+                'session':str(session),'max_attempts':policy['max_attempts'],
+                'attempts_file':str(attempt_path.relative_to(root)),
+                'comparison_paths':[str(session/f'comparison-{a["number"]}.json') for a in attempts]}
+            identity.setdefault('tier_evidence',{})['l3_terminal']=terminal
+            save_json_atomic(root/session/'terminal.json',terminal)
         return needs_user(root,identity,'参考注入后仍无法还原关键特征：'+(', '.join(sorted(set(failed))) or '面部不可见或审核不可用'))
     except (ValueError,OSError,KeyError) as exc:
         return needs_user(root,identity,'参考注入验证不可用：'+str(exc))

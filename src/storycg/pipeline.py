@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from storycg.assembly import assemble_prompt
+from storycg.assembly import assemble_prompt, full_negative_prompt
 from storycg.config import load_config
 from storycg.identity import resolve_identity
 from storycg.planning import plan_story
@@ -116,7 +116,8 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
         if not matching:
             continue
         attempt = matching[-1]
-        parts = assemble_prompt(identity, entry, props=board["props"], config=config)
+        parts = assemble_prompt(identity, entry, config=config,
+                                **({'props': board['props']} if board.get('props') else {}))
         workflow = attempt["workflow"]
         images.append({"shot_id": shot_id, "attempt_number": attempt["attempt_number"],
                        "prompt_id": attempt["prompt_id"], "filename_prefix": attempt["filename_prefix"],
@@ -209,16 +210,26 @@ def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
     return review_path
 
 
+def tier_recheck_eligible(identity, config):
+    return (bool(config.get('tier_cache')) and identity.get('status')=='needs_user'
+            and identity.get('identity_tier')=='L4' and bool(identity.get('character_tag')))
+
+
 def run_story_job(job_dir: str | Path, config: dict, client,
-                  *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None) -> dict:
+                  *, review_dir: str | Path = "review", repair_diagnoses: dict | None = None,
+                  stop_after_portrait: bool = False, redo_portrait: bool = False) -> dict:
+    """V2-24: `stop_after_portrait` returns right after the portrait stage (status 'portrait_ready') so the
+    beats confirmation can show the portrait before any shot is generated; `redo_portrait` makes one more
+    portrait attempt (single mode) and stops the same way."""
     job_dir = Path(job_dir)
     if (job_dir/'cycle.json').exists():
         from storycg.runtime_gate import run_repair_cycle
         return run_repair_cycle(job_dir, load_state(job_dir)['config'], client)
     identity = resolve_job(job_dir)
-    if identity.get("status")=="needs_user":
+    recheck_tier = tier_recheck_eligible(identity, config)
+    if identity.get("status")=="needs_user" and not recheck_tier:
         return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[],"tier_evidence":identity.get("tier_evidence",{})}
-    if identity["status"] != "locked":
+    if identity["status"] != "locked" and not recheck_tier:
         raise ValueError("identity requires clarification before generation")
     if config.get("repair_cycle_enabled"):
         from storycg.budget import Budget
@@ -243,17 +254,24 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     from storycg.portrait_gate import recover_d7_portrait
     recovered_portrait=recover_d7_portrait(job_dir,identity,config)
     if config.get("repair_cycle_enabled"):gate.check()
+    portrait_kwargs = {"redo": True} if redo_portrait else {}
+    if redo_portrait:
+        recovered_portrait = None
     if config.get("repair_cycle_enabled"):
         portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
         try:
-            try:portrait=recovered_portrait or ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm)
+            try:portrait=recovered_portrait or ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm,**portrait_kwargs)
             except ValueError:
+                if redo_portrait: raise
                 portrait=recover_d7_portrait(job_dir,identity,config)
                 if portrait is None:raise
         finally:portrait_vlm.close()
     else:
-        portrait = ensure_portrait(job_dir, identity, config, client)
+        portrait = ensure_portrait(job_dir, identity, config, client, **portrait_kwargs)
     if config.get("repair_cycle_enabled"):gate.check()
+    if stop_after_portrait or redo_portrait:
+        return {"job_id": job_dir.name, "status": "portrait_ready", "needs_user": False, "reason": None,
+                "question": None, "attempts": [], "tier_evidence": identity.get("tier_evidence", {})}
     board = plan_job(job_dir, config)
     if (job_dir / "state.json").exists():
         config = load_state(job_dir)["config"]
@@ -272,19 +290,25 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     control = config['identity_control']
     face_ref = (portrait_reference(job_dir, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'])
                 if control['mechanism'] == 'ipadapter' else None)
+    from storycg.config import delivery_mode
+    if delivery_mode(config) == 'candidates':
+        # V2-21 (TASK-v2 §10.3): candidates, screening, selection; no repair loop and no Qwen layout.
+        from storycg.candidates import run_candidate_delivery
+        return run_candidate_delivery(job_dir, config, client, identity, board, face_ref)
     full_ref = (portrait_reference(job_dir, portrait, 'image', client, 'qwen_edit', 1.0)
                 if config['layout_mode'] == 'qwen' else None)
     state = None
     for entry in board["shots"]:
         if config.get("repair_cycle_enabled"):gate.check()
-        parts = assemble_prompt(identity, entry, props=board["props"], config=config)
+        parts = assemble_prompt(identity, entry, config=config,
+                                **({'props': board['props']} if board.get('props') else {}))
         shot_config = copy.deepcopy(config)
-        shot_config["negative_prompt"] = ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
+        shot_config["negative_prompt"] = full_negative_prompt(config, parts)
         shot_id = f'shot{entry["number"]:02d}'
         relation = face_ref
         if full_ref:
             layout_id = f'layout{entry["number"]:02d}'
-            state = run_gen_one(job_dir, layout_id, edit_instruction(entry, board['props']),
+            state = run_gen_one(job_dir, layout_id, edit_instruction(entry, board.get('props', [])),
                                 parts['framing'], config, client, generation_reference=full_ref)
             layout = next(a for a in reversed(state['attempts']) if a['shot_id'] == layout_id)
             if layout['status'] != 'completed':
@@ -296,7 +320,9 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         state = run_gen_one(job_dir, shot_id, parts['positive_tags'],
                             parts['framing'], config, client, negative_prompt=shot_config['negative_prompt'],
                             generation_reference=relation,
-                            repair_diagnosis=(repair_diagnoses or {}).get(str(entry['number'])))
+                            repair_diagnosis=(repair_diagnoses or {}).get(str(entry['number'])),
+                            dropped_scene_tags=parts['dropped_scene_tags'],
+                            indoor_negative=parts['indoor_precipitation_negative'])
         latest = next(a for a in reversed(state["attempts"])
                       if a["shot_id"] == f'shot{entry["number"]:02d}')
         if latest["status"] != "completed":
@@ -306,6 +332,9 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         if all(any(a["status"] == "completed" and a["shot_id"] == f'shot{entry["number"]:02d}'
                    for a in state["attempts"]) for entry in board["shots"]):
             make_contact_sheet(job_dir, review_dir)
+            if not config.get("repair_cycle_enabled"):
+                from storycg.shot_vocab import record_observations
+                record_observations(job_dir, config)
     if config.get("repair_cycle_enabled") and state is not None and (job_dir/"contact_sheet.jpg").exists():
         from storycg.runtime_gate import run_repair_cycle
         return run_repair_cycle(job_dir,config,client)
@@ -316,7 +345,7 @@ def resolve_and_validate_job(job_dir,config):
     from storycg.comfy import ComfyClient
     from storycg.tier_gate import ensure_identity_tier
     identity=resolve_job(job_dir)
-    if identity.get('status')!='locked':return identity
+    if identity.get('status')!='locked' and not tier_recheck_eligible(identity,config):return identity
     client=ComfyClient(config['comfyui_url'],config['http_timeout_seconds'])
     try:return ensure_identity_tier(job_dir,identity,config,client)
     finally:client.close()

@@ -40,9 +40,29 @@
       "relayout"
     ],
     "protagonist_count": [
+      "seed",
       "instruction_edit",
       "relayout"
+    ],
+    "extra_body_part": [
+      "seed"
     ]
+  },
+  "extra_body_part": {
+    "source": "V2-16 (D59). Prompt and schema taken from the V2-15 method M3 (reports/V2-15.md, vision_method.py). Calibration on 80 labelled delivered images: 5/6 positives found, 1 negative flagged (re-labelled uncertain by the supervisor); sample is small (6 positives).",
+    "prompt": "This image should show exactly one main character{subject_clause}. Look carefully for any body part that does NOT belong to the main character: an extra leg, arm, hand, head, hair mass or torso, or a partial second person, including a small cut-off piece at the frame edge. Ignore the main character's own legs, arms, hands, hair and clothing when they are attached to the main character's body, and ignore background objects. Set extra_part to true only if you can see such a part that is clearly not attached to the main character or is a second person. Give the location of the part (left, right, top, bottom, center, or none) and a short description. Respond with JSON only.",
+    "subject_clauses": {"1girl": ", a single woman", "1boy": ", a single man"},
+    "neutral_subject_clause": "",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extra_part", "location", "description"],
+      "properties": {
+        "extra_part": {"type": "boolean"},
+        "location": {"enum": ["left", "right", "top", "bottom", "center", "none"]},
+        "description": {"type": "string"}
+      }
+    }
   },
   "max_rounds_per_shot": 3,
   "max_images": 40,
@@ -63,6 +83,5 @@
   "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM.",
   "final_review_reserve_minutes": 8,
   "candidate_identity_regression": "reject new reliable hair_color/outfit fail even if total decreases",
-  "diagnosis_validation_retries": 1,
-  "inpaint_scope": "D10: detector face mask and non-subject person mask only; all other methods retain D6"
+  "diagnosis_validation_retries": 1
 }

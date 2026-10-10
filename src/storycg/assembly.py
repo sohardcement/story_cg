@@ -1,9 +1,20 @@
 """Deterministic tag-only prompts; human-readable state never enters conditioning."""
 from storycg.config import load_config
+from storycg.framing import framing_rule
+from storycg.prompt_rules import (companion_tags_for_shot, filter_scene_tags,
+                                  indoor_precipitation_negatives, negative_tag_list)
 
 
 def spaces(text):
     return text.replace('_', ' ')
+
+
+def full_negative_prompt(config, parts):
+    """The negative prompt a shot is submitted with: config negative, then the assembled shot negatives.
+
+    Shared by the first round (pipeline) and the repair attempts (repairs), so a repair cannot drop tags (V2-19).
+    """
+    return ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
 
 
 def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> dict:
@@ -16,35 +27,42 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
     if 'pose' in shot:
         from storycg.shot_contract import moment
         moment(shot, '$.shot')
-    registry = {p['id']: p for p in (props or [])}
-    prop_blocks, bindings = [], []
-    for ref in shot['key_props']:
-        prop = registry[ref['prop_id']]
-        description = ', '.join(spaces(t) for t in prop['description_tags'])
-        relations = ', '.join(spaces(t) for t in [*ref['relation_tags'], *ref['location_tags']])
-        # Keep each object's color/contact adjacent, rather than a global color soup.
-        prop_blocks.append(', '.join(filter(None, [description, relations])))
-        bindings.append({**ref, 'description_block': description, 'relation_block': relations})
     outfit_block = ', '.join(spaces(t) for t in outfit['tags'])
-    scene_block = ', '.join(spaces(t) for t in scene['tags'])
-    composition = [*config['framing_tags'][shot['framing']],
+    if config.get('scene_rules'):
+        kept_scene, dropped_scene = filter_scene_tags(shot['framing'], scene['tags'],
+                                                      shot.get('prop_tags', []), config)
+    else:
+        kept_scene, dropped_scene = scene['tags'], []
+    scene_block = ', '.join(spaces(t) for t in kept_scene)
+    composition = [*framing_rule(config, shot['framing'])['tags'],
                    *config['camera_tags'][shot['camera_angle']]]
-    # Model may redundantly repeat locked clothing/scene/object tags in shot.tags.
-    # Keep the identity block intact, and keep each prop description intact and adjacent to contact.
+    # Keep the identity block intact; avoid repeated clothing, scene and framing tags.
     supplied = {spaces(t).strip() for t in identity['identity_block'].split(',')}
-    supplied.update(spaces(t) for t in [*outfit['tags'], *scene['tags'], *composition])
-    supplied.update(spaces(t) for p in (props or []) for t in p['description_tags'])
+    supplied.update(spaces(t) for t in [*outfit['tags'], *kept_scene, *composition])
     action_tags = []
     for tag in shot['tags']:
         tag = spaces(tag)
         if tag not in supplied:
             action_tags.append(tag)
             supplied.add(tag)
+    for tag in companion_tags_for_shot(shot, config):
+        tag = spaces(tag)
+        if tag not in supplied:
+            action_tags.append(tag)
+            supplied.add(tag)
     if shot.get('reflection') is True:
         action_tags.append('reflection')
-    shot_block = ', '.join([*(spaces(t) for t in composition), *action_tags, *prop_blocks])
+    shot_block = ', '.join([*(spaces(t) for t in composition), *action_tags])
+    negative_tags = negative_tag_list(scene['negative_tags'],
+                                      config.get('framing_negative_tags', {}).get(shot['framing'], []),
+                                      config)
+    positive_tags = ', '.join([identity_block, outfit_block, scene_block, shot_block])
+    # V2-18 (D60): indoor precipitation adds ground-water negatives (same trigger as the V2-11 window).
+    indoor_negative = indoor_precipitation_negatives(scene['tags'], positive_tags, negative_tags, config)
+    negative_tags = [*negative_tags, *indoor_negative['added']]
     return {'identity_block': identity_block, 'outfit_block': outfit_block,
-            'scene_block': scene_block, 'shot_block': shot_block, 'prop_bindings': bindings,
-            'positive_tags': ', '.join([identity_block, outfit_block, scene_block, shot_block]),
-            'negative_tags': ', '.join(spaces(t) for t in [*scene['negative_tags'], *config.get('framing_negative_tags', {}).get(shot['framing'], [])]),
-            'framing': shot['framing']}
+            'scene_block': scene_block, 'shot_block': shot_block,
+            'positive_tags': positive_tags,
+            'negative_tags': ', '.join(spaces(t) for t in negative_tags),
+            'dropped_scene_tags': dropped_scene, 'framing': shot['framing'],
+            'indoor_precipitation_negative': indoor_negative}

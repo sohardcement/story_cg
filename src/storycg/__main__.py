@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
             and not (Path(argv[1]) / "agent.json").exists()
             and "--character" not in argv and "--story" not in argv):
         argv[0] = "run"
-    if argv and (argv[0] in ("make", "approve", "deliver", "_worker") or
+    if argv and (argv[0] in ("make", "approve", "deliver", "_worker", "compile", "beats-guide") or
                  (argv[0] in ("status", "resume") and len(argv) > 1 and
                   (Path(argv[1]) / "agent.json").exists())):
         from storycg.agent import main as agent_main

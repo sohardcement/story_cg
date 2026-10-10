@@ -1,7 +1,7 @@
 """P9-05 orchestration outside the frozen reviewer.
 
 The scheduling loop is derived from this repository's frozen cycle.py;
-Visual audits and repair primitives are reused; D24 filters runtime candidate metrics.
+Visual audits and repair primitives are reused. Legacy findings remain readable.
 Only detection findings routing and delivery gates differ. Raw results remain intact.
 """
 from storycg.cycle import *
@@ -34,9 +34,38 @@ def count_diagnosis_schema(entry):
         'shot':{'type':'null'},'target_shot':{'const':entry['number']}})
 
 
+def count_reseed_decision(root,number,audit,entry,slot,problem='protagonist_count'):
+    """Deterministic first repair for a reliable duplicate count (or an extra body part, V2-16): new seed."""
+    import secrets
+    if problem=='extra_body_part':
+        from storycg import extra_part
+        item=slot.get('best_audit',{}).get('consistency',{}).get('data',{}).get(extra_part.ITEM,{})
+        diagnosis=f"extra-body-part check positive at {item.get('location','unknown')}: {item.get('reason','')}"
+    else:
+        observation=slot.get('best_audit',{}).get('detection_items',{}).get('protagonist_count',{})
+        observed=observation.get('protagonist_count');allowed=observation.get('allowed_count',1)
+        diagnosis=f'local count gate observed {observed} protagonist instances (allowed {allowed})'
+    seed=secrets.randbits(63)
+    try:
+        source=next(a for a in load_state(root)['attempts']
+                    if a['shot_id']==f'shot{number:02d}' and a['attempt_number']==slot['best_attempt'])
+        while seed==source.get('seed'):seed=secrets.randbits(63)
+    except (OSError, StopIteration, ValueError):
+        pass  # No persisted source attempt to differ from; any fresh seed is valid.
+    return {'problem':problem,'primitive':'seed','seed':seed,
+            'diagnosis':diagnosis,
+            'hypothesis':'duplicate protagonist is seed-level sampling noise (TASK-v2 §2.2-3); '
+                         'identical conditioning with a new seed is the required first repair',
+            'changes':'re-roll the sampling seed only; no prompt, storyboard or scene change',
+            'shot':None,'edit':None,'target_shot':number}
+
+
 def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     count='protagonist_count' in preferred_problems(audit,cycle,number,narrative=bool(narrative))
     methods=permitted_methods('protagonist_count',cycle,number)
+    if count and methods==['seed'] and not narrative:
+        decision=count_reseed_decision(root,number,audit,entry,cycle['shots'][str(number)])
+        return validate_decision(decision,number,audit,entry,board,identity,cycle)
     if count and methods==['instruction_edit'] and not narrative:
         label=f'decision_{number}_{len(cycle["shots"][str(number)]["history"])+1}_count_schema4'
         prompt=('Reliable local detection found duplicate protagonist instances. Diagnose this observed count failure, '
@@ -47,30 +76,50 @@ def diagnose(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
         if result.get('status')!='pass':raise ValueError('count diagnostic LLM failed: '+str(result.get('error')))
         Draft202012Validator(count_diagnosis_schema(entry)).validate(result['data'])
         return frozen.validate_decision(result['data'],number,audit,entry,board,identity,cycle)
+    # V2-16: an extra body part is re-rolled once with a new seed, like a reliable duplicate count.
+    if not narrative and 'extra_body_part' in preferred_problems(audit,cycle,number) and 'protagonist_count' not in preferred_problems(audit,cycle,number):
+        decision=count_reseed_decision(root,number,audit,entry,cycle['shots'][str(number)],problem='extra_body_part')
+        return validate_decision(decision,number,audit,entry,board,identity,cycle)
     return diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,narrative=narrative)
+
+
+KEY_PROP_ITEM = {'type': 'object', 'required': ['prop_id', 'relation_tags', 'location_tags'],
+                 'properties': {'prop_id': {'type': 'string'},
+                                'relation_tags': {'type': 'array', 'items': {'type': 'string'}},
+                                'location_tags': {'type': 'array', 'items': {'type': 'string'}}}}
 
 
 def diagnosis_schema(cfg, *, state=None, problems=None):
     from storycg.planning import production_schema
-    cfg=copy.deepcopy(cfg);cfg['problem_methods'].pop('props',None)
     if problems is not None:
-        problems=[p for p in problems if p!='props']
         if not problems:raise ValueError('no mapped actionable FAIL item')
     schema=frozen.diagnosis_schema(cfg,state=state,problems=problems)
-    schema['properties']['shot']={'anyOf':[
-        production_schema()['properties']['shots']['items']['properties']['shot'], {'type':'null'}]}
+    shot=production_schema()['properties']['shots']['items']['properties']['shot']
+    # V2-13: key_props entries must carry the fields the validators read (prop_id, relation_tags, location_tags).
+    shot['properties']['key_props']={'type':'array','items':KEY_PROP_ITEM}
+    schema['properties']['shot']={'anyOf':[shot, {'type':'null'}]}
     return schema
 
 
+def relayout_prop_guard(revised, current):
+    """V2-13 (TASK-v2 §0): a relayout may delete props but never add or change them."""
+    from storycg.tags import canonical_tag
+    if json.dumps(revised.get('key_props', []), sort_keys=True, ensure_ascii=False) != json.dumps(
+            current.get('key_props', []), sort_keys=True, ensure_ascii=False):
+        raise ValueError('修图不得新增道具：key_props 与当前镜头不同，修图只能改动作、表情等（key_props 必须与当前镜头一致）')
+    allowed = {canonical_tag(tag) for tag in current.get('prop_tags', [])}
+    added = [tag for tag in revised.get('prop_tags', []) if canonical_tag(tag) not in allowed]
+    if added:
+        raise ValueError('修图不得新增道具：prop_tags 新增了 ' + ', '.join(added) + '；修图只能从当前 prop_tags 中删除')
+
+
 def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrative=None):
-    if decision['problem']=='props':raise ValueError('D24 props cannot trigger repair')
-    if decision['primitive']=='relayout' and (decision.get('shot') or {}).get('key_props')!=entry['shot']['key_props']:
-        raise ValueError('D24 narrative repair cannot target props' if narrative else 'D24 relayout cannot target props')
+    if decision.get('primitive')=='relayout' and decision.get('shot') is not None:
+        relayout_prop_guard(decision['shot'],entry['shot'])
     if narrative:
         revised=decision.get('shot') or {}
         if (revised.get('action'),revised.get('expression'))==(entry['shot']['action'],entry['shot']['expression']):raise ValueError('narrative repair must change expression/action')
     if decision['primitive']=='instruction_edit':
-        if decision.get('edit',{}).get('target','').startswith(('props.','entry.shot.key_props.')):raise ValueError('D24 props cannot be repair targets')
         state={'identity':identity,'entry':entry,'props':board['props']}
         instruction=grounded_instruction(decision['edit'],state)
         slot=cycle['shots'][str(number)]
@@ -86,7 +135,7 @@ def validate_decision(decision,number,audit,entry,board,identity,cycle,*,narrati
 
 def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrative=None):
     from storycg.shot_contract import RULE_PROMPT
-    cfg=copy.deepcopy(cycle['config']);cfg['problem_methods'].pop('props',None);slot=cycle['shots'][str(number)]
+    cfg=cycle['config'];slot=cycle['shots'][str(number)]
     state=diagnosis_state(identity,entry,board['props'])
     audit=[person_findings(r) for r in audit]
     problems=preferred_problems(audit,cycle,number,narrative=bool(narrative))
@@ -105,11 +154,13 @@ def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrati
     prompt=('Interpret actual FAIL findings. Give a diagnosis, causal hypothesis and corrective change. '
         'Choose ONLY allowed_methods for the observed problem; target_shot must equal '+str(number)+'. '
         'For instruction_edit supply exact registered target/description and shot=null. '
-        'relayout: edit=null, return the complete revised shot, preserve key_props exactly; changes must target expression/action, never object state, count, ownership or contact. '
+        'relayout: edit=null, return the complete revised shot; changes must target expression/action. '
         'Return ALL fields, including pose, action, description, tags, reflection, protagonist_instances, '
-        'subject_visibility, other_people, hand_owners, and ALL key_props fields including detached, owner, state, '
-        'establishes_ownership and distinguishing_features_visible. action and description equal pose; tags contain only pose/expression. '
-        'face_detail/inpaint: edit=null and shot=null; regions are detected locally. '
+        'subject_visibility, other_people, hand_owners, and prop_tags. '
+        'A relayout must keep key_props exactly as the current shot has them and may only remove entries from prop_tags; '
+        'never add a prop or change a prop. '
+        'action and description equal pose; tags contain only pose/expression. '
+        'face_detail: edit=null and shot=null; faces are detected locally. '
         'Do not merely change seed or synonyms. '+RULE_PROMPT.replace(
             'The script derives action, description and shot.tags from pose/expression; do not return these derived fields.',
             'For relayout return action and description equal to pose and tags containing pose and expression.')+
@@ -123,10 +174,13 @@ def diagnose_contract(root,number,audit,entry,board,identity,cycle,vlm,*,narrati
             if result.get('status')!='pass':raise ValueError('diagnostic LLM failed: '+str(result.get('error')))
             Draft202012Validator(schema).validate(result['data'])
             return validate_decision(result['data'],number,audit,entry,board,identity,cycle,narrative=narrative)
-        except (ValueError, __import__('jsonschema').ValidationError) as exc:
+        except (ValueError, __import__('jsonschema').ValidationError, KeyError, TypeError, IndexError) as exc:
+            # V2-13: a malformed diagnosis (missing or wrong-typed fields) is a rejection, never a task crash.
+            if isinstance(exc, (KeyError, TypeError, IndexError)):
+                exc = ValueError(f'diagnosis output malformed ({type(exc).__name__}): {exc}')
             save_json_atomic(root/'cycle_artifacts'/f'{name}_rejected.json',{'error':str(exc),'original_response_file':f'{name}.json'})
             feedback='\nScript rejected previous output: '+str(exc)+'. Correct the specific field; retain registered state. Previous output: '+json.dumps(result.get('data'),ensure_ascii=False)
-            if revision==cfg.get('diagnosis_validation_retries',1):raise
+            if revision==cfg.get('diagnosis_validation_retries',1):raise exc
 
 def deliver(root,cycle,config,client):
     state=frozen.deliver(root,cycle,config,client)
@@ -134,7 +188,10 @@ def deliver(root,cycle,config,client):
         gate=persist_group_gate(root,cycle['final_review'],config)
         manifest=read(root/'manifest.json');manifest['review_gate']=gate
         save_json_atomic(root/'manifest.json',manifest)
-        render_delivery(root,cycle['final_review'],gate)
+        render_delivery(root,cycle['final_review'],gate,config)
+    # V2-21 rework 3: every rewrite of result.md keeps the candidate section; a no-op for repair jobs.
+    from storycg.candidates import publish_candidates
+    publish_candidates(root)
     return state
 
 
@@ -167,7 +224,6 @@ def run_repair_cycle(job_dir,config,client):
         'allow_obscured':config.get('allow_obscured_protagonist',False)}
     if not (root/'initial_storyboard.json').exists():save_json_atomic(root/'initial_storyboard.json',board)
     cfg=cycle['config']
-    cfg['problem_methods'].pop('props',None)
     recovered=recover_failed_diagnoses(cycle,repair_findings)
     if recovered:cycle['phase']='repairing';save_json_atomic(path,cycle)
     budget=Budget(root,cfg)
@@ -209,10 +265,16 @@ def run_repair_cycle(job_dir,config,client):
             if cycle.get('repair_scope') and number not in cycle['repair_scope']['shots']:continue
             while not slot.get('stop') or (slot['history'] and slot['history'][-1].get('status')!='completed'):
                 before=slot['best_audit'];results=repair_findings(before)
+                from storycg import extra_part
+                if any(h['decision'].get('problem')=='extra_body_part' and not h.get('skipped') for h in slot['history']):
+                    results=extra_part.strip(results)  # V2-16: one re-roll only; the known issue stays in delivery
                 pending=slot['history'][-1] if slot['history'] and slot['history'][-1].get('status')!='completed' else None
-                if pending and pending['decision'].get('problem')=='props':
-                    pending.update(status='completed',skipped=True,error='D24 pending prop repair disabled before submission')
-                    slot['stop']='v1_prop_repair_disabled';persist();break
+                if pending:
+                    from storycg.repairs import REPAIR_PRIMITIVES
+                    method=pending['decision'].get('primitive')
+                    if method not in REPAIR_PRIMITIVES:
+                        pending.update(status='completed',skipped=True,error='unsupported repair method: '+str(method)+' was removed in v2; no task submitted')
+                        slot['stop']='unsupported_repair_method';persist();break
                 if not pending:
                     actionable=actionable_issues(results)
                     if not actionable:slot['stop']='no_actionable_fail';persist();break
@@ -276,6 +338,8 @@ def run_repair_cycle(job_dir,config,client):
         cycle['phase']='complete'
         cycle['finished_at']=datetime.now(timezone.utc).isoformat()
         persist()
+        from storycg.shot_vocab import record_observations
+        record_observations(root, config)
     except Exception as exc:
         cycle['blocked']=f'{type(exc).__name__}: {exc}';persist()
         if len(cycle['shots'])==len(board['shots']):deliver(root,cycle,config,client)
@@ -287,12 +351,7 @@ def run_repair_cycle(job_dir,config,client):
 def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm):
     from storycg.repairs import repair,record_result
     decision=pending['decision'];entry=slot['entry']
-    # Prepared decisions from older policy must pass the scope guard before any IO.
-    if decision.get('problem')=='props':raise ValueError('D24 props cannot trigger repair')
-    if decision.get('edit') and decision['edit'].get('target','').startswith(('props.','entry.shot.key_props.')):
-        raise ValueError('D24 props cannot be repair targets')
-    if decision.get('shot') is not None and decision['shot'].get('key_props')!=entry['shot']['key_props']:
-        raise ValueError('D24 relayout cannot target props')
+    allowed_decision(decision,cycle['config'])
     validate_problem(decision['problem'],repair_findings(slot['best_audit']),bool(pending.get('narrative')))
     candidate=copy.deepcopy(entry)
     if decision['shot'] is not None:candidate['shot']=decision['shot']
@@ -300,17 +359,15 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     kwargs={'repair_id':f'cycle{pending["round"]}', 'source_attempt':pending['source_attempt']}
     if decision['primitive']=='instruction_edit':kwargs['edit']=decision['edit']
     if decision['primitive']=='relayout':kwargs['revised_entry']=candidate
-    if decision['primitive'] in ('face_detail','inpaint'):
+    if decision['primitive']=='seed':kwargs['seed']=decision['seed']
+    if decision['primitive']=='face_detail':
         from storycg.detection_review import repair_mask
-        from storycg.detect import detect_image
         source=root/slot['best_audit']['image']['path']
-        purpose='remove_person' if decision['problem']=='protagonist_count' else 'face'
-        region=repair_mask(source,None,purpose,root/'cycle_artifacts'/f'mask_{number}_{pending["round"]}')
+        region=repair_mask(source,None,'face',root/'cycle_artifacts'/f'mask_{number}_{pending["round"]}')
         if region['provenance']['uncertain']:
             raise ValueError('non_subject_mask_ambiguous: merged segmentation requires experimental review')
         kwargs.update(bbox=region['bbox'],mask_path=region['mask_path'],mask_sha256=region['mask_sha256'],
             region_source=region['provenance'])
-        if purpose=='remove_person':kwargs['operation']={'type':'remove_person'}
     label=f'repair_{number}_{pending["round"]}'
     before_neighbors=neighbors(root,number,slot['best_audit']['image'],entry,board,cycle,config,vlm,label+'_before')
     rec=repair(root,number,decision['primitive'],diagnosis,client,**kwargs)
@@ -319,6 +376,14 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
     adjacent=neighbors(root,number,rec['output'],candidate,board,cycle,config,vlm,label)
     before=[*comparison_findings(slot['best_audit']),*before_neighbors];after=[*comparison_findings(audited),*adjacent]
     better=candidate_improved(before,after) and rec.get("boundary_check",{"passed":True})["passed"]
+    extra_record=None
+    if decision['problem']=='extra_body_part':
+        from storycg import extra_part
+        before_positive=extra_part.is_positive(slot['best_audit']);after_positive=extra_part.is_positive(audited)
+        better=better and extra_part.adopt(before_positive,after_positive)
+        extra_record={'before_positive':before_positive,'after_positive':after_positive}
+    from storycg.cycle import reliable_regressions
+    regressions=reliable_regressions([person_findings(r) for r in before],[person_findings(r) for r in after])
     if decision['problem']=='protagonist_count':
         recheck=audited.get('detection_items',{}).get('protagonist_count',{})
         better=better and recheck.get('status')=='ok'
@@ -330,7 +395,8 @@ def apply_round(root,number,slot,pending,board,identity,cycle,config,client,vlm)
                 'reliable_failure_vector_before':list(reliable_failure_vector(before)),
                 'reliable_failure_vector_after':list(reliable_failure_vector(after)),
                 'failure_tiers':list(REPAIR_FAILURE_TIER_NAMES),
-                'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after)})
+                'improved':better,'improvement_basis':'reliable_severity_vector','conclusion':audited['conclusion'],'unreliable_changes':issues(after),
+                'reliable_regressions':regressions,'extra_body_part':extra_record})
     key=f'shot{number:02d}_cycle{pending["round"]}'
     record_result(root,key,{'file':f'cycle_artifacts/{label}.json'},'Automatic audit record; human inspection pending, no human judgment inferred.')
     if better:
@@ -355,11 +421,3 @@ def reliable_failure_vector(results):
 
 def reliable_failures(results):
     return frozen.reliable_failures([person_findings(r) for r in results])
-
-
-def detection_improved(before,after):
-    previous=copy.deepcopy(before);current=copy.deepcopy(after)
-    for item in (previous,current):
-        for layer in ('single','consistency'):
-            item[layer]=person_findings(item[layer])
-    return frozen.detection_improved(previous,current)

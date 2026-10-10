@@ -48,12 +48,29 @@ def narrative_repair_needed(result, context=None):
         narrative_findings(result,context).get('data',{}).get(k,{}).get('status')=='fail' for k in ('key_events','ending'))
 
 
-def render_delivery(root, report, gate):
+def delivery_scope_notes(root):
+    """Fixed v2 delivery notice plus the saved storyboard adaptation, if any."""
+    path = Path(root)/'storyboard.json'
+    board = json.loads(path.read_text()) if path.exists() else {}
+    note = board.get('story_note', '').strip()
+    identity_path = Path(root)/'identity.json'
+    identity = json.loads(identity_path.read_text()) if identity_path.exists() else {}
+    cache = identity.get('tier_cache', {})
+    receipt_path = Path(root)/'tier/cache-reuse.json'
+    if not cache.get('hit') and receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        if receipt.get('key_inputs') == identity.get('tier_model_fingerprint'):
+            cache = receipt
+    tier_note = ['层级沿用缓存（'+cache['established_at_utc'][:10]+'）。'] if cache.get('hit') else []
+    return ['道具未经审核。'] + ([note] if note else []) + tier_note
+
+
+def render_delivery(root, report, gate, config=None):
     """Replace the explanation from saved evidence, avoiding stale failure headings."""
     root=Path(root);context=scope_context(root)
     lines=['# 结果说明','', '整组结论（v1 人物范围）：'+gate['conclusion'],
            '冻结原始审核结论：'+str(gate['raw_conclusion'])+'（包含 v1 不保证的项目；原始记录未改）',
-           '', '## 已知问题','']
+           '', '## 已知问题','', *delivery_scope_notes(root)]
     if context['prop_dependent'] is True:lines.append('- '+PROP_NOTICE+'。')
     if context['prop_dependent'] is None:
         lines.append('- 旧任务缺少结构化道具依赖判断；混合叙事结论保守保留，不进行关键词推断。')
@@ -69,6 +86,8 @@ def render_delivery(root, report, gate):
     for key,item in report.get('narrative_compare',{}).get('data',{}).items():
         if item.get('status')!='pass':lines.append(f'- 盲审 {key}: {item.get("status")} — {item.get("reason","")}（原始记录）')
     lines.extend('- '+n for n in gate['notes'])
+    from storycg.review import reliability_note_lines
+    lines.extend(reliability_note_lines(report,config))
     lines.append('- 远处小人物可能漏检；配饰/发型等未可靠校准的项需要看图确认。')
     for name in ('portrait.json','cycle.json'):
         path=root/name

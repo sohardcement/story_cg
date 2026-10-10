@@ -60,7 +60,10 @@ def validate_tag_lists(board, registry, config=None, *, drop_unknown=False):
             for field in ('relation_tags', 'location_tags'):
                 lists.append((f"{n}.props.{ref['prop_id']}.{field}", ref[field]))
     if config:
-        for mapping in ('framing_tags', 'camera_tags', 'framing_negative_tags'):
+        if 'framing' in config:
+            for key, rule in config['framing'].items():
+                lists.append((f'config.framing.{key}.tags', rule['tags']))
+        for mapping in (('framing_tags',) if 'framing' not in config else ()) + ('camera_tags', 'framing_negative_tags'):
             for key, tags in config.get(mapping, {}).items():
                 lists.append((f'config.{mapping}.{key}', tags))
     missing = []

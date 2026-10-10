@@ -1,6 +1,13 @@
 {
   "version": 3,
   "items": {
+    "extra_body_part": {
+      "status": "reliable",
+      "calibration_source": "V2-15 offline evaluation (reports/V2-15.md): 80 labelled delivered images; 5 of 6 positives detected, 1 negative flagged and later re-labelled uncertain (D59)",
+      "positive_samples": 6,
+      "negative_samples": 73,
+      "note": "small calibration sample (6 positives); see V2-16 report"
+    },
     "character": {
       "status": "unreliable",
       "error_samples": 9,

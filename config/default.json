@@ -22,18 +22,7 @@
     ]
   },
   "checkpoint": "waiIllustriousSDXL_v170.safetensors",
-  "style_loras": [
-    {
-      "name": "Iwao178.safetensors",
-      "strength_model": 0.4,
-      "strength_clip": 0.4
-    },
-    {
-      "name": "akaimelon.safetensors",
-      "strength_model": 0.3,
-      "strength_clip": 0.3
-    }
-  ],
+  "style_loras": [],
   "positive_prefix": "masterpiece, best quality, safe, sfw",
   "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
   "sampler": {
@@ -48,23 +37,6 @@
     "max_images_per_job": 40,
     "max_job_minutes": 60,
     "stop_after_no_improvement_rounds": 2
-  },
-  "framing_tags": {
-    "wide": [
-      "wide_shot",
-      "full_body",
-      "scenery"
-    ],
-    "full": [
-      "full_body"
-    ],
-    "medium": [
-      "cowboy_shot"
-    ],
-    "closeup": [
-      "upper_body",
-      "close-up"
-    ]
   },
   "camera_tags": {
     "front": [],
@@ -88,6 +60,157 @@
     "max_calls": 5,
     "retries": 5
   },
+  "shot_vocab": {
+    "path": "config/shot_vocab.json",
+    "observation_log": "calibration/shot_vocab_observations.jsonl"
+  },
+  "comfy_prefix_root": "v2/",
+  "fixed_negative_tags": [
+    "multiple girls",
+    "2girls",
+    "multiple views"
+  ],
+  "fixed_negative_tags_source": "TASK-v2 §2.2-8c（CAP-04 实测：加后重复主角仍在，仅作常规写法保留，不去重）",
+  "indoor_precipitation_negative": {
+    "tags": ["puddle", "wet_floor", "wet_ground"],
+    "synonyms": {"puddle": ["puddles", "water_puddle"], "wet_floor": [], "wet_ground": []},
+    "source": "V2-17 experiment (reports/V2-17.md, method A) and decision D60 (V2-18). Tag existence and post counts: reports/assets/V2-17/tag_check.json (Danbooru tags.json, read-only, 2026-10-09): puddle 8158, wet_floor 798, wet_ground 101. Synonym checks (read-only, 2026-10-09): puddles 0 posts, water_puddle 0 posts; no verified synonym for wet_floor or wet_ground."
+  },
+  "scene_rules": {
+    "object_limits": {
+      "closeup": 0,
+      "medium": 2,
+      "full": 3,
+      "wide": 3
+    },
+    "object_limits_source": "工单 V2-06s 第 1 条。CAP-04 证据：近景改写只留 indoors+地点；中景 06 恰留 desk+chair 两件；远景放宽到 3 件。",
+    "indoor_location_section": {"start": "h4#indoors", "end": "h4#outdoors", "source": "V2-11：tag_group:locations 快照中 Indoors 段（h4#indoors 到 h4#outdoors 之间），仅取其中的 [[链接]]；快照的 sha256 与标题在每次加载时校验。"},
+    "indoor_precipitation_tags": ["rain", "raindrops", "snow", "snowing", "thunderstorm", "hail", "drizzle"],
+    "indoor_precipitation_source": "V2-11：Danbooru tags.json 查询（2026-10-09，只读）：rain 49427、snow 56638、snowing 37971、thunderstorm 40、hail 28 篇；raindrops、drizzle 为真实 tag 但 0 篇，保留以覆盖工单列出的词。室内补 window 时使用此清单。",
+    "budget_exempt_tags": ["window"],
+    "budget_exempt_source": "V2-11：室内降水补的 window 不占物件名额，近景中保留（工单 V2-11 第 5 条）。在 filter_scene_tags 中按非物件处理，因此规划器自己写的 window 也同样不计数。",
+    "non_object_tags": [
+      "indoors", "outdoors", "day", "night", "noon", "morning", "afternoon", "evening", "midnight",
+      "snowing", "fog", "wind", "sunlight", "moonlight", "starry_sky", "night_sky", "blue_sky",
+      "cloudy_sky", "lightning", "city_lights", "wooden_floor", "floor", "ceiling", "wall", "path", "sidewalk",
+      "street", "road", "alley", "stairs", "stairway", "hallway", "corridor", "doorway", "entrance",
+      "door", "gate", "fence", "window_frame", "park", "garden", "courtyard", "plaza", "field",
+      "meadow", "forest", "woods", "beach", "seaside", "coastline", "river", "lake", "pond",
+      "mountain", "mountains", "hill", "bridge", "rooftop", "bedroom", "living_room", "kitchen",
+      "bathroom", "classroom", "office", "library", "cafe", "restaurant", "shop", "store",
+      "convenience_store", "supermarket", "hotel", "inn", "school", "hospital", "city", "town",
+      "village", "scenery", "rain", "overcast", "cloudy", "wet_ground", "thunderstorm", "puddle"
+    ],
+    "non_object_source": "环境/时间/天气/光线与地点类 tag 永不视为物件；此清单是手写补充，在 non_object_tag_groups 覆盖之外兜底。取舍对照 CAP-04 实际改写：wooden_floor、window 边界按改写保留/舍弃记录归类（window 属物件，06 因 desk+chair 占满中景额度被舍）。V2-09 补充天气词：rain/overcast/wet_ground/thunderstorm/puddle 均为真实 Danbooru tag（posts 49423/4478/101/40/8156，2026-10-09 查询）；cloudy 非真实 tag（真实词是 cloudy_sky，已在本清单），因工单 V2-09 要求其不计物件而保留在规则里。",
+    "non_object_tag_groups": {
+      "lighting": {
+        "url": "https://danbooru.donmai.us/wiki_pages/tag_group:lighting.json",
+        "sha256": "76ba0183ecb6fed93305111ae065d5fe58ddc8514261d54a33c82600db85c33d",
+        "wiki_title": "tag_group:lighting",
+        "wiki_updated_at": "2026-09-03T01:37:16.315-04:00",
+        "cache_path": "cache/tag_groups/lighting.json"
+      },
+      "locations": {
+        "url": "https://danbooru.donmai.us/wiki_pages/tag_group:locations.json",
+        "sha256": "3b5a79b919eead0a9cf1141cae9014a9500d5ae6ea3e5288756ecb13961095be",
+        "wiki_title": "tag_group:locations",
+        "wiki_updated_at": "2026-09-15T06:01:51.787-04:00",
+        "cache_path": "cache/tag_groups/locations.json"
+      },
+      "backgrounds": {
+        "url": "https://danbooru.donmai.us/wiki_pages/tag_group:backgrounds.json",
+        "sha256": "c9ff5d26a06918990c3c7e899df345673b0b1a51297d1c28237cfa645144b646",
+        "wiki_title": "tag_group:backgrounds",
+        "wiki_updated_at": "2026-08-19T16:04:58.766-04:00",
+        "cache_path": "cache/tag_groups/backgrounds.json"
+      }
+    },
+    "non_object_groups_source": "V2-09：非物件判定 = 在这些 Danbooru tag group 快照里，或在手写 non_object_tags 里。选组依据（遍历 110 个 tag_group wiki，2026-10-09）：lighting 覆盖光线、时间（time of day lighting 节）与天空光源（sun/moon/starry sky/lightning）；locations 覆盖地点（indoors/outdoors/buildings）；backgrounds 覆盖背景构图 tag（simple/color/pattern background）。天气无干净组：唯一含 rain 的 tag_group:water 混入 cup/mug/glass/bottle/umbrella/boat 等实体物件（cup/mug 还是 action_invoking_props），整组采用会让未声明道具绕过近景剔除（CAP-04 回退），故弃用；rain/overcast 等天气词走手写补充。提取规则只取 bullet 行首部 [[..]] 链接，忽略描述文字里的链接（refraction 行的 glass/water 不入组）。window/desk/cat 及全部 action_invoking_props 均不在任何选用组内（有测试钉住）。",
+    "action_invoking_props": {
+      "computer": {
+        "reason": "会引出打字/看屏幕等未声明动作",
+        "source": "TASK-v2 §2.2-8a；CAP-04：去掉键盘后趴桌睡着不再画成打字"
+      },
+      "computer_keyboard": {
+        "reason": "同 computer，直接触发打字动作",
+        "source": "CAP-04 单元 06 证据：keyboard 在场时 sleeping on desk 被画成打字"
+      },
+      "keyboard": {
+        "reason": "computer keyboard 的简写形式",
+        "source": "同 computer_keyboard"
+      },
+      "monitor": {
+        "reason": "会引出注视屏幕动作",
+        "source": "CAP-04 单元 06 改写中随键盘一并移除"
+      },
+      "laptop": {
+        "reason": "computer 的便携形式，同样引出交互动作",
+        "source": "TASK-v2 §2.2-8a 推广"
+      },
+      "smartphone": {
+        "reason": "会引出看/持手机动作；仅当它就是该镜声明道具时才可入场景块",
+        "source": "CAP-04 单元 13：smartphone 只作为该镜道具出现在动作块"
+      },
+      "book": {
+        "reason": "会引出阅读动作",
+        "source": "TASK-v2 §2.2-8a 同类（读物引出使用动作）"
+      },
+      "cup": {
+        "reason": "会引出端起/饮用动作",
+        "source": "TASK-v2 §2.2-8a 同类"
+      },
+      "mug": {
+        "reason": "同 cup",
+        "source": "同 cup"
+      },
+      "pen": {
+        "reason": "会引出书写动作",
+        "source": "TASK-v2 §2.2-8a 同类"
+      },
+      "pencil": {
+        "reason": "同 pen",
+        "source": "同 pen"
+      },
+      "musical_instrument": {
+        "reason": "会引出演奏动作",
+        "source": "TASK-v2 §2.2-8a 同类"
+      }
+    }
+  },
+  "action_companion_tags": {
+    "sleeping": {
+      "require": ["closed_eyes"],
+      "conflicts": ["open_eyes"]
+    },
+    "sleeping_on_desk": {
+      "require": ["closed_eyes"],
+      "conflicts": ["open_eyes"]
+    }
+  },
+  "action_companion_tags_source": "TASK-v2 §2.2-8d（CAP-04 单元 06 四张全是睁眼/半睁眼；睡着类动作拼装时自动补闭眼 tag）",
+  "eye_state_tags": {
+    "roots": [
+      "blinking",
+      "closed_eyes",
+      "one_eye_closed",
+      "wince",
+      "averting_eyes",
+      "half-closed_eyes",
+      "squinting",
+      "staring",
+      "rolling_eyes",
+      "shading_eyes"
+    ],
+    "source": {
+      "url": "https://danbooru.donmai.us/wiki_pages/tag_group:eyes_tags.json",
+      "fetched_at_utc": "2026-10-08T17:00:41Z",
+      "fetched_by": "executor (V2-08)",
+      "sha256": "cdcf8bcc8e1c2168a648c590d96208f9cc1c7dc8a745973572780c060029fd90",
+      "wiki_updated_at": "2026-08-19T19:09:30.779-04:00",
+      "cache_path": "cache/tag_groups/eyes.json"
+    },
+    "derivation": "配置的 roots 逐个对照缓存的 tag_group:eyes_tags wiki bullets 校验存在（闭眼/半闭眼/单眼闭等状态与 averting/shading/rolling 等动作节）；词表取这些 tag 的词。颜色、形状、大小类 tag 不在 roots 内，仍按外貌拒绝。"
+  },
   "framing_negative_tags": {
     "wide": [],
     "full": [],
@@ -99,6 +222,11 @@
       "wide_shot"
     ]
   },
+  "character_lora_matching": false,
+  "delivery_mode": "candidates",
+  "candidates_per_shot": 3,
+  "pairwise_pick": true,
+  "portrait_mode": "single",
   "style_file": "style.json",
   "portrait": {
     "framing": "full",
@@ -146,22 +274,199 @@
   },
   "layout_mode": "none",
   "layout_denoise": 0.55,
-  "framing_definitions": {
-    "wide": [
-      "feet"
+  "supplementary_review": {
+    "extra_protagonist": false,
+    "accessories_zoom": false,
+    "outfit_detail_vs_portrait": false
+  },
+  "framing": {
+    "wide": {
+      "tags": [
+        "wide_shot",
+        "full_body",
+        "scenery"
+      ],
+      "lowest_visible": [
+        "feet"
+      ],
+      "sources": {
+        "wide_shot": {
+          "tag": "wide_shot",
+          "url": "https://danbooru.donmai.us/wiki_pages/wide_shot.json",
+          "fetched_at_utc": "2026-10-04T16:42:57.676595+00:00",
+          "http_status": 200,
+          "sha256": "606765b358376368d2895bdb431aa74a5b5e1c3029742ab11820e22eecb6ec30",
+          "wiki_updated_at": "2024-08-18T01:43:53.153-04:00",
+          "cache_path": "cache/framing_wiki/wide_shot.json",
+          "definition_summary": "完整主体仅占画面较小部分；景物占主要空间。"
+        },
+        "full_body": {
+          "tag": "full_body",
+          "url": "https://danbooru.donmai.us/wiki_pages/full_body.json",
+          "fetched_at_utc": "2026-10-04T16:42:58.302340+00:00",
+          "http_status": 200,
+          "sha256": "670466efece852c0d49c08e6823bb1e42ef076ff5b10eeb099efc84c92553d81",
+          "wiki_updated_at": "2026-09-28T01:43:27.464-04:00",
+          "cache_path": "cache/framing_wiki/full_body.json",
+          "definition_summary": "主体整个身体可见；细小附属物不完整仍可成立。"
+        },
+        "scenery": {
+          "tag": "scenery",
+          "url": "https://danbooru.donmai.us/wiki_pages/scenery.json",
+          "fetched_at_utc": "2026-10-04T16:42:58.612028+00:00",
+          "http_status": 200,
+          "sha256": "141e27b6f06aecadc5573aac46cbe18d8243322133ccb343e108ae8b4a3f9d01",
+          "wiki_updated_at": "2026-09-08T11:34:19.479-04:00",
+          "cache_path": "cache/framing_wiki/scenery.json",
+          "definition_summary": "强调环境或景观，无单独的身体截断要求。"
+        }
+      }
+    },
+    "full": {
+      "tags": [
+        "full_body"
+      ],
+      "lowest_visible": [
+        "feet"
+      ],
+      "sources": {
+        "full_body": {
+          "tag": "full_body",
+          "url": "https://danbooru.donmai.us/wiki_pages/full_body.json",
+          "fetched_at_utc": "2026-10-04T16:42:58.302340+00:00",
+          "http_status": 200,
+          "sha256": "670466efece852c0d49c08e6823bb1e42ef076ff5b10eeb099efc84c92553d81",
+          "wiki_updated_at": "2026-09-28T01:43:27.464-04:00",
+          "cache_path": "cache/framing_wiki/full_body.json",
+          "definition_summary": "主体整个身体可见；细小附属物不完整仍可成立。"
+        }
+      }
+    },
+    "medium": {
+      "tags": [
+        "cowboy_shot"
+      ],
+      "lowest_visible": [
+        "waist",
+        "hips",
+        "thighs",
+        "knees"
+      ],
+      "sources": {
+        "cowboy_shot": {
+          "tag": "cowboy_shot",
+          "url": "https://danbooru.donmai.us/wiki_pages/cowboy_shot.json",
+          "fetched_at_utc": "2026-10-04T16:42:59.244347+00:00",
+          "http_status": 200,
+          "sha256": "f077781a98b36a2b42e50e7155786c89137b97d77b909ef6e05462a4bdf0d9d9",
+          "wiki_updated_at": "2026-04-24T04:31:50.805-04:00",
+          "cache_path": "cache/framing_wiki/cowboy_shot.json",
+          "definition_summary": "大腿以上的构图，下缘可低至膝盖或膝盖正上方。"
+        }
+      },
+      "compact_posture_lowest_visible": [
+        "waist",
+        "hips",
+        "thighs",
+        "knees",
+        "calves",
+        "feet"
+      ]
+    },
+    "closeup": {
+      "tags": [
+        "upper_body",
+        "close-up"
+      ],
+      "lowest_visible": [
+        "face",
+        "shoulders",
+        "chest",
+        "waist"
+      ],
+      "sources": {
+        "upper_body": {
+          "tag": "upper_body",
+          "url": "https://danbooru.donmai.us/wiki_pages/upper_body.json",
+          "fetched_at_utc": "2026-10-04T16:42:59.558380+00:00",
+          "http_status": 200,
+          "sha256": "83cd8734065e696b8d5ae5e30df0589c69b6db966ec6c31b0b16f85d09be1c9b",
+          "wiki_updated_at": "2026-09-15T11:20:40.534-04:00",
+          "cache_path": "cache/framing_wiki/upper_body.json",
+          "definition_summary": "约腰部以上的上半身构图，头部未必完整。"
+        },
+        "close-up": {
+          "tag": "close-up",
+          "url": "https://danbooru.donmai.us/wiki_pages/close-up.json",
+          "fetched_at_utc": "2026-10-04T16:43:00.188252+00:00",
+          "http_status": 200,
+          "sha256": "7da0a3a0a9dac87fbc0a4a06706d42e7eb793f0b8eab3bd37fa441ec49e73f36",
+          "wiki_updated_at": "2026-07-15T13:50:22.864-04:00",
+          "cache_path": "cache/framing_wiki/close-up.json",
+          "definition_summary": "主体呈现于很近的距离，无单独的身体截断要求。"
+        }
+      }
+    }
+  },
+  "framing_postures": {
+    "roots": [
+      "sitting",
+      "kneeling",
+      "squatting",
+      "hugging_own_legs",
+      "lying"
     ],
-    "full": [
-      "feet"
-    ],
-    "medium": [
-      "waist",
-      "hips",
-      "thighs"
-    ],
-    "closeup": [
-      "face",
-      "shoulders",
-      "chest"
-    ]
+    "groups": {
+      "hugging_own_legs": [
+        "hugging_own_legs"
+      ],
+      "kneeling": [
+        "kneeling",
+        "on_one_knee"
+      ],
+      "lying": [
+        "fetal_position",
+        "lying",
+        "on_back",
+        "on_side",
+        "on_stomach"
+      ],
+      "sitting": [
+        "butterfly_sitting",
+        "figure_four_sitting",
+        "hugging_own_legs",
+        "human_chair",
+        "indian_style",
+        "lotus_position",
+        "reclining",
+        "seiza",
+        "sitting",
+        "sitting_on_head",
+        "sitting_on_lap",
+        "sitting_on_person",
+        "straddling",
+        "thigh_straddling",
+        "upright_straddle",
+        "wariza",
+        "yokozuwari"
+      ],
+      "squatting": [
+        "squatting"
+      ]
+    },
+    "source": {
+      "url": "https://danbooru.donmai.us/wiki_pages/tag_group:posture.json",
+      "fetched_at_utc": "2026-10-01T20:43:09Z",
+      "fetched_by": "supervisor (fallback cache)",
+      "sha256": "48b6e23801fe01242b6c5ea76e1d06a527f1d4a9e3293c1ab0c7490dea35678a",
+      "wiki_updated_at": "2026-05-01T18:31:59.268-04:00",
+      "copied_from": "verify/danbooru/tag_group_posture.json",
+      "cache_path": "cache/tag_groups/posture.json"
+    },
+    "derivation": "Wiki bullet descendants of configured roots; exclude tags with any occurrence outside these roots."
+  },
+  "tier_cache": {
+    "path": "cache/identity_tiers.json",
+    "identity_policy": "Model identity comes from the ComfyUI inventory (GET /experiment/models/<folder>): the exact file name plus the size that request reports. A failed request, an entry the inventory does not list, or a missing size disables caching for that run; local bytes, mtime and training hashes are never substituted."
   }
 }

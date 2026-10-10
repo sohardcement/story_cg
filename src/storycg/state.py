@@ -10,12 +10,14 @@ from pathlib import Path
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
-def make_prefix(job_id: str, shot_id: str, attempt_number: int) -> str:
+def make_prefix(job_id: str, shot_id: str, attempt_number: int, *, root: str = "") -> str:
+    if root and not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9_-]*/)+", root):
+        raise ValueError("prefix root must be non-empty slash-terminated path segments")
     if not IDENTIFIER.fullmatch(job_id) or not IDENTIFIER.fullmatch(shot_id):
         raise ValueError("job and shot IDs must use letters, digits, '-' or '_'")
     if attempt_number < 1:
         raise ValueError("attempt number must be positive")
-    return f"storycg_{job_id}_{shot_id}_a{attempt_number:03d}"
+    return f"{root}storycg_{job_id}_{shot_id}_a{attempt_number:03d}"
 
 
 def save_json_atomic(path: str | Path, value: dict) -> None:

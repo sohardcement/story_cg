@@ -6,7 +6,7 @@ from storycg.state import save_json_atomic
 
 from storycg.v1_scope import person_findings, narrative_findings, is_prop_item, scope_context
 
-DETECTION_KEYS=('eye_color_sampled','accessory_color_sampled','protagonist_count')
+DETECTION_KEYS=('accessory_color_sampled','protagonist_count')
 
 
 def detection_gate(observations, config=None):
@@ -15,7 +15,8 @@ def detection_gate(observations, config=None):
     if not observations:return [],[]  # Legacy audits did not run the detector.
     if review.get('status')!='pass':return ['fail'],['检测调用失败：'+review.get('error','unknown')]
     statuses=[];notes=[]
-    for key in DETECTION_KEYS:
+    keys=(*DETECTION_KEYS, *(('eye_color_sampled',) if 'eye_color_sampled' in review.get('data',{}) else ()))
+    for key in keys:
         item=review.get('data',{}).get(key,{})
         status=item.get('status');reliable=reliability.get(key,{}).get('status')=='reliable'
         if status=='not_visible' or item.get('observation',{}).get('status',item.get('observed_status')) in ('not_visible','none_visible'):

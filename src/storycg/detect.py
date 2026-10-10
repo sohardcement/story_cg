@@ -60,13 +60,6 @@ def expand_box(bbox, size, expansion):
     return box
 
 
-def crop_face(image, face, *, expansion=None, config=None):
-    config = config if config is not None else load_detect_config()
-    image = _image(image)
-    expansion = config['crop']['expansion'] if expansion is None else expansion
-    return image.crop(expand_box(face['bbox'], image.size, expansion))
-
-
 def feather_mask(detection, size, *, expansion=None, feather=None, config=None):
     config = config if config is not None else load_detect_config()
     expansion = config['mask']['expansion'] if expansion is None else expansion

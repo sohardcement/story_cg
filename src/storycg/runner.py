@@ -10,7 +10,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from PIL import Image
 
@@ -76,7 +76,9 @@ def _download_completed(job_dir: Path, state: dict, attempt: dict, client, histo
     if len(images) != 1:
         raise ValueError(f"expected one SaveImage output, got {len(images)}")
     reference = images[0]
-    if not reference["filename"].startswith(attempt["filename_prefix"]):
+    # ComfyUI splits a directory-bearing prefix into subfolder + base filename.
+    remote_path = "/".join(part for part in (reference.get("subfolder", ""), reference["filename"]) if part)
+    if not remote_path.startswith(attempt["filename_prefix"]):
         raise ValueError("ComfyUI output filename does not match this attempt")
     image_bytes = client.download_image(reference)
     with Image.open(io.BytesIO(image_bytes)) as image:
@@ -85,7 +87,8 @@ def _download_completed(job_dir: Path, state: dict, attempt: dict, client, histo
         image.verify()
     with Image.open(io.BytesIO(image_bytes)) as image:
         width, height = image.size
-    path = job_dir / f'{attempt["filename_prefix"]}.png'
+    # Keep job-local artefacts flat; only the remote prefix carries the root directory.
+    path = job_dir / f'{PurePosixPath(attempt["filename_prefix"]).name}.png'
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=job_dir)
     temp_path = Path(temp_name)
     try:
@@ -187,15 +190,19 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
 
 
 def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
-                 framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None) -> dict:
+                 framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None,
+                 dropped_scene_tags: list | None = None, indoor_negative: dict | None = None,
+                 seed: int | None = None, candidate: int | None = None) -> dict:
     if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job image budget exhausted")
     if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
         raise ValueError("job submission budget exhausted")
     attempt_number = 1 + max((a["attempt_number"] for a in state["attempts"]
                               if a["shot_id"] == shot_id), default=0)
-    prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number)
-    seed = state["config"].get("generation_seed")
+    prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number,
+                         root=state["config"].get("comfy_prefix_root", ""))
+    if seed is None:  # V2-21: candidates pass their own seed
+        seed = state["config"].get("generation_seed")
     if seed is None:
         seed = secrets.randbits(63)
     if not isinstance(seed, int) or not 0 <= seed < 2**64:
@@ -212,6 +219,12 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         "prompt_id": None, "status": "ready", "post_count": 0,
         "workflow": build_workflow(workflow_config, positive_tags, framing, seed, prefix),
         "created_at": _now(), "reference": workflow_config.get("generation_reference"),
+        # Scene tags dropped by the framing object cap travel with the attempt (V2-09).
+        "dropped_scene_tags": list(dropped_scene_tags or []),
+        # V2-18 (D60): the indoor-precipitation negatives added to this shot, and the tags skipped with a reason.
+        "indoor_precipitation_negative": indoor_negative,
+        # V2-21: candidate number within the shot (None for ordinary and repair attempts).
+        "candidate": candidate,
     }
     state["attempts"].append(attempt)
     _save(job_dir, state)
@@ -222,16 +235,20 @@ def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
     if attempt["status"] == "failed" and state["config"].get("auto_retry_failed", True):
         replacement = _new_attempt(job_dir, state, attempt["shot_id"],
                                    attempt["positive_tags"], attempt["framing"],
-                                   attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")), generation_reference=attempt.get("reference"))
+                                   attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")), generation_reference=attempt.get("reference"),
+                                   dropped_scene_tags=attempt.get("dropped_scene_tags"),
+                                   indoor_negative=attempt.get("indoor_precipitation_negative"))
         _process(job_dir, state, replacement, client, recovering=False)
 
 
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
                 config: dict, client, *, negative_prompt: str | None = None,
-                repair_diagnosis: dict | None = None, generation_reference: dict | None = None) -> dict:
+                repair_diagnosis: dict | None = None, generation_reference: dict | None = None,
+                dropped_scene_tags: list | None = None, indoor_negative: dict | None = None,
+                seed: int | None = None) -> dict:
     job_dir = Path(job_dir)
     job_id = job_dir.name
-    make_prefix(job_id, shot_id, 1)
+    make_prefix(job_id, shot_id, 1, root=config.get("comfy_prefix_root", ""))
     with _job_lock(job_dir):
         state_path = job_dir / "state.json"
         if state_path.exists():
@@ -256,7 +273,7 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                     return state  # A completed diagnosed repair is idempotent.
                 if same_conditioning:
                     raise ValueError("repair must change conditioning, not seed alone")
-                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, new_negative, generation_reference=generation_reference)
+                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, new_negative, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags, indoor_negative=indoor_negative)
                 replacement['repair_diagnosis'] = repair_diagnosis
                 _save(job_dir, state)
                 _process(job_dir, state, replacement, client, recovering=False)
@@ -269,9 +286,39 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
                 _process(job_dir, state, attempt, client, recovering=True)
             _retry_if_failed(job_dir, state, attempt, client)
             return state
-        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference)
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags, indoor_negative=indoor_negative, seed=seed)
         _process(job_dir, state, attempt, client, recovering=False)
         _retry_if_failed(job_dir, state, attempt, client)
+        return state
+
+
+def run_candidate(job_dir: str | Path, shot_id: str, candidate: int, seed: int, positive_tags: str, framing: str,
+                  config: dict, client, *, negative_prompt: str | None = None,
+                  generation_reference: dict | None = None, dropped_scene_tags: list | None = None,
+                  indoor_negative: dict | None = None) -> dict:
+    """V2-21: one candidate image for a shot, with its own seed. Idempotent per (shot, candidate)."""
+    job_dir = Path(job_dir)
+    job_id = job_dir.name
+    make_prefix(job_id, shot_id, 1, root=config.get("comfy_prefix_root", ""))
+    with _job_lock(job_dir):
+        state_path = job_dir / "state.json"
+        if state_path.exists():
+            state = load_state(job_dir)
+            if state["job_id"] != job_id:
+                raise ValueError("job directory and saved job ID differ")
+        else:
+            state = {"schema_version": 1, "job_id": job_id, "config": config,
+                     "created_at": _now(), "attempts": []}
+        matching = [a for a in state["attempts"] if a["shot_id"] == shot_id and a.get("candidate") == candidate]
+        if matching:
+            attempt = matching[-1]
+            if attempt["status"] not in ("completed", "failed"):
+                _process(job_dir, state, attempt, client, recovering=True)
+            return state
+        attempt = _new_attempt(job_dir, state, shot_id, positive_tags, framing, negative_prompt,
+                               generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags,
+                               indoor_negative=indoor_negative, seed=seed, candidate=candidate)
+        _process(job_dir, state, attempt, client, recovering=False)
         return state
 
 

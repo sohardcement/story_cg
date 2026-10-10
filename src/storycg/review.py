@@ -15,13 +15,14 @@ import httpx
 from jsonschema import Draft202012Validator
 from PIL import Image, ImageOps
 
+from storycg.closed_eyes import drop_eye_colour_check, mark_eye_colour_not_applicable
 from storycg.state import save_json_atomic
 
 TEXT = {'type': 'string', 'minLength': 1}
 GRADE = {'type': 'object', 'additionalProperties': False,
          'required': ['status', 'reason'], 'properties': {
              'status': {'enum': ['pass', 'minor', 'fail', 'not_visible']}, 'reason': TEXT}}
-SINGLE_KEYS = ['body', 'hands', 'action', 'prop_contact', 'composition', 'style']
+SINGLE_KEYS = ['body', 'hands', 'action', 'composition', 'style']
 REFERENCE_NOTE = '参考=第1镜，非定妆图'
 
 
@@ -184,6 +185,8 @@ class VisionClient:
 
 def identity_checklist(identity, outfit):
     """Script-owned keys/expectations: never let the VLM invent identity traits."""
+    from storycg.identity_enrichment import outfit_hair_ornaments
+    identity = outfit_hair_ornaments(identity)
     groups = {key: {'expected': [], 'source': 'identity.json'} for key in
               ['hair_color', 'hairstyle', 'eye_color', 'signature_features',
                'hair_ornaments', 'accessories']}
@@ -203,6 +206,8 @@ def identity_checklist(identity, outfit):
             category = 'signature_features'
         groups[category]['expected'].append(item)
     for item in identity.get('default_outfit_tags', []):
+        if item.get('state_scope') == 'outfit':
+            continue
         if any(word in item['tag'] for word in ('earring', 'necklace', 'bracelet', 'gem', 'accessory')):
             groups['accessories']['expected'].append(item)
         if any(word in item['tag'] for word in ('hair_ornament', 'hairclip', 'hairband', 'hair_bow', 'hair_ribbon')):
@@ -239,11 +244,8 @@ VISIBILITY_PROMPT = (
     'pass=clear correct match; minor=small discrepancy; fail=visible mismatch; '
     'not_visible=not observable. Give concrete evidence in reason. ')
 SINGLE_PROMPT = (
-    'Audit body anatomy, hands, action against the shot, object contact, composition and style. '
-    'Do not infer intended action. For EACH prop checklist entry count all matching objects '
-    'including extras, then report observed count, holder/location and state in reason; compare '
-    'each with expectation. Missing expected objects and extra objects are fail, not invisible. '
-    'Distinguish occlusion from absence. State includes all supplied description tags. '
+    'Audit body anatomy, hands, action against the shot, composition and style. '
+    'Do not infer intended action. '
     'For framing_observation describe actual visible body extent (head to where) in reason '
     'and classify lowest_visible; do not judge requested framing. ')
 CONSISTENCY_PROMPT = (
@@ -297,18 +299,9 @@ def visibility_summary(results):
                 for r in results))}
 
 
-def prop_checklist(props, shot):
-    lookup = {p['id']: p for p in props}
-    checks = {}
-    for n, key in enumerate(shot.get('key_props', []), 1):
-        prop = lookup.get(key['prop_id'], {'id': key['prop_id']})
-        checks[f'prop_{n}'] = {'expected': {**prop, **key,
-            'count': key.get('count', prop.get('count', 1))}, 'source': 'storyboard.json:props/shot.key_props'}
-    return checks
-
-
-def framing_grade(expected, observed, config):
-    allowed = config.get('framing_definitions', {}).get(expected)
+def framing_grade(expected, observed, config, *, pose=None):
+    from storycg.framing import allowed_parts
+    allowed = allowed_parts(config, expected, pose)
     return {'status': 'pass' if allowed and observed['lowest_visible'] in allowed else 'fail',
             'reason': f"expected={expected}; allowed={allowed}; observed={observed['lowest_visible']}; "
                       + observed['reason']}
@@ -352,25 +345,31 @@ def reliability_note_lines(report=None, config=None):
     for key, item in (report or {}).get('reliability', {}).items():
         if isinstance(item.get('note'), str) and item['note'].strip():
             items[key] = item
-    return [f'- {key}: {item["note"].strip()}' for key, item in items.items()
-            if isinstance(item.get('note'), str) and item['note'].strip()]
+    lines = [f'- {key}: {item["note"].strip()}' for key, item in items.items()
+             if isinstance(item.get('note'), str) and item['note'].strip()]
+    from storycg.review_v3 import enabled_items, ALL_ITEMS
+    active = enabled_items(config or {})
+    lines.extend(f'- {key}: 未经审核；该项未经可靠审核（本次流程未启用）。'
+                 for key in ALL_ITEMS if key not in active)
+    return lines
 
 
 def audit_single(vlm, path, entry, props, config, purpose):
-    checks = prop_checklist(props, entry['shot'])
-    schema = grading_schema([*SINGLE_KEYS, *checks], visibility=True)
+    schema = grading_schema(SINGLE_KEYS, visibility=True)
     if entry['shot'].get('framing'):
         schema['properties']['framing_observation'] = FRAMING_OBSERVATION
         schema['required'].append('framing_observation')
     result = vlm.call(purpose, messages(VISIBILITY_PROMPT + SINGLE_PROMPT +
-        'Expected shot: ' + json.dumps(entry['shot'], ensure_ascii=False) +
-        '\nProp checklist: ' + json.dumps(checks, ensure_ascii=False), [path]), schema, [path])
+        'Expected shot: ' + json.dumps({k:v for k,v in entry['shot'].items()
+            if k not in ('key_props','prop_tags')}, ensure_ascii=False), [path]), schema, [path])
     enforce_visibility(result)
     if result['status'] == 'pass' and 'framing_observation' in result['data']:
         observed = result['data'].pop('framing_observation')
         result['framing_observation'] = observed
-        result['data']['framing'] = framing_grade(entry['shot']['framing'], observed, config)
-    result['prop_checklist'] = checks
+        shot = entry['shot']
+        pose = shot.get('pose') if 'pose' in shot else shot.get('tags', [])
+        if shot.get('pose_tag_omitted'): pose = None
+        result['data']['framing'] = framing_grade(shot['framing'], observed, config, pose=pose)
     return annotate_reliability(result, load_reliability(config))
 
 
@@ -420,7 +419,8 @@ def face_pair(reference, target, output):
 def result_statuses(result):
     if result['status'] != 'pass':
         return ['fail']
-    return [item['status'] for item in result['data'].values()]
+    # V2-14: not_applicable items are neither pass nor fail; they never decide the group.
+    return [item['status'] for item in result['data'].values() if item.get('status') != 'not_applicable']
 
 
 BBOX_SCHEMA = object_schema({
@@ -530,7 +530,16 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                 face_pair(reference_face if portrait else job_dir / report['faces'][0]['path'],
                           job_dir / face['path'], pair)
                 compare_paths.append(pair)
+            # V2-14 rework 2 (D58): a closed-eye shot requests no eye colour in the delivery-time review either.
+            eyes_not_applicable = drop_eye_colour_check(checks, entry['shot'], config)
             result = audit_consistency(vlm, compare_paths, checks, config, f'consistency_{number:02d}', reference_note)
+            if eyes_not_applicable:
+                mark_eye_colour_not_applicable(result)
+            # V2-16 (D59): the delivery-time review also asks the extra-body-part question (skipped on a duplicate count).
+            from storycg import extra_part
+            count_item = next(d for d in report['detection_items'] if d['shot'] == number)
+            if extra_part.should_check(count_item):
+                result = extra_part.merge_into(result, extra_part.check(vlm, path, identity, f'consistency_{number:02d}_extra_body_part'))
             if pair:
                 result['face_pair'] = str(pair.relative_to(job_dir))
             from storycg import review_v3
@@ -538,7 +547,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                 outfit_ref = review_v3.outfit_reference(number - 1, board['shots'], paths,
                     reference_full if portrait else None)
                 prepared = review_v3.prepare(path, outfit_ref, identity, entry,
-                    artifacts / f'v3_{number:02d}')
+                    artifacts / f'v3_{number:02d}', items=review_v3.enabled_items(config))
                 supplementary = review_v3.audit(vlm, prepared, config, f'v3_{number:02d}')
                 result['v3'] = supplementary
                 if supplementary['status'] != 'pass':
@@ -635,7 +644,7 @@ def write_review_md(job_dir, report, config=None):
             lines.append(f"- 第 {item['shot']} 镜 [面部对照]({item['face_pair']})")
     lines.extend(['', '## 本机检测审核项', ''])
     for item in report.get('detection_items',[]):
-        values='; '.join(key+'='+str(item[key]['status']) for key in ('eye_color_sampled','accessory_color_sampled','protagonist_count'))
+        values='; '.join(key+'='+str(item[key]['status']) for key in ('eye_color_sampled','accessory_color_sampled','protagonist_count') if key in item)
         lines.append(f"- 第 {item['shot']} 镜: {values}; 主体数={item['protagonist_count']['protagonist_count']}; " + "; ".join(k+":"+v["reliability"] for k,v in item["review"]["data"].items()))
     for key in ['narrative_blind', 'narrative_compare']:
         lines.extend(['', f'## {key}', '', '```json',

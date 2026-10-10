@@ -154,6 +154,51 @@ def enrich_identity(identity, related, url, rules):
     result['unassigned_accessories']=[x for x in app_candidates if x['category'] in ('accessories','accessory_color') and x['tag'] not in clothing_accessories]
     selected = {x['tag'] for x in result['default_outfit_tags']}
     result['outfit_candidates'] = [x for x in out_candidates if x['tag'] not in selected]
+    return outfit_hair_ornaments(result)
+
+
+def outfit_hair_ornaments(identity):
+    """Move sourced outfit-dependent ornaments out of fixed appearance.
+
+    Two clothing ensembles must explicitly describe different ornament sets.
+    An unmentioned ornament is not evidence of absence. Co-occurrence alone
+    cannot establish a variant. This view also accepts saved v1 identities.
+    """
+    result = copy.deepcopy(identity)
+    ensembles = [result.get('default_outfit_tags', [])] + [
+        outfit.get('tags', []) for outfit in result.get('alternate_outfits', [])]
+    pattern = r'^(?:(?:black|white|red|blue|green|yellow|purple|pink|gold|silver|brown|grey|gray|orange|aqua)_)?(hairband|headband|hairclip|hair_clip|hair_ornament|hair_ribbon|hair_bow|hair_flower|hair_flower_ornament)$'
+    def family(tag):
+        match = re.fullmatch(pattern, tag)
+        return match[1] if match else None
+    def sourced(item):
+        sources = item.get('sources', []) + ([item['source']] if item.get('source') else [])
+        return any(source.get('url') and source.get('method') == 'linked tag in wiki clothing ensemble'
+                   for source in sources)
+    sets = [{item['tag'] for item in tags if family(item['tag']) and sourced(item)}
+            for tags in ensembles]
+    explicit = [tags for tags in sets if tags]
+    if len(explicit) < 2 or len({frozenset(tags) for tags in explicit}) < 2:
+        return result
+    families = {family(tag) for tags in explicit for tag in tags}
+    # Only families whose sourced values differ between explicit ensembles move.
+    varying = {name for name in families if len({frozenset(
+        tag for tag in tags if family(tag) == name) for tags in explicit
+        if any(family(tag) == name for tag in tags)}) > 1}
+    removed = {item['tag'] for item in result.get('appearance_tags', []) if family(item['tag']) in varying}
+    for field in ('appearance_tags', 'appearance_candidates', 'unassigned_accessories'):
+        if field in result:
+            result[field] = [item for item in result[field] if family(item['tag']) not in varying]
+    for tags in ensembles:
+        for item in tags:
+            if family(item['tag']) in varying and sourced(item):
+                item['state_scope'] = 'outfit'
+    if 'identity_block' in result:
+        result['identity_block'] = ', '.join(tag.strip() for tag in result['identity_block'].split(',')
+                                              if re.sub(r'\s+', '_', tag.strip()) not in removed)
+    result['hair_ornament_assignment'] = {'rule': 'different explicit sourced ornament sets in clothing ensembles',
+        'families': sorted(varying), 'ensembles': [sorted(tags) for tags in sets],
+        'removed_from_fixed_appearance': sorted(removed)}
     return result
 
 

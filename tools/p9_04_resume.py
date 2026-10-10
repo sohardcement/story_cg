@@ -39,7 +39,6 @@ def recover_single(response, request, entry, props, config):
         observed=result['data'].pop('framing_observation')
         result['framing_observation']=observed
         result['data']['framing']=review.framing_grade(entry['shot']['framing'],observed,config)
-    result['prop_checklist']=review.prop_checklist(props,entry['shot'])
     return review.annotate_reliability(result,review.load_reliability(config))
 
 

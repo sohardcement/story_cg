@@ -7,9 +7,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from storycg.config import character_lora_matching_enabled
 from storycg.identity_enrichment import load_rules
 from storycg.state import save_json_atomic
-from storycg.workflow import build_workflow
+
+DIAGNOSTIC_ITEMS = frozenset(('outfit', 'accessories', 'hair_ornaments'))
 
 
 def normalize_tag(tag):
@@ -81,38 +83,17 @@ def match_character_loras(character_tag, names, metadata, *, character_tags=None
             'rejected':rejected,'selection_rule':'character share, non eval/intermediate artifact, training count, filename support, lexical tie break'}
 
 
-def determine_l1(character_tag, get_json, *, base_url='', character_tags=None, rules=None):
-    """get_json(path, params) is a GET-only injected client; never trusts saved list as live evidence."""
-    try:
-        info=get_json('/object_info',None)
-        names=lora_names(info)
-        metadata={name:get_json('/view_metadata/loras',{'filename':name}) for name in names}
-    except (httpx.HTTPError,OSError,ValueError,KeyError) as exc:
-        return {'identity_tier':'tier_pending_comfyui','lora':None,
-                'tier_evidence':{'status':'unavailable','error':str(exc),'method':'live object_info and view_metadata/loras'}}
-    result=match_character_loras(character_tag,names,metadata,character_tags=character_tags,rules=rules)
-    for match in result['matches']:
-        match['evidence']['url']=str(httpx.URL(base_url+'/view_metadata/loras',params={'filename':match['name']}))
-    if result['selected']:
-        tier='tier_pending_L1_validation'
-    elif result['metadata_missing']:
-        tier='tier_pending_comfyui'
-    else:
-        tier='tier_pending_L2'
-    return {'identity_tier':tier,'lora':result['selected'] if tier=='tier_pending_L1_validation' else None,'tier_evidence':result}
-
-
-def add_character_lora(workflow,lora):
+def add_character_lora(workflow,lora,model_ref,clip_ref):
+    """Insert the character LoRA after the style chain whose tails are model_ref and clip_ref (V2-20)."""
     workflow=copy.deepcopy(workflow)
-    # Insert after the two style LoRAs, preserving both MODEL and CLIP chains.
     workflow['30']={'class_type':'LoraLoader','inputs':{
-        'model':['3',0],'clip':['3',1],'lora_name':lora['name'],
+        'model':model_ref,'clip':clip_ref,'lora_name':lora['name'],
         'strength_model':lora['strength_model'],'strength_clip':lora['strength_clip']}}
     for key,node in workflow.items():
         if key=='30':continue
         for field,value in node['inputs'].items():
-            if value==['3',0]:node['inputs'][field]=['30',0]
-            elif value==['3',1]:node['inputs'][field]=['30',1]
+            if value==model_ref:node['inputs'][field]=['30',0]
+            elif value==clip_ref:node['inputs'][field]=['30',1]
     return workflow
 
 
@@ -131,17 +112,6 @@ def l1_validation_tags(identity,rules=None):
                                  rules['neutral_l2_tags']]))
 
 
-def build_l2_workflow(config,identity,seed,prefix,rules=None):
-    cfg=copy.deepcopy(config)
-    cfg.pop('generation_reference',None)
-    cfg.pop('character_lora',None)
-    cfg['sampler']['denoise']=1.0
-    rules=rules or load_rules()
-    tags=knowledge_probe_tags(identity,rules)
-    workflow=build_workflow(cfg,tags,'medium',seed,prefix)
-    return workflow
-
-
 def _eyewear(tag,cfg):
     return tag in cfg.get('eyewear_tags',[]) or any(re.search(pattern,tag) for pattern in cfg.get('eyewear_patterns',[]))
 
@@ -156,8 +126,8 @@ def reference_checklist(identity,reference):
     subject=default_outfit_subject(identity)
     applicable=bool(subject and subject in tags)
     return [{**row,'applicable':row['item']!='outfit' or applicable,
-             'scope':'outfit_diagnostic' if row['item']=='outfit' else 'appearance',
-             'affects_tier':row['item']!='outfit'} for row in identity_checklist(identity)]
+             'scope':'diagnostic' if row['item'] in DIAGNOSTIC_ITEMS else 'appearance',
+             'affects_tier':row['item'] not in DIAGNOSTIC_ITEMS} for row in identity_checklist(identity)]
 
 
 def select_reference_posts(identity,posts,*,rules=None):
@@ -239,6 +209,8 @@ def download_references(character_tag,job_dir,client,*,rules=None,identity=None)
 
 
 def identity_checklist(identity):
+    from storycg.identity_enrichment import outfit_hair_ornaments
+    identity = outfit_hair_ornaments(identity)
     mapping={'hair_color':'hair_color','eye_color':'eye_color','hair_length':'hairstyle',
              'hairstyle':'hairstyle','hair_details':'hairstyle','accessories':'accessories',
              'accessory_color':'accessories','features':'accessories'}
@@ -247,54 +219,29 @@ def identity_checklist(identity):
 
 
 def evaluate_l2(checklist,comparisons,reliability):
-    reliable=[];unverified=[];outfit=[]
+    reliable=[];unverified=[];outfit=[];accessories=[]
     for expected in checklist:
         rows=[x for x in comparisons if x.get('item')==expected['item'] and x.get('tag')==expected['tag']]
         record={**expected,'comparisons':rows}
-        if expected['item']=='outfit':
+        if expected['item'] in DIAGNOSTIC_ITEMS:
             record['affects_tier']=False
             active=[r for r in rows if r.get('applicable',True) and r.get('status')!='not_applicable']
             record['passed']=all(r.get('status')=='pass' for r in active)
             record['applicable']=bool(active)
-            record['reliability']=reliability.get('items',{}).get('outfit',{}).get('status','unverified')
-            outfit.append(record);continue
+            record['reliability']=reliability.get('items',{}).get(expected['item'],{}).get('status','unverified')
+            (outfit if expected['item']=='outfit' else accessories).append(record);continue
         if reliability.get('items',{}).get(expected['item'],{}).get('status')=='reliable':
             record['passed']=bool(rows) and all(x.get('status')=='pass' for x in rows)
             reliable.append(record)
         else:
             record['note']='未经可靠审核';unverified.append(record)
-    vetoes=[x for x in comparisons if x.get('item')!='outfit' and x.get('status')=='fail' and x.get('applicable',True)]
+    vetoes=[x for x in comparisons if x.get('item') not in DIAGNOSTIC_ITEMS and x.get('status')=='fail' and x.get('applicable',True)]
     not_visible=[x for x in comparisons if x.get('status')=='not_visible']
     passed=bool(reliable) and all(x['passed'] for x in reliable) and not vetoes
     return {'identity_tier':'L2' if passed else 'tier_pending_L3_L4',
-            'reliable':reliable,'unverified':unverified,'outfit_comparisons':outfit,
+            'reliable':reliable,'unverified':unverified,'outfit_comparisons':outfit,'accessory_comparisons':accessories,
             'vetoes':vetoes,'not_visible':not_visible,
-            'limitations':'D8b: all reliable appearance items must pass; any appearance fail vetoes; outfit is diagnostic only; not_visible neither vetoes nor confirms'}
-
-
-def prepare_l2(job_dir, identity, config, *, seeds=(1,), rules=None, reference_client=None):
-    """Persist 1–2 unconditioned test workflows, without ever submitting them.
-
-    A later generation runner must execute these exact workflows and supply the
-    resulting image/workflow records to compare_l2. References are comparison only.
-    """
-    if not 1 <= len(seeds) <= 2:
-        raise ValueError('L2 requires one or two tests')
-    root=Path(job_dir)
-    plan={'status':'awaiting_generation','generation_count':0,'vision_calls':0,
-          'tests':[],'references':[],'checklist':identity_checklist(identity)}
-    for number,seed in enumerate(seeds,1):
-        path=f'l2/test_{number:02d}_workflow.json'
-        workflow=build_l2_workflow(config,identity,seed,f'storycg_{root.name}_l2_{number:02d}_a001',rules)
-        save_json_atomic(root/path,workflow)
-        plan['tests'].append({'workflow_path':path,'seed':seed,'status':'not_submitted',
-                              'workflow_sha256':hashlib.sha256((root/path).read_bytes()).hexdigest(),
-                              'reference_injection':False})
-    save_json_atomic(root/'l2/plan.json',plan)
-    if reference_client is not None:
-        plan['references']=download_references(identity['character_tag'],root,reference_client,rules=rules,identity=identity)
-        save_json_atomic(root/'l2/plan.json',plan)
-    return plan
+            'limitations':'D35: accessories and outfit are diagnostic only, neither veto nor confirmation; all reliable fixed appearance items must pass; not_visible neither vetoes nor confirms'}
 
 
 def _local_file(root,relative):
@@ -428,6 +375,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
     evidence['reliable']=conclusion['reliable']
     evidence['unverified']=conclusion['unverified']
     evidence['outfit_comparisons']=conclusion['outfit_comparisons']
+    evidence['accessory_comparisons']=conclusion['accessory_comparisons']
     evidence['limitations']=conclusion['limitations']
     evidence['vetoes']=conclusion['vetoes']
     evidence['not_visible']=conclusion['not_visible']
@@ -513,28 +461,71 @@ def tier_generation_config(config,identity):
     return cfg
 
 
-def live_inventory(config,client,reference_client,job_dir):
-    """Read every advertised LoRA; classify training tags with Danbooru categories."""
+LORA_CATEGORY_TTL_SECONDS=24*3600
+LORA_CATEGORY_RETRIES=3
+
+
+def _tags_json_with_backoff(reference_client,params,sleep=None):
+    """Danbooru tags.json; HTTP 429 is retried with 1s, 2s, 4s waits (at most 3 retries)."""
+    import time
+    sleep=sleep or time.sleep
+    for attempt in range(LORA_CATEGORY_RETRIES+1):
+        response=reference_client.get('/tags.json',params=params)
+        if response.status_code!=429 or attempt==LORA_CATEGORY_RETRIES:
+            response.raise_for_status()
+            return response
+        sleep(2**attempt)
+
+
+def _lora_category_cache_path(config):
+    """Next to the LoRA metadata cache, so each cache location keeps its own categories."""
+    if config.get('lora_category_cache'):return Path(config['lora_category_cache'])
+    if config.get('lora_metadata_cache'):return Path(config['lora_metadata_cache']).with_name('lora_category_cache.json')
+    return Path(__file__).resolve().parents[2]/'cache/lora_category_cache.json'
+
+
+def live_inventory(config,client,reference_client,job_dir,*,now=None,sleep=None):
+    """Read every advertised LoRA; classify training tags with Danbooru categories.
+
+    V2-12: the Danbooru category lookup is cached under the ComfyUI LoRA file list (name and
+    size) for 24 hours; tier/inventory.json records whether it was a cache hit.
+    """
     from datetime import datetime,timezone
     info=client.http.get('/object_info/LoraLoader');info.raise_for_status()
     names=lora_names(info.json())
     from storycg.model_metadata import cached_lora_metadata
     metadata,metadata_status=cached_lora_metadata(config,client,names)
     tags=sorted({t for m in metadata.values() for t in _frequencies(m)})
-    categories=[]
-    for offset in range(0,len(tags),80):
-        response=reference_client.get('/tags.json',params={'search[name_comma]':','.join(tags[offset:offset+80]),'limit':100})
-        response.raise_for_status()
-        categories.append({'url':str(response.url),'response':response.json()})
+    sizes={}
+    for file in client.list_model_files('loras'):sizes.setdefault(file['name'],file.get('size'))
+    key=hashlib.sha256(json.dumps([[name,sizes.get(name)] for name in sorted(names)],sort_keys=True).encode()).hexdigest()
+    current=now or datetime.now(timezone.utc)
+    cache_path=_lora_category_cache_path(config)
+    cache=json.loads(cache_path.read_text(encoding='utf-8')) if cache_path.exists() else {'version':1,'entries':{}}
+    entry=cache['entries'].get(key)
+    fresh=entry is not None and entry.get('tags')==tags and (
+        current-datetime.fromisoformat(entry['stored_at'])).total_seconds()<LORA_CATEGORY_TTL_SECONDS
+    if fresh:
+        categories=entry['categories'];category_cache={'key':key,'status':'hit','stored_at':entry['stored_at']}
+    else:
+        categories=[]
+        for offset in range(0,len(tags),80):
+            response=_tags_json_with_backoff(reference_client,{'search[name_comma]':','.join(tags[offset:offset+80]),'limit':100},sleep=sleep)
+            categories.append({'url':str(response.url),'response':response.json()})
+        status='expired' if entry is not None and entry.get('tags')==tags else 'miss'
+        category_cache={'key':key,'status':status,'stored_at':current.isoformat()}
+        cache['entries'][key]={'stored_at':current.isoformat(),'tags':tags,'categories':categories}
+        save_json_atomic(cache_path,cache)
     result={'retrieved_at':datetime.now(timezone.utc).isoformat(),
             'object_info_url':config['comfyui_url']+'/object_info/LoraLoader',
             'names':names,'metadata':metadata,'metadata_status':metadata_status,'categories':categories,
+            'category_cache':category_cache,
             'character_tags':sorted({t['name'] for r in categories for t in r['response'] if t['category']==4})}
     save_json_atomic(Path(job_dir)/'tier/inventory.json',result)
     return result
 
 
-def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,reference_client=None,vlm=None,allow_l3=True):
+def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,reference_client=None,vlm=None,allow_l3=True,force_probe=False):
     """One persistent probe. Pending results stop; no blind seed retries."""
     from storycg.identity import USER_AGENT,BASE_URL
     from storycg.runner import run_gen_one
@@ -542,11 +533,13 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
     root=Path(job_dir).resolve()
     if identity.get('status')!='locked':return identity
     from storycg.fallback import ensure_l3,needs_user,import_user_reference,comparison_available
-    if identity.get('identity_tier') not in ('L1','L2','L3','L4') and not (root/'portrait.json').exists():
+    if not force_probe and identity.get('identity_tier') not in ('L1','L2','L3','L4') and not (root/'portrait.json').exists():
         from storycg.reference import reuse_l3_portrait
         cached=reuse_l3_portrait(root,identity,tier_generation_config(config,dict(identity,identity_tier='L3')))
         if cached:return cached
-    probe=root/'tier'/f'probe_v{load_rules()["tier_review"]["version"]}_{root.name}'
+    from storycg.tier_cache import cache_key as model_cache_key
+    model_suffix='_'+model_cache_key(identity['tier_model_fingerprint'])[:16] if identity.get('tier_model_fingerprint') else ''
+    probe=root/'tier'/f'probe_v{load_rules()["tier_review"]["version"]}_{root.name}{model_suffix}'
     opts=json.loads((root/'job.json').read_text()).get('generation_options',{}) if (root/'job.json').exists() else {}
     try:user_ref=import_user_reference(root,opts['reference_path']) if opts.get('reference_path') else None
     except (ValueError,OSError) as exc:return needs_user(root,identity,'用户参考图无法读取：'+str(exc))
@@ -572,7 +565,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         if identity.get('identity_tier')=='tier_pending_L3_L4' and allow_l3:
             refs_path=probe/load_rules()['references']['directory']/'manifest.json'
             refs=[user_ref] if user_ref else json.loads(refs_path.read_text()) if refs_path.exists() else []
-            return ensure_l3(root,identity,config,client,references=refs,reference_root=root if user_ref else probe,vlm=vlm)
+            return ensure_l3(root,identity,config,client,references=refs,reference_root=root if user_ref else probe,vlm=vlm,force_probe=force_probe)
         return identity
     if identity.get('tier_evidence'):
         previous={'identity_tier':identity.get('identity_tier'),'tier_evidence':identity['tier_evidence']}
@@ -580,12 +573,17 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         save_json_atomic(root/f'tier/history/{digest}.json',previous)
     if reference_client is None:
         with httpx.Client(base_url=BASE_URL,timeout=30,trust_env=False,headers={'User-Agent':USER_AGENT}) as owned:
-            return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm,allow_l3=allow_l3)
+            return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm,allow_l3=allow_l3,force_probe=force_probe)
     try:
-        inventory=inventory or live_inventory(config,client,reference_client,root)
-        match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
-                                    character_tags=inventory['character_tags'],rules=rules)
-        match['inventory_source']={'object_info_url':inventory['object_info_url'],'retrieved_at':inventory['retrieved_at']}
+        if character_lora_matching_enabled(config):
+            inventory=inventory or live_inventory(config,client,reference_client,root)
+            match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
+                                        character_tags=inventory['character_tags'],rules=rules)
+            match['inventory_source']={'object_info_url':inventory['object_info_url'],'retrieved_at':inventory['retrieved_at']}
+        else:
+            # V2-20: character LoRA matching is off, so no LoRA can be selected and L1 cannot be reached.
+            match={'selected':None,'matches':[],'disabled':True,
+                   'reason':'character_lora_matching is off (TASK-v2 §10.4); no LoRA inventory was read'}
         save_json_atomic(root/'tier/lora-match.json',match)
         lora=match['selected']
         identity['lora']=lora
@@ -593,7 +591,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         identity['tier_evidence']={'lora_match':match,'status':'awaiting_probe'}
         save_json_atomic(root/'identity.json',identity)
         protocol_suffix='_l1_source_validation' if lora else ''
-        probe=root/'tier'/f'probe_v{rules["tier_review"]["version"]}_{root.name}{protocol_suffix}'
+        probe=root/'tier'/f'probe_v{rules["tier_review"]["version"]}_{root.name}{protocol_suffix}{model_suffix}'
         refs_path=probe/rules['references'].get('directory','references')/'manifest.json'
         references=[] if user_ref else json.loads(refs_path.read_text()) if refs_path.exists() else download_references(identity['character_tag'],probe,reference_client,rules=rules,identity=identity)
         if user_ref:
@@ -637,7 +635,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
                 if not comparison_available(result):
                     return needs_user(root,identity,'L2 审核不可用，无法确认底模是否认识该角色；请恢复审核服务或提供可用参考图')
                 if allow_l3:
-                    return ensure_l3(root,identity,config,client,references=references,reference_root=probe,vlm=vlm)
+                    return ensure_l3(root,identity,config,client,references=references,reference_root=probe,vlm=vlm,force_probe=force_probe)
             return identity
         finally:
             if owned_vision:vlm.close()
