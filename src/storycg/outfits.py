@@ -83,7 +83,7 @@ def _compatible(tag, selected, existing, rules):
     return True
 
 
-def apply_same_garment_exclusion(result, rules):
+def apply_same_garment_exclusion(result, rules, colours=None):
     """V2-31: one colour per garment noun in the selected default outfit.
 
     Members sharing a garment noun (brown_shoes / black_shoes) are one garment. The kept member
@@ -94,7 +94,7 @@ def apply_same_garment_exclusion(result, rules):
     tags = result.get('default_outfit_tags', [])
     groups = {}
     for item in tags:
-        split = color_split(item['tag'])
+        split = color_split(item['tag'], colours)
         if split:
             groups.setdefault(split[1], []).append(item)
     demoted, notes = [], []

@@ -35,11 +35,16 @@ def portrait_review(root):
     attempts = read_json(root / 'portrait_attempts.json', [])
     approved = portrait.get('approved_attempt')
     attempt = next((a for a in attempts if a.get('attempt') == approved), attempts[-1] if attempts else {})
-    data = ((attempt.get('audit') or {}).get('data')) or {}
-    for key, item in data.items():
-        if isinstance(item, dict) and item.get('status') not in ('pass', 'minor'):
-            review['failed_items'].append({'item': key, 'status': item.get('status'),
-                                           'reason': short(item.get('reason'), 240)})
+    # V2-33: the raw conclusion also counts the detection review (accessory colour, protagonist count); its
+    # failing items were missing here. not_applicable never decides a group (result_statuses), so it is not listed.
+    sources = [('audit', ((attempt.get('audit') or {}).get('data')) or {}),
+               ('detection', (((attempt.get('detection_items') or {}).get('review') or {}).get('data')) or {})]
+    for source, data in sources:
+        for key, item in data.items():
+            if isinstance(item, dict) and item.get('status') not in ('pass', 'minor', 'not_applicable'):
+                review['failed_items'].append({'item': key, 'status': item.get('status'),
+                                               'reason': short(item.get('reason'), 240), 'source': source,
+                                               'reliable': item.get('reliability') == 'reliable'})
     review['note'] = '定妆图审核只记录、不拦截，请用户看图确认'
     return review
 

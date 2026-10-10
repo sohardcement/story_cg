@@ -520,16 +520,26 @@ def _confirmation(root):
             'candidates_per_shot': candidates_per_shot(config)}
 
 
+def _is_candidate_job(job_config):
+    """V2-33: a candidate-delivery job is one whose own config snapshot carries candidates_per_shot (every job
+    made in the candidate era does; the repair-era snapshots do not). Decided by the config, never by whether
+    candidates.json exists yet."""
+    return 'candidates_per_shot' in (job_config or {})
+
+
 def _progress(root, total, cycle):
     """V2-32: stage by stage. completed_shots is the number of shots with a picked candidate (not shots with
-    one finished image). Jobs without candidates.json (removed repair era) keep the attempt-based count."""
+    one finished image). V2-33: in a candidate-delivery job completed_shots is always the picked count, and
+    before candidates.json is written every shot is 0 generated / 0 picked. Only jobs whose config has no
+    candidate delivery (repair era) keep the attempt-based count."""
     from storycg.config import candidates_per_shot
-    store = read(root, 'candidates.json', {})
-    if not store:
+    job_config = read(root, 'job.json').get('generation_config', {})
+    if not _is_candidate_job(job_config):
         state = read(root, 'state.json')
         done = len({a['shot_id'] for a in state.get('attempts', []) if a['status'] == 'completed' and a['shot_id'].startswith('shot')})
         return {'completed_shots': done, 'total_shots': total, 'shots': [], 'final_review_done': cycle.get('phase') == 'complete'}
-    per = candidates_per_shot(read(root, 'job.json').get('generation_config', {}))
+    store = read(root, 'candidates.json', {})
+    per = candidates_per_shot(job_config)
     shots = []
     for number in range(1, total + 1):
         slot = store.get(str(number), {})
@@ -551,6 +561,12 @@ def launch(root):
     update(root, worker_pid=proc.pid)
 
 
+def _resource_failure(exc):
+    """V2-33: the same needs_user wording make and status give for a missing resource, printed by compile."""
+    return {'status': 'needs_user', 'needs_user': True, 'reason': 'resource_unavailable',
+            'question': '关键资源不可用：' + str(exc) + '。请恢复后重试当前命令。', 'options': []}
+
+
 def beats_cli(argv):
     """`beats-guide` prints the writing guide; `compile` checks a beats file without generating images."""
     parser = argparse.ArgumentParser(prog='storycg')
@@ -570,7 +586,11 @@ def beats_cli(argv):
         if args.character:
             from storycg.identity import resolve_identity
             config = load_config(args.config)
-            identity = resolve_identity(args.character, PROJECT/'cache'/'danbooru')
+            try:
+                identity = resolve_identity(args.character, PROJECT/'cache'/'danbooru')
+            except (httpx.HTTPError, ResourceUnavailable) as exc:
+                print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
+                return 1
             info = character_guide(identity, config)
         print(beats_guide(args.shots, info))
         return 0
@@ -578,11 +598,16 @@ def beats_cli(argv):
     # Scratch job directory: the tier and planning code expect a job.json; nothing here generates images.
     root = PROJECT/'compile'/('cmp-'+uuid.uuid4().hex[:12])
     new_job(root, args.character, 'beats compile check', args.shots, generation_config=config)
-    identity = resolve_job(root)
-    if identity.get('status') != 'locked':
-        print(json.dumps({'status': 'identity_not_locked', 'identity': identity}, ensure_ascii=False, indent=2))
-        return 2
-    identity = _ensure_tier_before_planning(root, config, identity)
+    try:
+        identity = resolve_job(root)
+        if identity.get('status') != 'locked':
+            print(json.dumps({'status': 'identity_not_locked', 'identity': identity}, ensure_ascii=False, indent=2))
+            return 2
+        identity = _ensure_tier_before_planning(root, config, identity)
+    except (httpx.HTTPError, ResourceUnavailable) as exc:
+        # V2-33: a Danbooru 500 or a lost connection is a needs_user answer, as in make, not a traceback.
+        print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
+        return 1
     if identity is None:
         print(json.dumps({'status': 'needs_user', 'reason': read(root, 'agent.json').get('reason')}, ensure_ascii=False, indent=2))
         return 2
@@ -593,6 +618,10 @@ def beats_cli(argv):
         print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc),
                           'character_guide': guide}, ensure_ascii=False, indent=2))
         return 2
+    except (httpx.HTTPError, ResourceUnavailable) as exc:
+        # The tag existence checks call Danbooru during compile; the same failure as above.
+        print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
+        return 1
     print(json.dumps({'status': 'valid', 'identity_tier': identity.get('identity_tier'),
                       'storyboard': board, 'job_dir': str(root), 'character_guide': guide},
                      ensure_ascii=False, indent=2))
