@@ -456,6 +456,14 @@
   - `progress` 改成分阶段：每镜已出图数/应出数、已审核数、是否已挑选，加上 `final_review_done`；`completed_shots` 改为"已挑选的镜数"。
   - 拿实测任务 cg-469f0a9b0f01 对照：第 3 镜 framing fail、定妆图的鞋子二选一、整组原始结论"未通过"都写进去了。领饰变蓝这一条，选中候选的审核记录里本来就没有，所以没写，问题在审核器漏检。
   - 监工复跑 756 passed，主线也是 756 passed，安装入口可用。 | 1 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-32.md`，f266296 |
+| V2-33 第二次实测的 5 个残留 | **通过**（64809a9，合入主线 ddbdd1d）。
+  1. `compile`、`beats-guide` 遇到资源错误时，输出 needs_user 的 JSON，退出码为 1，不再吐 traceback。
+  2. 违反"单个动作子句"和写了外貌描写，现在分开报错。
+  3. 进度按任务配置判断：候选任务的 `completed_shots` 就是已挑选的镜数；候选文件还没写出来时，每镜显示 0/0。
+  4. 定妆图失败原因里，检测项也列出来了，标明来源和"非可靠项"。实测任务的结果说明里，原来写"未记录具体项"，现在写"accessory_color_sampled（not_visible，检测项）：no setting reference"。
+  5. 颜色表改用 Danbooru 颜色组的快照（`cache/tag_groups/colors.json`，带 sha256）。初音的领带只留 aqua，其余 7 个角色没有变化。
+  - 监工复跑 783 passed，主线也是 783 passed。
+  - 已知问题：颜色的手写补充表可能会误伤 cream、mint 这类词；`validate_storyboard` 里同样的报错文字没有改（正常流程走不到那里）。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-33.md`，64809a9 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
