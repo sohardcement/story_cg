@@ -29,6 +29,16 @@ def _group(tag, category):
     return category['name'] if category.get('exclusive') else None
 
 
+def _frequency_settles(ordered, rules):
+    """V2-31: overwhelming measured winner; every rival is wiki-only or negligible frequency."""
+    config=rules['frequency_negation']
+    winner=ordered[0].get('frequency')
+    if winner is None or winner<config['winner_min_frequency']:
+        return False
+    return all(x.get('frequency') is None or x['frequency']<config['loser_max_frequency']
+               for x in ordered[1:])
+
+
 def wiki_descriptors(body, url, rules):
     """Linked tags in descriptive sentences only; preserve prose and variant evidence."""
     found = {}
@@ -88,6 +98,7 @@ def enrich_identity(identity, related, url, rules):
         item['source']=evidence
     conflicts=[]
     blocked=set()
+    negated_by={}
     groups={}
     for tag,item in merged.items():
         cat=category_for(tag,rules)
@@ -110,12 +121,18 @@ def enrich_identity(identity, related, url, rules):
         a,b=best.get('frequency'),second.get('frequency')
         dominant=(a is not None and b is not None and
                   a-b>=rules['exclusive_min_gap'] and a>=b*rules['exclusive_min_ratio'])
-        losers=ordered[1:] if dominant else ordered
+        settled=not dominant and _frequency_settles(ordered, rules)
+        losers=ordered[1:] if (dominant or settled) else ordered
         blocked.update(x['tag'] for x in losers)
+        for x in losers:
+            negated_by.setdefault(x['tag'], {'winner':best['tag'],
+                'reason':'frequency negated: winner has overwhelming measured frequency; this alternative is wiki-only or negligible'
+                if settled else 'frequency dominance'})
+        decision='dominant frequency' if dominant else ('frequency negated wiki-only or negligible alternatives' if settled else 'unresolved; no lock')
         conflicts.append({'category':group,'tags':[x['tag'] for x in ordered],
                           'frequencies':{x['tag']:x.get('frequency') for x in ordered},
-                          'decision':'dominant frequency' if dominant else 'unresolved; no lock',
-                          'selected':best['tag'] if dominant else None})
+                          'decision':decision,
+                          'selected':best['tag'] if (dominant or settled) else None})
     appearance=[];outfit=[];app_candidates=[];out_candidates=[]
     for tag,item in merged.items():
         cat=category_for(tag,rules)
@@ -139,6 +156,8 @@ def enrich_identity(identity, related, url, rules):
             lock=(tag not in blocked and accessory_is_fixed(tag,identity.get('wiki_body',''),identity.get('wiki_url',''),rules))
         item['locked']=lock
         item['decision']='locked' if lock else ('conflict' if tag in blocked else 'variant or below threshold')
+        if tag in negated_by and not lock:
+            item['negated_by']=negated_by[tag]
         if lock:
             (outfit if cat.get('outfit') else appearance).append(item)
         elif wiki_supported or (freq is not None and freq>=rules['candidate_min_frequency']):
@@ -154,6 +173,8 @@ def enrich_identity(identity, related, url, rules):
     result['unassigned_accessories']=[x for x in app_candidates if x['category'] in ('accessories','accessory_color') and x['tag'] not in clothing_accessories]
     selected = {x['tag'] for x in result['default_outfit_tags']}
     result['outfit_candidates'] = [x for x in out_candidates if x['tag'] not in selected]
+    from storycg.outfits import apply_same_garment_exclusion
+    result = apply_same_garment_exclusion(result, rules)
     return outfit_hair_ornaments(result)
 
 
