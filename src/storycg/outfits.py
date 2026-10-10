@@ -83,6 +83,42 @@ def _compatible(tag, selected, existing, rules):
     return True
 
 
+def apply_same_garment_exclusion(result, rules):
+    """V2-31: one colour per garment noun in the selected default outfit.
+
+    Members sharing a garment noun (brown_shoes / black_shoes) are one garment. The kept member
+    is the highest measured frequency, else the first in wiki order. The rest are demoted to
+    unlocked outfit candidates: they stay out of prompts and review checklists.
+    """
+    from storycg.tags import color_split
+    tags = result.get('default_outfit_tags', [])
+    groups = {}
+    for item in tags:
+        split = color_split(item['tag'])
+        if split:
+            groups.setdefault(split[1], []).append(item)
+    demoted, notes = [], []
+    for noun, members in groups.items():
+        if len(members) < 2:
+            continue
+        measured = [m for m in members if m.get('frequency') is not None]
+        keep = max(measured, key=lambda m: m['frequency']) if measured else members[0]
+        losers = [m for m in members if m is not keep]
+        for m in losers:
+            m.update(locked=False, decision=f"与 {keep['tag']} 互斥，降为备选",
+                     exclusive_with=keep['tag'])
+        demoted.extend(losers)
+        notes.append({'garment': noun, 'kept': keep['tag'], 'kept_by': 'measured frequency' if measured else 'wiki order',
+                      'demoted': [m['tag'] for m in losers]})
+    if not demoted:
+        return result
+    kept_ids = {id(x) for x in tags} - {id(d) for d in demoted}
+    result['default_outfit_tags'] = [x for x in tags if id(x) in kept_ids]
+    result['outfit_candidates'] = demoted + list(result.get('outfit_candidates', []))
+    result.setdefault('default_outfit_selection', {})['same_garment_exclusion'] = {
+        'rule': rules['same_garment_color']['rule'], 'groups': notes}
+    return result
+
 def select_default_outfit(body, wiki_url, related, related_url, rules):
     from storycg.identity_enrichment import category_for
     config = rules['outfit_selection']

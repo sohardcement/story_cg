@@ -5,6 +5,16 @@
   "candidate_min_frequency": 0.15,
   "exclusive_min_gap": 0.15,
   "exclusive_min_ratio": 1.5,
+  "frequency_negation": {
+    "winner_min_frequency": 0.5,
+    "loser_max_frequency": 0.15,
+    "reason": "V2-31: when one colour of an exclusive appearance category has overwhelming measured frequency and every rival is either wiki-only (no frequency) or negligible (below candidate_min_frequency), the measured colour is locked and the rivals are negated. 0.5 means the colour appears in a majority of the solo co-occurrence sample, above the 0.4 lock threshold. 0.15 is candidate_min_frequency, the same floor used to keep an alternative as a candidate. Near-equal frequencies never reach this rule and stay unlocked. Two wiki-only rivals with no frequency never settle a conflict. These values are judgement values, not calibrated on a held-out set."
+  },
+  "same_garment_color": {
+    "rule": "Within the selected default outfit, colour-prefixed members that share one garment noun (for example brown_shoes and black_shoes) are one garment. Keep one: the member with the highest measured frequency; if none is measured, the first in wiki order. The others are demoted to outfit candidates, unlocked, excluded from prompts and from review checklists, and recorded as mutually exclusive with the kept member.",
+    "colour_source": "tags.py COLOR_WORDS and SHADE_WORDS",
+    "reason": "V2-31: a single garment cannot carry two colours in one image. Keeping both put contradictory colours into the prompt and made the portrait review treat them as two required items. Measured frequency is preferred over absence of measurement, because an unmeasured wiki-only colour has no evidence beyond one sentence. Uncoloured tags (for example sleeveless_shirt, hair_ribbon) are different garment nouns and are never grouped."
+  },
   "categories": [
     {
       "name": "hair_color",

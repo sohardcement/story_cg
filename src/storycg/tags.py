@@ -9,6 +9,18 @@ def canonical_tag(value):
     return re.sub(r'\s+', '_', value.strip().lower())
 
 
+# Colour vocabulary shared by identity exclusion rules (V2-31). Shade words qualify a colour.
+COLOR_WORDS = ('red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'white',
+               'black', 'grey', 'gray', 'brown', 'silver', 'gold')
+SHADE_WORDS = ('light', 'dark', 'pale', 'bright', 'golden')
+_COLOR_PREFIX = re.compile(rf"^(?:(?:{'|'.join(SHADE_WORDS)})_)?({'|'.join(COLOR_WORDS)})_(.+)$")
+
+
+def color_split(tag):
+    """Return (colour, garment noun) for a colour-prefixed tag such as brown_shoes, else None."""
+    match = _COLOR_PREFIX.match(canonical_tag(tag))
+    return (match.group(1), match.group(2)) if match else None
+
 def _split_prop_attribute(tag, kind, registry, path):
     """Recover only an object-bound attribute, checking both exact components."""
     normalized = canonical_tag(tag)
