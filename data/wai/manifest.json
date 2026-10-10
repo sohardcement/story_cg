@@ -1,0 +1,20 @@
+{
+  "source_repo": "https://github.com/mirabarukaso/character_select_stand_alone_app",
+  "license": "MIT (upstream LICENSE file is saved as data/wai/LICENSE.upstream; see its sha256)",
+  "downloaded_at": "2026-10-10T00:43:25+00:00",
+  "wai_version": "WAI Illustrious v16 (the list is named v160)",
+  "project_checkpoint_note": "项目底模是 WAI v17，比清单晚一版；清单只用来判定角色是否可以只靠 tag 画出来",
+  "rows": 5094,
+  "csv": {
+    "file": "data/wai/waiIllustriousSDXL_v160_characters.csv",
+    "url": "https://raw.githubusercontent.com/mirabarukaso/character_select_stand_alone_app/main/data/waiIllustriousSDXL_v160_characters.csv",
+    "sha256": "6c148ef04ebb63586b3983f8df04d60e409822cf07d9dae98fac09ab72355b67",
+    "bytes": 264444
+  },
+  "license_file": {
+    "file": "data/wai/LICENSE.upstream",
+    "url": "https://raw.githubusercontent.com/mirabarukaso/character_select_stand_alone_app/main/LICENSE",
+    "sha256": "d851e953462b864875b6bd6451d22edfe82b473a11ee8828f141ab865bb1a383",
+    "bytes": 1074
+  }
+}

@@ -113,14 +113,27 @@ def _work(body, character, wiki_url):
             if parenthetical else (None,None))
 
 
+def _danbooru_for_list_tag(source, list_tag):
+    """V2-25: the one real Danbooru character tag whose normalized form equals the WAI list tag, else None."""
+    from storycg import wai_list
+    entries,_=source.get('/autocomplete.json',{'search[query]':list_tag,'search[type]':'tag_query','limit':10})
+    want=wai_list.normalize(list_tag)
+    matches={x['value'] for x in entries if x.get('category')==4 and not x.get('tag',{}).get('is_deprecated')
+             and wai_list.normalize(x.get('value',''))==want}
+    return matches.pop() if len(matches)==1 else None
+
+
 def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client | None = None,
                      work: str | None = None, character_tag: str | None = None,
-                     rules: dict | None = None) -> dict:
+                     rules: dict | None = None, wai: dict | None = None) -> dict:
     """Resolve candidates without letting an exact other-name hide ambiguity.
 
     No generation or vision service is contacted here. Tier verification remains pending.
+    `wai` is the job's `wai_list` config block (None: the default config). V2-25: a name that hits exactly one
+    WAI list row resolves through that row's tag to a real Danbooru tag; anything else follows the old path.
     """
     from storycg.identity_enrichment import load_rules, wiki_descriptors, enrich_identity
+    from storycg import wai_list
     if not name.strip():
         raise ValueError('character name is empty')
     rules=rules or load_rules()
@@ -128,8 +141,16 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
         with httpx.Client(base_url=BASE_URL,timeout=30,trust_env=False,
                           headers={'User-Agent':USER_AGENT}) as owned:
             return resolve_identity(name,cache_dir,client=owned,work=work,
-                                    character_tag=character_tag,rules=rules)
+                                    character_tag=character_tag,rules=rules,wai=wai)
     source=_CachedDanbooru(Path(cache_dir),client)
+    if character_tag is None and work is None:
+        hit=wai_list.lookup_name(name,wai_list.settings_for(wai))
+        if hit:
+            danbooru=_danbooru_for_list_tag(source,hit['list_tag'])
+            if danbooru:
+                result=resolve_identity(name,cache_dir,client=client,character_tag=danbooru,rules=rules,wai=wai)
+                result['wai_list']={**hit,'danbooru_tag':danbooru}
+                return result
     search=character_tag or name
     entries,search_url=source.get('/autocomplete.json',{
         'search[query]':search,'search[type]':'tag_query','limit':10})
