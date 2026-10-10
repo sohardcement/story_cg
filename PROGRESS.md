@@ -480,6 +480,13 @@
   5. 颜色表改用 Danbooru 颜色组的快照（`cache/tag_groups/colors.json`，带 sha256）。初音的领带只留 aqua，其余 7 个角色没有变化。
   - 监工复跑 783 passed，主线也是 783 passed。
   - 已知问题：颜色的手写补充表可能会误伤 cream、mint 这类词；`validate_storyboard` 里同样的报错文字没有改（正常流程走不到那里）。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-33.md`，64809a9 |
+| V2-34 第三次实测的残留 | **通过**（f15ef02，返工 1 次，合入主线 c435e06）。
+  - 已出图数改为从 `state.json` 统计。
+  - 结果说明新增"终审发现"：把终审剧情对照里的非 pass 项写进去，再按镜追加终审新发现的偏差。拿雷姆核对，"缺了因下雨醒来、结尾变成挑书"两条都写进去了。
+  - `resolve` 之后进入 `identity_confirmed` 状态，`status` 会显示锁定的身份和下一步。
+  - `beats-guide` 改为先查 WAI 清单，和正式判定顺序一致（返工 1）。改完后芙莉莲、雷姆都显示"L2（WAI 清单）"。
+  - 测试：监工在 `.v2` 复跑 797 passed。主线第一次跑全量时，`test_beats_guide_shows_wai_list_l2_not_a_cache_l3_through_the_entry` 失败了一次，子进程输出了 traceback；单独跑能过，第二次全量 797 passed。
+  - 判断：这个入口测试会经过 `beats-guide` 访问真实的 Danbooru，主线的 Danbooru 缓存不全，所以测试受网络影响、结果不稳定。另外，出现 traceback 说明有一类网络异常没被 V2-33 的资源错误处理接住。开 V2-35 修。 | 1 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-34.md`，f15ef02 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
