@@ -20,7 +20,7 @@ from storycg.comfy import ComfyClient
 from storycg.config import check_removed_switches, load_config
 from storycg.controls import apply_options
 from storycg.net_errors import RESOURCE_FAILURES, json_body
-from storycg.pipeline import new_job, resolve_job, run_story_job, make_contact_sheet, tier_recheck_eligible
+from storycg.pipeline import new_job, resolve_job, run_story_job, make_contact_sheet
 from storycg.beats import BeatsError, beats_guide, character_guide, compile_beats
 from storycg.state import save_json_atomic
 
@@ -176,16 +176,21 @@ def generate(root, config):
 def _ensure_tier_before_planning(root, config, identity):
     """Determine the identity tier before planning (v2: shot vocab needs it).
 
-    Planning grades every shot against the shot vocabulary by tier, so the
-    tier must be final before the storyboard call; a pending tier would
-    silently downgrade L2 characters to the conservative L1/L2 grades. Stops
-    before planning on needs_user/L4, and reuses an already-determined tier
-    on resume without opening clients or probing again.
+    Planning grades every shot against the shot vocabulary by tier, so the tier must be final before the
+    storyboard call. V2-38: a character outside the WAI list stops here with needs_user, before any probe or
+    prompt. An already-determined L1/L2 tier is reused on resume without opening clients.
     """
-    if identity.get('identity_tier') in ('L1', 'L2', 'L3'):
+    # V2-38: the WAI list gate also holds for a tier stored by an earlier run (a resumed job, or an old L2 record).
+    from storycg import wai_list
+    from storycg.tier_gate import refuse_outside_wai_list
+    if identity.get('status') == 'locked' and identity.get('character_tag') and not wai_list.tier_row(
+            identity['character_tag'], wai_list.settings_from(config)):
+        refused = refuse_outside_wai_list(root, identity, config)
+        question(root, refused['reason'], refused['question'])
+        return None
+    if identity.get('identity_tier') in ('L1', 'L2'):
         return identity
-    recheck = tier_recheck_eligible(identity, config)
-    if identity.get('status') == 'needs_user' and not recheck:
+    if identity.get('status') == 'needs_user':
         question(root, identity['reason'], identity['question'])
         return None
     from storycg.cycle import settings
@@ -203,11 +208,7 @@ def _ensure_tier_before_planning(root, config, identity):
     if identity.get('status') == 'needs_user':
         question(root, identity.get('reason', 'identity_unsupported'), identity['question'])
         return None
-    if identity.get('identity_tier') == 'L4':
-        question(root, identity.get('reason', 'identity_tier_L4'),
-                 identity.get('question') or '底模不认识该角色，且层级判定已用尽自动尝试；请提供可用的角色 LoRA 或参考图后 resume。')
-        return None
-    if identity.get('identity_tier') not in ('L1', 'L2', 'L3'):
+    if identity.get('identity_tier') not in ('L1', 'L2'):
         raise ResourceUnavailable('身份控制所需资源或层级实现不可用：' + str(identity.get('identity_tier')))
     return identity
 
@@ -635,7 +636,9 @@ def beats_cli(argv):
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
     if identity is None:
-        print(json.dumps({'status': 'needs_user', 'reason': read(root, 'agent.json').get('reason')}, ensure_ascii=False, indent=2))
+        record = read(root, 'agent.json')
+        print(json.dumps({'status': 'needs_user', 'reason': record.get('reason'), 'question': record.get('question')},
+                         ensure_ascii=False, indent=2))
         return 2
     guide = character_guide(identity, config)
     try:
@@ -730,7 +733,7 @@ def main(argv):
                         raise ValueError('cannot change identity inputs after story submission')
                     job=read(root,'job.json');opts=job.get('generation_options',{})
                     old=read(root,'identity.json')
-                    if old.get('identity_tier') in ('L1','L2','L3') and (
+                    if old.get('identity_tier') in ('L1','L2') and (
                             (args.tag and args.tag!=old.get('character_tag')) or
                             (args.work and args.work!=old.get('work_tag')) or
                             (args.reference_path and str(args.reference_path.resolve())!=opts.get('reference_path'))):
@@ -739,7 +742,7 @@ def main(argv):
                     opts.update({k:v for k,v in {'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v})
                     save_json_atomic(root/'job.json',job)
                     old=read(root,'identity.json')
-                    if old.get('identity_tier')=='L4':
+                    if old.get('status')=='needs_user':
                         save_json_atomic(root/'identity-before-user-input.json',old)
                         if args.tag or args.work:
                             from storycg.identity import resolve_identity
@@ -752,7 +755,7 @@ def main(argv):
                                     if (root/name).exists():shutil.move(root/name,archive/name)
                                 update(root,storyboard=[],approved=False)
                         elif old.get('character_tag'):
-                            old.update(status='locked',identity_tier='tier_pending_L3_L4',needs_user=False)
+                            old.update(status='locked',identity_tier='tier_pending_L1',needs_user=False)
                             old['tier_evidence']['validation_completed']=False
                         save_json_atomic(root/'identity.json',old)
                 if args.command == 'deliver':

@@ -7,7 +7,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from storycg.config import character_lora_matching_enabled
 from storycg.identity_enrichment import load_rules
 from storycg.net_errors import json_body
 from storycg.state import save_json_atomic
@@ -96,14 +95,6 @@ def add_character_lora(workflow,lora,model_ref,clip_ref):
             if value==model_ref:node['inputs'][field]=['30',0]
             elif value==clip_ref:node['inputs'][field]=['30',1]
     return workflow
-
-
-def knowledge_probe_tags(identity,rules=None):
-    """D8b canonical knowledge input; sourced appearance never confirms itself."""
-    rules=rules or load_rules()
-    if not identity.get('character_tag'):
-        raise ValueError('knowledge probe requires canonical character_tag')
-    return ', '.join(filter(None,[identity['character_tag'],identity.get('work_tag'),rules['neutral_l2_tags']]))
 
 
 def l1_validation_tags(identity,rules=None):
@@ -239,7 +230,7 @@ def evaluate_l2(checklist,comparisons,reliability):
     vetoes=[x for x in comparisons if x.get('item') not in DIAGNOSTIC_ITEMS and x.get('status')=='fail' and x.get('applicable',True)]
     not_visible=[x for x in comparisons if x.get('status')=='not_visible']
     passed=bool(reliable) and all(x['passed'] for x in reliable) and not vetoes
-    return {'identity_tier':'L2' if passed else 'tier_pending_L3_L4',
+    return {'identity_tier':'L2' if passed else 'tier_pending_L1',
             'reliable':reliable,'unverified':unverified,'outfit_comparisons':outfit,'accessory_comparisons':accessories,
             'vetoes':vetoes,'not_visible':not_visible,
             'limitations':'D35: accessories and outfit are diagnostic only, neither veto nor confirmation; all reliable fixed appearance items must pass; not_visible neither vetoes nor confirms'}
@@ -264,7 +255,7 @@ def _plain_test_workflow(workflow):
         workflow.get(s.get('latent_image',[''])[0],{}).get('class_type')=='EmptyLatentImage' for s in samplers)
 
 
-def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, character_lora=None, workflow_validator=None, comparison_file="l2/comparison-v3.json"):
+def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, character_lora=None, comparison_file="l2/comparison-v3.json"):
     """Compare every test/reference pair using the frozen VisionClient contract.
 
     test_images records contain path and workflow_path, from later real generation.
@@ -277,7 +268,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
     checklist=identity_checklist(identity)
     evidence={'test_images':test_images,'references':references,'comparisons':[],
               'reference_purpose':'comparison only, not original-design evidence','vision_calls':0}
-    failed={'identity_tier':'tier_pending_L3_L4','tier_evidence':evidence}
+    failed={'identity_tier':'tier_pending_L1','tier_evidence':evidence}
     if not test_images or len(test_images)>2 or not checklist:
         evidence['error']='missing test images or identity checklist';return failed
     refs=[r for r in references if r.get('status')=='downloaded']
@@ -289,7 +280,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
             image=_local_file(root,record['path'])
             workflow_path=_local_file(root,record['workflow_path'])
             workflow=json.loads(workflow_path.read_text())
-            if not (workflow_validator(workflow,record) if workflow_validator else _plain_test_workflow(workflow)):
+            if not _plain_test_workflow(workflow):
                 raise ValueError('L2 test workflow has conditioning or nonstandard nodes')
             loaded=[n['inputs']['lora_name'] for n in workflow.values() if n['class_type']=='LoraLoader']
             allowed_loras=record.get('style_lora_names')
@@ -325,8 +316,7 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
     evidence['comparison_version']=load_rules()['tier_review']['version']
     evidence['tier_scope']=load_rules()['tier_review']['tier_scope']
     evidence['aggregation_policy']='D8b'
-    evidence['probe_protocol']=('L3_reference_setting' if workflow_validator else
-                                'L1_source_validation' if character_lora else 'L2_knowledge')
+    evidence['probe_protocol']='L1_source_validation' if character_lora else 'L2_knowledge'
     all_rows=[]
     for number,test_path in enumerate(paths,1):
         for ref,path in zip(refs,ref_paths):
@@ -385,76 +375,14 @@ def compare_l2(job_dir,identity,test_images,references,reliability,vlm, *, chara
     return conclusion
 
 
-def reaggregate_stored_tier(job_dir,identity,reliability):
-    """Recompute D8b from immutable observations after checking probe provenance.
-
-    Returns None for a wrong protocol or incomplete evidence. Never generates,
-    downloads, or calls a reviewer. The caller retains the raw comparison files.
-    """
-    from storycg.fallback import comparison_available
-    root=Path(job_dir).resolve();evidence=identity.get('tier_evidence',{})
-    if not comparison_available({'tier_evidence':evidence}):return None
-    if not 1<=len(evidence.get('test_images',[]))<=2:return None
-    if not any(r.get('status')=='downloaded' for r in evidence.get('references',[])):return None
-    lora=identity.get('lora')
-    try:
-        probe=_local_directory(root,evidence['artifact_root'])
-        for test in evidence['test_images']:
-            image=_local_file(probe,test['path'])
-            if hashlib.sha256(image.read_bytes()).hexdigest()!=test['sha256']:return None
-            graph=json.loads(_local_file(probe,test['workflow_path']).read_text())
-            if not _plain_test_workflow(graph):return None
-            loaded=[n['inputs'] for n in graph.values() if n['class_type']=='LoraLoader']
-            expected=list(test['style_lora_names'])+([lora['name']] if lora else [])
-            if sorted(n['lora_name'] for n in loaded)!=sorted(expected):return None
-            positives=[n['inputs']['text'] for n in graph.values() if n['class_type']=='CLIPTextEncode']
-            prefix=evidence['generation_config']['positive_prefix']
-            tags=l1_validation_tags(identity) if lora else knowledge_probe_tags(identity)
-            text=prefix+', '+tags
-            if lora:
-                chosen=evidence['lora_match']['selected']
-                if chosen!=lora:return None
-                checked=match_character_loras(identity['character_tag'],[lora['name']],
-                    {lora['name']:lora['evidence']['metadata']},
-                    character_tags=lora['evidence']['character_tag_universe'])
-                if not checked['selected']:return None
-                node=next(n for n in loaded if n['lora_name']==lora['name'])
-                if any(node[k]!=lora[k] for k in ('strength_model','strength_clip')):return None
-                if lora.get('trigger_words'):text+=', '+', '.join(lora['trigger_words'])
-            if text not in positives:return None
-        for ref in evidence['references']:
-            if ref.get('status')=='downloaded' and hashlib.sha256(_local_file(probe,ref['path']).read_bytes()).hexdigest()!=ref['sha256']:return None
-        rows=[r for pair in evidence['comparisons'] for r in pair['items']]
-        checklist=identity_checklist(identity)
-        for pair in evidence['comparisons']:
-            if any(not any(r['item']==c['item'] and r['tag']==c['tag'] for r in pair['items']) for c in checklist if c['item']!='outfit'):return None
-        result=evaluate_l2(checklist,rows,reliability)
-    except (KeyError,ValueError,OSError,TypeError,StopIteration):return None
-    if lora and result['identity_tier']=='L2':result['identity_tier']='L1'
-    new=copy.deepcopy(identity);new['identity_tier']=result['identity_tier']
-    new['tier_evidence'].update({k:v for k,v in result.items() if k!='identity_tier'})
-    new['tier_evidence'].update(aggregation_policy='D8b',
-        probe_protocol='L1_source_validation' if lora else 'L2_knowledge',
-        original_comparison_version=evidence.get('original_comparison_version',evidence.get('comparison_version')),
-        comparison_version=load_rules()['tier_review']['version'],tier_scope='appearance_only')
-    return new
-
-
-def _local_directory(root,relative):
-    path=(root/relative).resolve()
-    if not path.is_relative_to(root.resolve()) or not path.is_dir():raise ValueError('tier artifacts outside job directory or missing')
-    return path
-
-
 def tier_generation_config(config,identity):
     tier=identity.get('identity_tier','pending')
-    if tier not in ('L1','L2','L3'):
+    if tier not in ('L1','L2'):
         raise ValueError(f'identity tier pending: {tier}; no story generation')
     cfg=copy.deepcopy(config)
     cfg.pop('generation_reference',None)
     cfg.pop('character_lora',None)
     cfg['identity_control']={**cfg.get('identity_control',{}),**copy.deepcopy(load_rules()['generation_identity_control'])}
-    # Probes strip every image input separately.
     if tier=='L1':
         if not identity.get('lora'):
             raise ValueError('L1 missing character LoRA evidence')
@@ -526,73 +454,81 @@ def live_inventory(config,client,reference_client,job_dir,*,now=None,sleep=None)
     return result
 
 
-def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,reference_client=None,vlm=None,allow_l3=True,force_probe=False):
-    """One persistent probe. Pending results stop; no blind seed retries."""
-    from storycg.identity import USER_AGENT,BASE_URL
+def comparison_available(comparison):
+    """A comparison counts only when no error was recorded and every pair returned a usable pass/fail."""
+    evidence=comparison.get('tier_evidence',{})
+    pairs=evidence.get('comparisons',[])
+    return not evidence.get('error') and bool(pairs) and all(p.get('result',{}).get('status')=='pass' for p in pairs)
+
+
+def import_user_reference(root, path):
+    """A user-supplied reference image (generation_options.reference_path): copied in, content-addressed."""
+    from PIL import Image
+    root=Path(root).resolve();source=Path(path).expanduser().resolve()
+    with Image.open(source) as im:im.verify()
+    data=source.read_bytes();sha=hashlib.sha256(data).hexdigest()
+    dest=root/'user_references'/(sha+source.suffix.lower())
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    if not dest.exists():dest.write_bytes(data)
+    record={'path':str(dest.relative_to(root)),'sha256':sha,'original_path':str(source),
+            'source':'用户提供','post_id':'user-'+sha[:12],'status':'downloaded',
+            'purpose':'generation and comparison only; not original-design evidence','general_tags':[]}
+    save_json_atomic(root/'user_references/manifest.json',[record])
+    return record
+
+
+def wai_list_result(root, identity, row):
+    """V2-25 / V2-38: a character on the WAI list is L2 from its tag alone. No probe image is made."""
+    result=copy.deepcopy(identity)
+    for key in ('reason','question','user_can_provide'): result.pop(key,None)
+    result.update(identity_tier='L2',tier_evidence={'status':'wai_list',
+        'reason':'角色在 WAI 清单内，只靠 tag 可画出，直接判 L2，不出探针图',
+        'generation_count':0,'vision_calls':0,'wai_list':row})
+    save_json_atomic(Path(root)/'identity.json',result)
+    return result
+
+
+def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,reference_client=None,vlm=None):
+    """V2-38: the L1 route only (character LoRA matching on). One LoRA-conditioned probe, compared with sourced
+    references. When no LoRA is selected the WAI list gives L2 from the tag, with no probe.
+
+    Returns the identity with identity_tier 'L1', 'tier_pending_L1' (for the D18 gate in tier_gate), or a
+    needs_user identity. Callers have already checked that the character is on the WAI list.
+    """
+    from storycg.identity import USER_AGENT,BASE_URL,needs_user
     from storycg.runner import run_gen_one
     from storycg.review import VisionClient
+    from storycg import wai_list
     root=Path(job_dir).resolve()
     if identity.get('status')!='locked':return identity
-    from storycg.fallback import ensure_l3,needs_user,import_user_reference,comparison_available
-    if not force_probe and identity.get('identity_tier') not in ('L1','L2','L3','L4') and not (root/'portrait.json').exists():
-        from storycg.reference import reuse_l3_portrait
-        cached=reuse_l3_portrait(root,identity,tier_generation_config(config,dict(identity,identity_tier='L3')))
-        if cached:return cached
-    from storycg.tier_cache import cache_key as model_cache_key
-    model_suffix='_'+model_cache_key(identity['tier_model_fingerprint'])[:16] if identity.get('tier_model_fingerprint') else ''
-    probe=root/'tier'/f'probe_v{load_rules()["tier_review"]["version"]}_{root.name}{model_suffix}'
-    opts=json.loads((root/'job.json').read_text()).get('generation_options',{}) if (root/'job.json').exists() else {}
-    try:user_ref=import_user_reference(root,opts['reference_path']) if opts.get('reference_path') else None
-    except (ValueError,OSError) as exc:return needs_user(root,identity,'用户参考图无法读取：'+str(exc))
     rules=load_rules()
     evidence=identity.get('tier_evidence',{})
-    if evidence.get('validation_completed') and evidence.get('aggregation_policy')!='D8b':
-        if identity.get('identity_tier')=='L3':
-            from storycg.fallback import current_l3_approval
-            if current_l3_approval(identity):
-                identity['tier_evidence']['aggregation_policy']='D8b'
-                save_json_atomic(root/'identity.json',identity)
-                return identity
-        else:
-            reliability=json.loads(Path('config/review_reliability.json').read_text())
-            migrated=reaggregate_stored_tier(root,identity,reliability)
-            if migrated:
-                identity=migrated
-                save_json_atomic(root/'identity.json',identity)
-    if (identity.get('tier_evidence',{}).get('validation_completed') and
-            identity['tier_evidence'].get('comparison_version')==rules['tier_review']['version'] and
-            identity['tier_evidence'].get('aggregation_policy')=='D8b'):
-        probe=root/identity['tier_evidence'].get('artifact_root',str(probe.relative_to(root)))
-        if identity.get('identity_tier')=='tier_pending_L3_L4' and allow_l3:
-            refs_path=probe/load_rules()['references']['directory']/'manifest.json'
-            refs=[user_ref] if user_ref else json.loads(refs_path.read_text()) if refs_path.exists() else []
-            return ensure_l3(root,identity,config,client,references=refs,reference_root=root if user_ref else probe,vlm=vlm,force_probe=force_probe)
+    if (identity.get('identity_tier')=='L1' and evidence.get('validation_completed') and
+            evidence.get('comparison_version')==rules['tier_review']['version'] and evidence.get('aggregation_policy')=='D8b'):
         return identity
-    if identity.get('tier_evidence'):
-        previous={'identity_tier':identity.get('identity_tier'),'tier_evidence':identity['tier_evidence']}
-        digest=hashlib.sha256(json.dumps(previous,sort_keys=True).encode()).hexdigest()[:16]
-        save_json_atomic(root/f'tier/history/{digest}.json',previous)
+    from storycg.tier_cache import cache_key as model_cache_key
+    model_suffix='_'+model_cache_key(identity['tier_model_fingerprint'])[:16] if identity.get('tier_model_fingerprint') else ''
+    opts=json.loads((root/'job.json').read_text()).get('generation_options',{}) if (root/'job.json').exists() else {}
+    try:user_ref=import_user_reference(root,opts['reference_path']) if opts.get('reference_path') else None
+    except (ValueError,OSError) as exc:return needs_user(root,identity,'user_reference_unreadable',question='用户参考图无法读取：'+str(exc)+'。')
     if reference_client is None:
         with httpx.Client(base_url=BASE_URL,timeout=30,trust_env=False,headers={'User-Agent':USER_AGENT}) as owned:
-            return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm,allow_l3=allow_l3,force_probe=force_probe)
+            return ensure_identity_tier(root,identity,config,client,inventory=inventory,reference_client=owned,vlm=vlm)
     try:
-        if character_lora_matching_enabled(config):
-            inventory=inventory or live_inventory(config,client,reference_client,root)
-            match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
-                                        character_tags=inventory['character_tags'],rules=rules)
-            match['inventory_source']={'object_info_url':inventory['object_info_url'],'retrieved_at':inventory['retrieved_at']}
-        else:
-            # V2-20: character LoRA matching is off, so no LoRA can be selected and L1 cannot be reached.
-            match={'selected':None,'matches':[],'disabled':True,
-                   'reason':'character_lora_matching is off (TASK-v2 §10.4); no LoRA inventory was read'}
+        inventory=inventory or live_inventory(config,client,reference_client,root)
+        match=match_character_loras(identity['character_tag'],inventory['names'],inventory['metadata'],
+                                    character_tags=inventory['character_tags'],rules=rules)
+        match['inventory_source']={'object_info_url':inventory['object_info_url'],'retrieved_at':inventory['retrieved_at']}
         save_json_atomic(root/'tier/lora-match.json',match)
         lora=match['selected']
         identity['lora']=lora
-        identity['identity_tier']='tier_pending_L1_validation' if lora else 'tier_pending_L2'
+        if not lora:
+            row=wai_list.tier_row(identity['character_tag'],wai_list.settings_from(config))
+            return wai_list_result(root,identity,row)
+        identity['identity_tier']='tier_pending_L1_validation'
         identity['tier_evidence']={'lora_match':match,'status':'awaiting_probe'}
         save_json_atomic(root/'identity.json',identity)
-        protocol_suffix='_l1_source_validation' if lora else ''
-        probe=root/'tier'/f'probe_v{rules["tier_review"]["version"]}_{root.name}{protocol_suffix}{model_suffix}'
+        probe=root/'tier'/f'probe_v{rules["tier_review"]["version"]}_{root.name}_l1_source_validation{model_suffix}'
         refs_path=probe/rules['references'].get('directory','references')/'manifest.json'
         references=[] if user_ref else json.loads(refs_path.read_text()) if refs_path.exists() else download_references(identity['character_tag'],probe,reference_client,rules=rules,identity=identity)
         if user_ref:
@@ -601,7 +537,8 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
             copyfile(root/user_ref['path'],dest)
             references=[{**user_ref,'path':str(dest.relative_to(probe))}]
         if len([r for r in references if r.get('status')=='downloaded'])<(1 if user_ref else 2):
-            return needs_user(root,identity,'底模身份未验证且没有足够的可靠参考图')
+            return needs_user(root,identity,'l1_references_insufficient',question=
+                '角色 LoRA 的身份验证缺少足够的可靠参考图，无法确认模型认识该角色。请换一个清单里的角色，或提供参考图路径后重试。')
         cfg=copy.deepcopy(config)
         cfg.pop('generation_reference',None);cfg.pop('character_lora',None)
         cfg['identity_control']={'mechanism':'none'}
@@ -610,9 +547,8 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
         cfg['budget']['max_images_per_job']=rules['tier_probe']['max_tests']
         cfg['budget']['max_job_minutes']=rules['tier_probe']['max_seconds']/60
         cfg['auto_retry_failed']=False
-        if lora:cfg['character_lora']=lora
-        tags=l1_validation_tags(identity,rules) if lora else knowledge_probe_tags(identity,rules)
-        state=run_gen_one(probe,'tier01',tags,rules['tier_probe']['framing'],cfg,client)
+        cfg['character_lora']=lora
+        state=run_gen_one(probe,'tier01',l1_validation_tags(identity,rules),rules['tier_probe']['framing'],cfg,client)
         attempt=state['attempts'][-1]
         if attempt['status']!='completed':
             identity['tier_evidence'].update(status='generation_pending',attempt_status=attempt['status'],prompt_id=attempt.get('prompt_id'))
@@ -624,19 +560,17 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
                 'style_lora_names':[x['name'] for x in cfg['style_loras']]}]
         reliability=json.loads(Path('config/review_reliability.json').read_text())
         owned_vision=vlm is None
-        vlm=vlm or VisionClient(probe,config['model_service_url'],max_calls=rules['tier_probe']['max_vision_calls']+rules['l3']['max_vision_calls'],max_seconds=rules['tier_probe']['max_seconds']+rules['l3']['max_seconds'])
+        vlm=vlm or VisionClient(probe,config['model_service_url'],max_calls=rules['tier_probe']['max_vision_calls'],max_seconds=rules['tier_probe']['max_seconds'])
         try:
             result=compare_l2(probe,identity,tests,references,reliability,vlm,character_lora=lora)
-            identity['identity_tier']=result['identity_tier']
+            identity['identity_tier']='L1' if result['identity_tier']=='L1' else 'tier_pending_L1'
             identity['tier_evidence']={**result['tier_evidence'],'lora_match':match,'validation_completed':True,
                                        'artifact_root':str(probe.relative_to(root)),'generation_count':state['stats']['generated_images'],
                                        'generation_config':cfg}
             save_json_atomic(root/'identity.json',identity)
-            if result['identity_tier']=='tier_pending_L3_L4':
-                if not comparison_available(result):
-                    return needs_user(root,identity,'L2 审核不可用，无法确认底模是否认识该角色；请恢复审核服务或提供可用参考图')
-                if allow_l3:
-                    return ensure_l3(root,identity,config,client,references=references,reference_root=probe,vlm=vlm,force_probe=force_probe)
+            if identity['identity_tier']!='L1' and not comparison_available(result):
+                return needs_user(root,identity,'l1_review_unavailable',question=
+                    'L1 审核不可用，无法确认底模是否认识该角色；请恢复审核服务后重试。')
             return identity
         finally:
             if owned_vision:vlm.close()

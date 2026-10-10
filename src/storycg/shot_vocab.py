@@ -6,7 +6,7 @@ see TASK-v2 §2.3). This module only enforces and reports those grades:
   scene differences never affect the grade; expression only picks among entries
   that share framing, angle and action (V2-12, D57: see classify_shots);
   same action with a different framing/angle is off-table;
-- tier lookup: L1/L2 read their own grade; L3/L4/missing data take the more
+- tier lookup: L1/L2 read their own grade; unknown/missing data take the more
   conservative of the two (stable > sometimes > unusable);
 - off-table actions count as sometimes (D32) and share the group quota of at
   most one sometimes shot per storyboard; unusable is rejected with the
@@ -52,7 +52,7 @@ def vocab_tier(tier, config=None):
     """The tier whose grade column is read (V2-20, TASK-v2 §10.4).
 
     Character LoRA matching on: the tier is used as before. Off (the default): no L1 column
-    is read, and unknown, L3 and L4 read the L2 column as well.
+    is read, and an unknown tier reads the L2 column as well.
     """
     if character_lora_matching_enabled(config):
         return tier
@@ -62,7 +62,7 @@ def vocab_tier(tier, config=None):
 def resolve_grade(item, tier):
     """Grade of one vocab entry for one character tier, with its basis.
 
-    L1/L2 read their own grade. Any other tier (L3, L4, no data) takes the
+    L1/L2 read their own grade. Any other tier (no data) takes the
     more conservative of the two recorded grades.
     """
     grades = item["grades"]

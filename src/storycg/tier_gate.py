@@ -1,10 +1,12 @@
-"""D18 tier aggregation over immutable frozen comparison observations."""
+"""D18 tier aggregation over frozen comparison observations, and the identity-tier entry point (V2-38: WAI list only)."""
 import copy
 import json
+
 import httpx
 from pathlib import Path
 from storycg import tiers as frozen
 from storycg.config import character_lora_matching_enabled
+from storycg.identity import needs_user
 from storycg.state import save_json_atomic
 
 
@@ -19,14 +21,14 @@ def evaluate_l2(checklist,comparisons,reliability):
     gate['ignored_vetoes']=[x for x in comparisons if x.get('item')!='outfit'
         and x.get('status')=='fail' and x.get('applicable',True) and not can_veto(x['item'])]
     gate['reliable']=[x for x in gate['reliable'] if x['item'] not in ('accessories','hair_ornaments')]
-    gate['identity_tier']='L2' if gate['reliable'] and all(x['passed'] for x in gate['reliable']) and not gate['vetoes'] else 'tier_pending_L3_L4'
+    gate['identity_tier']='L2' if gate['reliable'] and all(x['passed'] for x in gate['reliable']) and not gate['vetoes'] else 'tier_pending_L1'
     gate['raw_aggregation']=raw
     gate['limitations']='D20: accessories/hair_ornaments cannot veto or confirm; D18: unverified cannot veto; unreliable with calibrated zero false positives may veto; all reliable appearance items must pass; outfit diagnostic for L2'
     return gate
 
 
 def aggregate_comparison(root,identity,raw,reliability,*,character_lora=None,artifact='tier_gate.json'):
-    from storycg.fallback import comparison_available
+    from storycg.tiers import comparison_available
     if not comparison_available(raw):return raw
     rows=[row for pair in raw['tier_evidence']['comparisons'] for row in pair.get('items',[])]
     gate=evaluate_l2(frozen.identity_checklist(identity),rows,reliability)
@@ -47,11 +49,10 @@ def compare_l2(root,identity,tests,references,reliability,vlm,**kwargs):
 
 
 def _determine_identity_tier(job_dir,identity,config,client,**kwargs):
+    """The L1 route (character LoRA matching on): the probe, then the D18 gate. Anything short of L1 stops."""
     root=Path(job_dir).resolve()
-    # Freeze handles provenance, generation and original audits; defer L3 until D18 aggregation.
-    supplied=dict(kwargs);allow_l3=supplied.pop('allow_l3',True)
-    result=frozen.ensure_identity_tier(root,identity,config,client,allow_l3=False,**supplied)
-    if result.get('identity_tier')!='tier_pending_L3_L4':return result
+    result=frozen.ensure_identity_tier(root,identity,config,client,**kwargs)
+    if result.get('identity_tier')!='tier_pending_L1':return result
     reliability=json.loads(Path('config/review_reliability.json').read_text())
     evidence=result.get('tier_evidence',{})
     raw={'identity_tier':result['identity_tier'],'tier_evidence':evidence}
@@ -59,57 +60,54 @@ def _determine_identity_tier(job_dir,identity,config,client,**kwargs):
     approved=copy.deepcopy(result)
     approved['identity_tier']=gated['identity_tier'];approved['tier_evidence']=gated['tier_evidence']
     save_json_atomic(root/'identity.json',approved)
-    if approved['identity_tier'] in ('L1','L2') or not allow_l3:return approved
-    from storycg.fallback import ensure_l3,import_user_reference
-    opts=json.loads((root/'job.json').read_text()).get('generation_options',{})
-    user_ref=import_user_reference(root,opts['reference_path']) if opts.get('reference_path') else None
-    probe=root/evidence['artifact_root']
-    refs=[user_ref] if user_ref else json.loads((probe/frozen.load_rules()['references']['directory']/'manifest.json').read_text())
-    return ensure_l3(root,approved,config,client,references=refs,reference_root=root if user_ref else probe,
-                     vlm=supplied.get('vlm'),force_probe=supplied.get('force_probe',False))
+    if approved['identity_tier']=='L1':return approved
+    return needs_user(root,approved,'l1_validation_failed',question=
+        '角色 LoRA 的身份验证未通过：底模生成的角色外貌与来源资料对不上，无法确认底模认识该角色。'
+        '请换一个清单里的角色，或换一个可用的角色 LoRA 后重试。')
+
+
+def refuse_outside_wai_list(root,identity,config):
+    """V2-38: only characters on the WAI list are supported. Stops in the identity stage: no probe, no prompt."""
+    from storycg import wai_list
+    return needs_user(root,identity,'character_not_in_wai_list',
+                      question=wai_list.refusal_question(wai_list.settings_from(config)))
 
 
 def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
-    """Reuse an evidence-backed tier keyed by the reported model identity."""
+    """The identity-tier entry point for every command. A locked character outside the WAI list stops here
+    (needs_user, reason character_not_in_wai_list); a listed one is L2 from its tag, or L1 with the LoRA switch on."""
     from storycg.tier_cache import (ModelIdentityUnavailable, model_fingerprint,
         cached_tier, store_tier, reuse_tier)
     from storycg.identity_enrichment import outfit_hair_ornaments
+    from storycg import wai_list
     root = Path(job_dir).resolve()
     identity = outfit_hair_ornaments(identity)
-    from storycg import wai_list
-    if not character_lora_matching_enabled(config) and identity.get('character_tag'):
-        # V2-25: a character on the WAI list is drawable from its tag alone: L2, no probe image.
-        row=wai_list.tier_row(identity['character_tag'],wai_list.settings_from(config))
-        if row:
-            result=copy.deepcopy(identity)
-            for key in ('reason','question','user_can_provide'): result.pop(key,None)
-            result.update(identity_tier='L2',tier_evidence={'status':'wai_list',
-                'reason':'角色在 WAI 清单内，只靠 tag 可画出，直接判 L2，不出探针图',
-                'generation_count':0,'vision_calls':0,'wai_list':row})
-            save_json_atomic(root/'identity.json',result)
-            return result
-    if not config.get('tier_cache') or not identity.get('character_tag'):
+    if identity.get('status') != 'locked': return identity
+    tag = identity.get('character_tag')
+    settings = wai_list.settings_from(config)
+    row = wai_list.tier_row(tag, settings) if tag else None
+    if not row: return refuse_outside_wai_list(root, identity, config)
+    if not character_lora_matching_enabled(config):
+        from storycg.tiers import wai_list_result
+        return wai_list_result(root, identity, row)
+    if not config.get('tier_cache'):
         return _determine_identity_tier(root, identity, config, client, **kwargs)
     try:
         # Establish the checkpoint identity before doing extra inventory work.
         model_fingerprint({**identity, 'lora': None}, config, client)
-        if character_lora_matching_enabled(config):
-            inventory = kwargs.get('inventory')
-            if inventory is None:
-                from storycg.identity import BASE_URL, USER_AGENT
-                reference = kwargs.get('reference_client')
-                if reference is None:
-                    with httpx.Client(base_url=BASE_URL, timeout=30, trust_env=False,
-                                      headers={'User-Agent': USER_AGENT}) as owned:
-                        inventory = frozen.live_inventory(config, client, owned, root)
-                else:
-                    inventory = frozen.live_inventory(config, client, reference, root)
-            kwargs = {**kwargs, 'inventory': inventory}
-            selected = frozen.match_character_loras(identity['character_tag'], inventory['names'],
-                    inventory['metadata'], character_tags=inventory['character_tags'])['selected']
-        else:
-            # V2-20: no LoRA inventory is read and no character LoRA is selected.
-            selected = None
+        inventory = kwargs.get('inventory')
+        if inventory is None:
+            from storycg.identity import BASE_URL, USER_AGENT
+            reference = kwargs.get('reference_client')
+            if reference is None:
+                with httpx.Client(base_url=BASE_URL, timeout=30, trust_env=False,
+                                  headers={'User-Agent': USER_AGENT}) as owned:
+                    inventory = frozen.live_inventory(config, client, owned, root)
+            else:
+                inventory = frozen.live_inventory(config, client, reference, root)
+        kwargs = {**kwargs, 'inventory': inventory}
+        selected = frozen.match_character_loras(identity['character_tag'], inventory['names'],
+                inventory['metadata'], character_tags=inventory['character_tags'])['selected']
         current = {**identity, 'lora': selected}
         fingerprint = model_fingerprint(current, config, client)
     except ModelIdentityUnavailable as exc:
@@ -139,8 +137,7 @@ def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
         identity.update(identity_tier='tier_pending_comfyui', status='locked', needs_user=False)
         for field in ('reason', 'question', 'user_can_provide', 'tier_cache'): identity.pop(field, None)
     identity['tier_model_fingerprint'] = fingerprint
-    result = _determine_identity_tier(root, identity, config, client,
-                **{**kwargs, 'force_probe': previous != fingerprint})
+    result = _determine_identity_tier(root, identity, config, client, **kwargs)
     result['tier_model_fingerprint'] = fingerprint
     save_json_atomic(root/'identity.json', result)
     stored = store_tier(root, result, config, fingerprint)

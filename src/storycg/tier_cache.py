@@ -83,7 +83,7 @@ def cached_tier(config, fingerprint):
         cache = json.loads(path.read_text())
         if cache.get('version') != 1: return None
         record = cache['entries'][cache_key(fingerprint)]
-        if record['key_inputs'] != fingerprint or record['identity_tier'] not in ('L1', 'L2', 'L3', 'L4'):
+        if record['key_inputs'] != fingerprint or record['identity_tier'] not in ('L1', 'L2'):
             return None
         if not record['evidence_paths']: return None
         for item in record['evidence_paths']:
@@ -96,39 +96,10 @@ def cached_tier(config, fingerprint):
         return None
 
 
-def terminal_l4_evidence(root, identity, fingerprint):
-    """Require the current session's full, valid, unsuccessful attempt budget."""
-    from storycg.fallback import comparison_available, l3_comparison_passes
-    from storycg.identity_enrichment import load_rules
-    root = Path(root).resolve()
-    terminal = identity.get('tier_evidence', {}).get('l3_terminal', {})
-    limit = load_rules()['l3']['max_attempts']
-    if (not fingerprint or terminal.get('model_fingerprint') != fingerprint
-            or terminal.get('status') != 'exhausted' or terminal.get('max_attempts') != limit):
-        return False
-    try:
-        session = root/terminal['session']
-        if not session.resolve().is_relative_to(root/'l3'): return False
-        if json.loads((session/'terminal.json').read_text()) != terminal: return False
-        if terminal['attempts_file'] != str((session/'attempts.json').relative_to(root)): return False
-        attempts = json.loads((root/terminal['attempts_file']).read_text())
-        if [a['number'] for a in attempts] != list(range(1, limit+1)): return False
-        expected = [str((session/f'comparison-{n}.json').relative_to(root)) for n in range(1, limit+1)]
-        if terminal['comparison_paths'] != expected: return False
-        for attempt, path in zip(attempts, expected):
-            comparison = json.loads((root/path).read_text())
-            if (comparison != attempt['comparison'] or not comparison_available(comparison)
-                    or l3_comparison_passes(comparison)): return False
-        return True
-    except (OSError, ValueError, KeyError, TypeError):
-        return False
-
-
 def evidence_confirms(root, identity, fingerprint=None):
-    """Pending, missing comparisons, and resource-only L4 outcomes are not evidence."""
-    from storycg.fallback import comparison_available, current_l3_approval
+    """Pending, missing or unavailable comparisons are not evidence. Only L1 (LoRA validated) and L2 (WAI list) are cached."""
+    from storycg.tiers import comparison_available, identity_checklist
     from storycg.tier_gate import evaluate_l2
-    from storycg.tiers import identity_checklist
     evidence = identity.get('tier_evidence', {})
     if not evidence.get('validation_completed') or not comparison_available({'tier_evidence': evidence}):
         return False
@@ -138,9 +109,6 @@ def evidence_confirms(root, identity, fingerprint=None):
     gate = evaluate_l2(identity_checklist(identity), rows, policy)
     if tier in ('L1', 'L2'):
         return gate['identity_tier'] == 'L2' and bool(identity.get('lora')) == (tier == 'L1')
-    if tier == 'L3': return current_l3_approval(identity)
-    if tier == 'L4' and evidence.get('l4_reason') and gate['identity_tier'] != 'L2':
-        return terminal_l4_evidence(root, identity, fingerprint)
     return False
 
 
@@ -161,12 +129,6 @@ def store_tier(root, identity, config, fingerprint):
         artifact = identity['tier_evidence'].get('artifact_root')
         candidates = [root/'tier_gate.json']
         if artifact: candidates.append(root/artifact/'l2/comparison-v3.json')
-        l3 = identity['tier_evidence'].get('l3', {})
-        if l3.get('attempts_file'): candidates.append(root/l3['attempts_file'])
-        terminal = identity['tier_evidence'].get('l3_terminal', {})
-        if terminal:
-            candidates.extend(root/p for p in terminal['comparison_paths'])
-            candidates.extend([root/terminal['attempts_file'], root/terminal['session']/'terminal.json'])
         for candidate in candidates:
             if candidate.is_file(): evidence.append({'path': str(candidate.resolve()), 'sha256': file_sha256(candidate)})
         record = {'key_inputs': fingerprint, 'identity_tier': identity['identity_tier'],
@@ -211,10 +173,9 @@ def reuse_tier(root, identity, record):
     result['tier_model_fingerprint'] = copy.deepcopy(record['key_inputs'])
     result['tier_cache'] = {'hit': True, 'established_at_utc': record['established_at_utc'],
                             'source_job': record['source_job'], 'evidence_paths': record['evidence_paths']}
-    result['status'] = 'needs_user' if result['identity_tier'] == 'L4' else 'locked'
-    result['needs_user'] = result['identity_tier'] == 'L4'
+    result['status'] = 'locked'
+    result['needs_user'] = False
     for field in ('reason', 'question', 'user_can_provide'):
         result.pop(field, None)
-        if result['identity_tier'] == 'L4' and field in source: result[field] = copy.deepcopy(source[field])
     save_json_atomic(Path(root)/'identity.json', result)
     return result

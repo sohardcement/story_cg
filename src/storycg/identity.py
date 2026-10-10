@@ -1,5 +1,6 @@
 """Resolve a character tag and source identity descriptors from Danbooru."""
 
+import copy
 import hashlib
 import json
 import re
@@ -29,6 +30,20 @@ APPAREL = re.compile(
 
 def _tag(text: str) -> str:
     return re.sub(r"\s+", "_", text.strip().lower())
+
+
+def needs_user(root, identity, reason, *, question=None, persist=True):
+    """Stop the job and ask the user (V2-38: the L3/L4 route is gone; this is the only stop left).
+
+    The stop keeps the identity's evidence and writes identity.json unless persist is False.
+    """
+    identity = copy.deepcopy(identity)
+    identity.update(status='needs_user', identity_tier='unsupported', needs_user=True, reason=reason,
+                    question=question or (reason + '。'), user_can_provide=[])
+    identity.setdefault('tier_evidence', {})['stop_reason'] = reason
+    if persist:
+        save_json_atomic(Path(root)/'identity.json', identity)
+    return identity
 
 
 class _CachedDanbooru:
@@ -197,9 +212,9 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
         'status':'not_run','reason':'ComfyUI unavailable; live LoRA metadata and unconditioned L2 generation required',
         'generation_count':0,'vision_calls':0}}
     if not choices and not candidates:
-        from storycg.fallback import needs_user
         return needs_user(Path(cache_dir), {'input_name':name,'candidates':candidates,
-            'appearance_tags':[],'default_outfit_tags':[],**pending}, '找不到该角色的资料',persist=False)
+            'appearance_tags':[],'default_outfit_tags':[],**pending}, '找不到该角色的资料',
+            question='找不到该角色的资料。请换一个角色名、角色 tag 或作品名。', persist=False)
     if len(choices)!=1:
         return {'input_name':name,'status':'needs_clarification','work_input':work,
                 'reason':'no matching character candidate' if not choices else 'ambiguous character candidates',

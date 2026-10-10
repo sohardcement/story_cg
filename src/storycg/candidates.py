@@ -507,8 +507,6 @@ def result_text(root, store=None):
     issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
     if board.get('story_note'):
         issues.append('分镜改写提醒（story_note）：' + board['story_note'])
-    if identity.get('identity_tier') == 'L3':
-        issues.append('层级 L3：底模不认识该角色，这一组用的是参考图路线（IPAdapter 参考定妆图，不用 LoRA）。')
     if 'Budget' in str(agent.get('error') or '') or 'budget' in str(agent.get('error') or ''):
         issues.append(f"预算或时间耗尽，任务提前结束：{agent.get('error')}")
     lines += ['## 已知问题', '']

@@ -205,11 +205,6 @@ def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
     return review_path
 
 
-def tier_recheck_eligible(identity, config):
-    return (bool(config.get('tier_cache')) and identity.get('status')=='needs_user'
-            and identity.get('identity_tier')=='L4' and bool(identity.get('character_tag')))
-
-
 def run_story_job(job_dir: str | Path, config: dict, client,
                   *, stop_after_portrait: bool = False, redo_portrait: bool = False) -> dict:
     """Identity tier, portrait, then the candidate delivery (V2-21; the only delivery since V2-28).
@@ -225,10 +220,9 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         from storycg.delivery import deliver_completed
         return deliver_completed(job_dir.resolve(), client)
     identity = resolve_job(job_dir)
-    recheck_tier = tier_recheck_eligible(identity, config)
-    if identity.get("status")=="needs_user" and not recheck_tier:
+    if identity.get("status")=="needs_user":
         return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[],"tier_evidence":identity.get("tier_evidence",{})}
-    if identity["status"] != "locked" and not recheck_tier:
+    if identity["status"] != "locked":
         raise ValueError("identity requires clarification before generation")
     if config.get("repair_cycle_enabled"):
         from storycg.budget import Budget
@@ -244,9 +238,9 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         finally:tier_vlm.close()
     else:
         identity = ensure_identity_tier(job_dir, identity, config, client)
-    if identity.get('identity_tier') not in ('L1', 'L2', 'L3'):
-        return {'job_id': job_dir.name, 'status': 'needs_user' if identity.get('identity_tier')=='L4' else identity.get('identity_tier'),
-                'needs_user':identity.get('identity_tier')=='L4','reason':identity.get('reason'),'question':identity.get('question'),
+    if identity.get('identity_tier') not in ('L1', 'L2'):
+        return {'job_id': job_dir.name, 'status': 'needs_user' if identity.get('status')=='needs_user' else identity.get('identity_tier'),
+                'needs_user':identity.get('status')=='needs_user','reason':identity.get('reason'),'question':identity.get('question'),
                 'attempts': [], 'tier_evidence': identity.get('tier_evidence', {})}
     config = tier_generation_config(config, identity)
     from storycg.reference import ensure_portrait
@@ -288,7 +282,7 @@ def resolve_and_validate_job(job_dir,config):
     from storycg.comfy import ComfyClient
     from storycg.tier_gate import ensure_identity_tier
     identity=resolve_job(job_dir)
-    if identity.get('status')!='locked' and not tier_recheck_eligible(identity,config):return identity
+    if identity.get('status')!='locked':return identity
     client=ComfyClient(config['comfyui_url'],config['http_timeout_seconds'])
     try:return ensure_identity_tier(job_dir,identity,config,client)
     finally:client.close()

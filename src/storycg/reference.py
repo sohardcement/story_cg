@@ -60,46 +60,6 @@ def store_portrait(job_dir, cache_dir):
     save_json_atomic(dest/'portrait.json',record)
 
 
-def reuse_l3_portrait(job_dir, identity, config, *, search_roots=None):
-    """Reuse project-local approved L3 records without importing generation usage."""
-    import copy
-    from storycg.fallback import current_l3_approval
-    project=Path(__file__).resolve().parents[2]
-    search_roots=search_roots if search_roots is not None else [project/'runs',project/'jobs']
-    root=Path(job_dir).resolve()
-    fields=('character_tag','work_tag','identity_block','outfit_block','appearance_tags',
-            'default_outfit_tags','default_outfit_selection')
-    for base in search_roots:
-        for path in sorted(Path(base).rglob('portrait.json')):
-            source=path.parent.resolve()
-            if source==root:continue
-            try:
-                record=json.loads(path.read_text());approved=record.get('approved_identity')
-                if (record.get('gate_policy')!='L3 reliable comparison' or not approved or
-                    approved.get('identity_tier')!='L3' or
-                    approved.get('tier_model_fingerprint')!=identity.get('tier_model_fingerprint') or
-                    any(approved.get(k)!=identity.get(k) for k in fields) or
-                    record.get('cache_key')!=cache_key(approved,config) or
-                    not current_l3_approval(approved)):continue
-                record=require_portrait(source)
-            except (ValueError,KeyError,OSError):continue
-            approved=copy.deepcopy(approved)
-            approved['tier_evidence']['aggregation_policy']='D8b'
-            approved['tier_evidence']['portrait_cache_source']={'task':str(source),
-                'portrait_sha256':digest(path),'audit_file':record.get('audit_file')}
-            for key in ('image','face'):
-                original=(source/record[key]['path']).resolve()
-                target=root/'portrait'/(key+original.suffix)
-                target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(original,target)
-                record[key]['path']=str(target.relative_to(root))
-            record.update(cache_hit=True,source_audit={'source_task':str(source),'path':record.get('audit_file')},
-                          approved_identity=approved,cache_key=cache_key(approved,config))
-            save_json_atomic(root/'portrait.json',record)
-            save_json_atomic(root/'identity.json',approved)
-            return approved
-    return None
-
-
 def default_outfit(identity):
     tags=[item['tag'] for item in identity['default_outfit_tags']]
     return {'tags':tags,'clothing_state':', '.join(tags),'change_at_shot':None}
