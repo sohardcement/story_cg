@@ -405,7 +405,18 @@
   - `test_v2_12`、`test_v2_20` 改读缓存夹具，`test_p9_02_rework1` 改读接缝图夹具，夹具共 11MB，其中 4 张原尺寸 PNG 约 5.6MB，要按像素量接缝。
   - `.v2` 和主线工作区跑全量，都是 1000 passed。
   - 已知问题：`tools/test_p10_02.py` 还读 `runs/` 下的产物，干净的树里会失败；`test_p10_05_saved_evidence` 和 `test_v2_02` 读 `jobs/` 下已入库的文件。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-26.md`，14f4590 |
-| V2-28 删除 v1 的修图交付路径（D72） | **通过**（ee251b5，返工 1 次，按 D73 暂不合入主线）。监工复跑 719 passed。删除前后的交付物逐字节一致。返工 1 补回了 3 个覆盖保留功能的测试，删了 14 个 tools 脚本，证据文件从 709MB 清理到 6.3MB。已知问题：`review_reliability.json` 的 freeze 哈希过期了（运行时不检查）；`repair_cycle_enabled` 这个名字还留着，现在只用于预算记账；agent 的阶段名还是 `generating_and_repairing`。此前：第一位执行者删到一半，因额度用完中断。它用 SendMessage 续用，报错里显示发给 API 的模型是 claude-opus-5-5，不是派单时指定的 Haiku，续用时模型设置没有保留。11:37 新开一个 Haiku（明确指定 model=haiku），在它留下的改动上接着做。中断时：删了 5 个模块和 repairs.json，新建 `delivery.py`，净删约 1800 行，还没改测试 | — | Haiku 5.5 subagent（接手） | `orders/V2-28.md` |
+| V2-28 删除 v1 的修图交付路径（D72） | **通过**（ee251b5，返工 1 次；与 V2-29 一起合入主线 0b8f7de）。监工复跑 719 passed。删除前后的交付物逐字节一致。返工 1 补回了 3 个覆盖保留功能的测试，删了 14 个 tools 脚本，证据文件从 709MB 清理到 6.3MB。已知问题：`review_reliability.json` 的 freeze 哈希过期了（运行时不检查）；`repair_cycle_enabled` 这个名字还留着，现在只用于预算记账；agent 的阶段名还是 `generating_and_repairing`。此前：第一位执行者删到一半，因额度用完中断。它用 SendMessage 续用，报错里显示发给 API 的模型是 claude-opus-5-5，不是派单时指定的 Haiku，续用时模型设置没有保留。11:37 新开一个 Haiku（明确指定 model=haiku），在它留下的改动上接着做。中断时：删了 5 个模块和 repairs.json，新建 `delivery.py`，净删约 1800 行，还没改测试 | — | Haiku 5.5 subagent（接手） | `orders/V2-28.md` |
+| V2-29 删除本地模型写分镜和 v1 旧命令；修 pick；规则矛盾；SKILL.md（D72、D73） | **通过**（8a170e9，与 V2-28 一起合入主线 0b8f7de）。
+  - 删掉了 `plan_story`、`present`、`edit_board`、不带 `--beats` 的 `make`、`--storyboard-first`、`--edit`，以及 `gen-one`、`new`、`plan`、`run`、`review` 几个命令。
+  - 命令行只剩一套：`beats-guide`、`compile`、`make`、`approve`、`status`、`resume`、`deliver`、`pick`、`resolve`、`detect`。
+  - 写作说明按编译时的实际校验改写了。SKILL.md 删掉了旧流程、`--edit` 和修图方式三处。
+  - 监工复跑 720 passed。监工从 `.v2` 的 `scripts/storycg` 和已安装的 `~/.claude/skills/story-cg` 两个入口，逐个跑了子命令的 `--help`，全部返回 0。在 `.v2` 内的任务副本上实测 `pick`，`result.md` 正确写入了"由用户换成候选 2"。
+  - 监工从提交里撤掉了离线冒烟留下的 161 个副本文件，入库部分从 45MB 降到 3.2MB。
+  - 已知问题：
+    - 执行开始时的需求冲突检测（intake）仍然调用本地模型；
+    - `review_reliability.json` 里冻结的哈希已经过期；
+    - 计时用例 `test_usage_excludes_user_approval_wait` 偶尔失败；
+    - `resolve` 去掉了"不给任务目录"的旧用法。
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
