@@ -254,6 +254,101 @@ def _passed(slot):
     return any(r['status'] == 'completed' and not r['screen'] for r in slot['candidates'])
 
 
+DEVIATION_LINES_PER_SHOT = 6
+
+
+def _audit_path(root, selected):
+    return root / 'cycle_artifacts' / f"{selected['audit_label']}.json"
+
+
+def _unreliable_keys(root, selected):
+    """Categories of the selected candidate's audit that were not reliably reviewed (read only)."""
+    if selected is None or not _audit_path(root, selected).exists():
+        return []
+    from storycg.display import read_json
+    audit = read_json(_audit_path(root, selected))
+    keys = []
+    for part in ('single', 'consistency'):
+        for key, item in ((audit.get(part) or {}).get('data') or {}).items():
+            if isinstance(item, dict) and not is_prop_item(key) and item.get('reliability') != 'reliable':
+                keys.append(key)
+    return list(dict.fromkeys(keys))
+
+
+def _audit_deviation_lines(root, selected, group=None):
+    """V2-32: the selected candidate's own audit, shaped into result.md lines. Only fail/minor items are reported
+    as deviations; the verdicts are the stored ones, not recomputed here. `group` is the unreliable-category
+    summary of the whole group (V2-32 rework 1): this shot only repeats it when it differs."""
+    if selected is None:
+        return ['- 没有选中候选，无审核记录。']
+    from storycg.display import read_json, short
+    head = ('- 通过了筛选：人数检查、多余肢体检查' if not selected['screen']
+            else '- 通过了筛选：否（' + '；'.join(selected['screen']) + '，用户指定保留）')
+    audit_path = _audit_path(root, selected)
+    if not audit_path.exists():
+        return [head, f"- 审核记录缺失：cycle_artifacts/{selected['audit_label']}.json"]
+    audit = read_json(audit_path)
+    deviations, unreliable = [], []
+    for part, label in (('single', '单镜'), ('consistency', '一致性')):
+        for key, item in ((audit.get(part) or {}).get('data') or {}).items():
+            if not isinstance(item, dict) or is_prop_item(key):
+                continue
+            reliable = item.get('reliability') == 'reliable'
+            if not reliable:
+                unreliable.append(key)
+            if item.get('status') in ('fail', 'minor'):
+                tag = '可靠' if reliable else '未经可靠审核'
+                deviations.append(f"- 审核观察到的偏差：{label} {key} {item['status']}（{tag}）：{short(item.get('reason'))}")
+    lines = [head]
+    if not deviations:
+        lines.append('- 审核观察到的偏差：无（没有 fail 或 minor 项）')
+    difference = _group_difference_line(unreliable, group)
+    # Six lines per shot at most: the head and the difference line always stay; deviations take the rest.
+    room = DEVIATION_LINES_PER_SHOT - 1 - (1 if difference else 0)
+    if len(deviations) > room:
+        deviations = deviations[:room - 1] + [f'- 另有 {len(deviations) - (room - 1)} 项，见 review.md']
+    lines += deviations
+    if difference:
+        lines.append(difference)
+    return lines
+
+
+def _group_difference_line(unreliable, group):
+    """Only the categories where this shot differs from the group summary; empty string when they agree."""
+    if group is None:
+        group = []
+    only_here = [k for k in dict.fromkeys(unreliable) if k not in group]
+    reliable_here = [k for k in group if k not in unreliable]
+    parts = []
+    if only_here:
+        parts.append(f"本镜未经可靠审核、整组汇总未列：{'、'.join(only_here)}")
+    if reliable_here:
+        parts.append(f"本镜已可靠审核、整组汇总列为未审核：{'、'.join(reliable_here)}")
+    return ('- 与整组汇总不同：' + '；'.join(parts)) if parts else ''
+
+
+def _group_deviation_lines(root, cycle, group):
+    """V2-32: group and layer conclusions as stored, plus the raw portrait review when it did not pass."""
+    from storycg.display import portrait_review
+    final = cycle.get('final_review') or {}
+    gate = _read_json(root / 'review_gate.json')
+    raw = gate.get('raw_conclusion') or final.get('raw_conclusion') or final.get('conclusion') or '未记录'
+    layers = final.get('layer_conclusions') or {}
+    lines = [f'- 整组原始审核结论：{raw}。原始审核未通过不等于这组不能用，按用户判定为准。']
+    for key, label in (('single', '单镜'), ('consistency', '一致性'), ('narrative', '剧情')):
+        lines.append(f"- 各层结论 · {label}：{layers.get(key, '未记录')}")
+    names = list(dict.fromkeys(group))
+    if names:
+        lines.append(f"- 未经可靠审核（整组汇总）：{'、'.join(names)}（共 {len(names)} 项，只列类别；各镜与此不同的见各镜）")
+    else:
+        lines.append('- 未经可靠审核（整组汇总）：无')
+    portrait = portrait_review(root)
+    if portrait and portrait['raw_status'] != 'pass':
+        items = '；'.join(f"{x['item']}（{x['status']}）：{x['reason'].rstrip('.。')}" for x in portrait['failed_items']) or '未记录具体项'
+        lines.append(f"- 定妆图原始审核未通过：{items}。{portrait['note']}。")
+    return lines
+
+
 def result_text(root, store=None):
     """V2-24 (TASK-v2 §10.3 / §10.4 notes): the whole result.md of a candidate job, in the order
     overview, files, each shot, blind narrative, known issues, detail pointer. No group verdict and no
@@ -312,6 +407,18 @@ def result_text(root, store=None):
         else:
             lines.append('- 由用户换过：否')
         lines.append('')
+    picks = {}
+    for number in numbers:
+        slot = store.get(str(number))
+        picks[number] = None if slot is None else next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
+    group = list(dict.fromkeys(k for selected in picks.values() for k in _unreliable_keys(root, selected)))
+    lines += ['## 已观察到的偏差', '', '按镜列出选中候选的审核记录：通过了筛选 / 审核观察到的偏差。未经可靠审核的类别只在顶部汇总一行。', '']
+    lines += _group_deviation_lines(root, cycle, group)
+    lines.append('')
+    for number in numbers:
+        lines.append(f'### 第 {number} 镜')
+        lines += _audit_deviation_lines(root, picks[number], group)
+        lines.append('')
     blind = (cycle.get('final_review') or {}).get('narrative_blind', {}).get('data', {})
     lines += ['## 看图复述', '', '以下是终审的盲审模型只看图写的，不是剧情原文：', '']
     if blind:
@@ -328,6 +435,8 @@ def result_text(root, store=None):
         if slot is not None and not _passed(slot):
             issues.append(f'第 {number} 镜所有候选都没通过筛选，交付的是按排序取到的最好候选，请人工复看。')
     issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
+    if board.get('story_note'):
+        issues.append('分镜改写提醒（story_note）：' + board['story_note'])
     if identity.get('identity_tier') == 'L3':
         issues.append('层级 L3：底模不认识该角色，这一组用的是参考图路线（IPAdapter 参考定妆图，不用 LoRA）。')
     if 'Budget' in str(agent.get('error') or '') or 'budget' in str(agent.get('error') or ''):

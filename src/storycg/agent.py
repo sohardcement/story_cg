@@ -216,8 +216,9 @@ def _plan_from_beats(root, config):
 
 
 def beat_summaries(board):
-    """V2-24 (TASK-v2 §10.1): one line per shot, built only from the compiled storyboard fields; no model call."""
-    rows = []
+    """V2-24 (TASK-v2 §10.1): one line per shot, built only from the compiled storyboard fields; no model call.
+    V2-32: each line also names the weather and what changed from the previous shot (scene change, weather, time)."""
+    rows, previous = [], None
     for entry in board['shots']:
         shot, scene, outfit = entry['shot'], entry['scene'], entry['outfit']
         change = (f"第 {entry['number']} 镜换装：{outfit['clothing_state']}" if outfit.get('change_at_shot') == entry['number']
@@ -225,8 +226,22 @@ def beat_summaries(board):
         rows.append({'number': entry['number'], 'summary': (
             f"第{entry['number']}镜：景别 {shot['framing']}，角度 {shot['camera_angle']}；"
             f"动作 {shot['action']}；表情 {shot['expression']}；"
-            f"场景 {scene['location']}（{scene['time']}）；{change}")})
+            f"场景 {scene['location']}（{scene['time']}）；天气 {scene.get('weather', '未写')}；"
+            f"{_scene_change(scene, previous)}；{change}")})
+        previous = scene
     return rows
+
+
+def _scene_change(scene, previous):
+    env = scene.get('environment_change') or '未写'
+    if previous is None:
+        return f'场景变化：{env}（首镜）'
+    diffs = []
+    if scene.get('weather') != previous.get('weather'):
+        diffs.append(f"天气 {previous.get('weather', '未写')} → {scene.get('weather', '未写')}")
+    if scene.get('time') != previous.get('time'):
+        diffs.append(f"时间 {previous.get('time')} → {scene.get('time')}")
+    return f"场景变化：{env}（" + ('，'.join(diffs) if diffs else '天气、时间同上一镜') + '）'
 
 
 def make_portrait(root, config, *, redo=False):
@@ -461,12 +476,11 @@ def status(root):
              'result': str(root/'result.md') if (root/'result.md').exists() else None,
              'manifest': str(root/'manifest.json') if manifest else None}
     total = read(root, 'job.json').get('shot_count', 0)
-    done = len({a['shot_id'] for a in state.get('attempts', []) if a['status'] == 'completed' and a['shot_id'].startswith('shot')})
     return {'job_id': root.name, 'job_dir': str(root), 'phase': phase, 'active': active,
             'needs_user': record.get('needs_user', False), 'reason': record.get('reason'),
             'question': record.get('question'), 'options': record.get('options', []),
-            'notices': record.get('notices', []), 'storyboard': record.get('storyboard', []),
-            'error': record.get('error'), 'progress': {'completed_shots': done, 'total_shots': total},
+            'notices': record.get('notices', []), 'storyboard': _summary_for_status(root, record, phase),
+            'error': record.get('error'), 'progress': _progress(root, total, cycle),
             'usage': count_usage(root),
             'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
             'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
@@ -476,9 +490,23 @@ def status(root):
             'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
 
 
+def _summary_for_status(root, record, phase):
+    """V2-32: at awaiting_approval the summary is rebuilt from storyboard.json, so a job made before a summary
+    change shows the current lines. Older storyboards without the beats fields keep the stored summary."""
+    stored = record.get('storyboard', [])
+    if phase != 'awaiting_approval' or not (root/'storyboard.json').exists():
+        return stored
+    try:
+        return beat_summaries(read(root, 'storyboard.json'))
+    except (KeyError, TypeError):
+        return stored
+
+
 def _confirmation(root):
-    """V2-24: what the user confirms at awaiting_approval: tier, portrait, candidates per shot."""
+    """V2-24: what the user confirms at awaiting_approval: tier, portrait, candidates per shot.
+    V2-32: also the storyboard's story_note, the compile's automatic rewrites and the raw portrait review."""
     from storycg.config import candidates_per_shot
+    from storycg.display import compile_rewrites, portrait_review
     portrait = read(root, 'portrait.json')
     config = read(root, 'job.json').get('generation_config', {})
     return {'identity_tier': read(root, 'identity.json').get('identity_tier'),
@@ -486,7 +514,33 @@ def _confirmation(root):
             'portrait_image': str(root/portrait['image']['path']) if portrait.get('image') else None,
             'portrait_face': str(root/portrait['face']['path']) if portrait.get('face') else None,
             'portrait_attempts': len(read(root, 'portrait_attempts.json', []) or []),
+            'portrait_review': portrait_review(root),
+            'story_note': read(root, 'storyboard.json').get('story_note', ''),
+            'compile_rewrites': compile_rewrites(root),
             'candidates_per_shot': candidates_per_shot(config)}
+
+
+def _progress(root, total, cycle):
+    """V2-32: stage by stage. completed_shots is the number of shots with a picked candidate (not shots with
+    one finished image). Jobs without candidates.json (removed repair era) keep the attempt-based count."""
+    from storycg.config import candidates_per_shot
+    store = read(root, 'candidates.json', {})
+    if not store:
+        state = read(root, 'state.json')
+        done = len({a['shot_id'] for a in state.get('attempts', []) if a['status'] == 'completed' and a['shot_id'].startswith('shot')})
+        return {'completed_shots': done, 'total_shots': total, 'shots': [], 'final_review_done': cycle.get('phase') == 'complete'}
+    per = candidates_per_shot(read(root, 'job.json').get('generation_config', {}))
+    shots = []
+    for number in range(1, total + 1):
+        slot = store.get(str(number), {})
+        cands = slot.get('candidates', [])
+        shots.append({'shot': number,
+                      'candidates_generated': sum(1 for r in cands if r['status'] == 'completed'),
+                      'candidates_expected': per * slot.get('rounds', 1),
+                      'candidates_reviewed': sum(1 for r in cands if r.get('conclusion') is not None),
+                      'picked': slot.get('selected') is not None})
+    return {'completed_shots': sum(1 for s in shots if s['picked']), 'total_shots': total, 'shots': shots,
+            'final_review_done': cycle.get('phase') == 'complete'}
 
 
 def launch(root):
