@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from storycg.assembly import assemble_prompt
 from storycg.config import load_config
 from storycg.identity import resolve_identity
-from storycg.planning import plan_story
+from storycg.planning import saved_storyboard
 from storycg.state import load_state, save_json_atomic
 
 
@@ -60,14 +60,13 @@ def resolve_job(job_dir: str | Path, *, work=None, character_tag=None) -> dict:
 
 
 def plan_job(job_dir: str | Path, config: dict) -> dict:
+    """The job's storyboard: the one `beats compile` wrote. V2-29 removed the local-model planner; no model call."""
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
     identity = resolve_job(job_dir)
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before planning")
-    return plan_story(job_dir, job["story"], identity, job["shot_count"],
-                      config["model_service_url"], max_calls=config.get("planning", {}).get("max_calls", 5),
-                      retries=config.get("planning", {}).get("retries", config.get("planning", {}).get("max_calls", 5)), config=config)
+    return saved_storyboard(job_dir, job["shot_count"], identity, config)
 
 
 def _model_manifest(config: dict, client) -> dict:

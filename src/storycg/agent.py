@@ -15,12 +15,11 @@ from datetime import datetime, timezone
 import httpx
 from jsonschema import validate
 
-from storycg.budget import Budget, BudgetExceeded, GuardedComfy, count_usage
+from storycg.budget import Budget, GuardedComfy, count_usage
 from storycg.comfy import ComfyClient
 from storycg.config import check_removed_switches, load_config
 from storycg.controls import apply_options
-from storycg.pipeline import new_job, resolve_job, plan_job, run_story_job, make_contact_sheet, tier_recheck_eligible
-from storycg.planning import plan_story, validate_storyboard
+from storycg.pipeline import new_job, resolve_job, run_story_job, make_contact_sheet, tier_recheck_eligible
 from storycg.beats import BeatsError, beats_guide, character_guide, compile_beats
 from storycg.state import save_json_atomic
 
@@ -120,17 +119,6 @@ def runtime_json(root, config, purpose, content, schema):
 
 class ResourceUnavailable(ValueError):
     pass
-
-
-def present(root, config, board):
-    count = len(board['shots'])
-    schema = {'type': 'object', 'additionalProperties': False, 'required': ['summaries'],
-              'properties': {'summaries': {'type': 'array', 'minItems': count, 'maxItems': count,
-                                          'items': {'type': 'string', 'minLength': 1}}}}
-    result = runtime_json(root, config, 'presentation',
-                          'Summarize each shot in order in one or two concise Chinese sentences. Do not add facts.\n'+json.dumps(board, ensure_ascii=False), schema)
-    validate(result, schema)
-    update(root, storyboard=[{'number': e['number'], 'summary': s} for e, s in zip(board['shots'], result['summaries'])])
 
 
 def check_resources(config):
@@ -292,6 +280,10 @@ def execute(root):
     try:
         # V2-28: a repair-era snapshot or cycle.json stops here with a clear error.
         check_removed_switches(config)
+        # V2-29: the local-model planner is gone; only beats storyboards are accepted (no model call here).
+        if not read(root, 'agent.json').get('beats'):
+            raise ValueError('this job has no beats storyboard: the local-model planner was removed (V2-29); '
+                             'create a new job with beats-guide, compile and make --beats')
         from storycg.delivery import refuse_repair_cycle
         refuse_repair_cycle(root)
         end_wait(root)
@@ -323,22 +315,14 @@ def execute(root):
             return
         update(root, phase='planning')
         record = read(root, 'agent.json')
-        if record.get('beats'):
-            # V2-24: beats mode never calls the local model for the summary; confirmation waits for the portrait too.
-            board = _plan_from_beats(root, config)
-            update(root, storyboard=beat_summaries(board))
-            if record.get('storyboard_first') and not record.get('approved'):
-                update(root, phase='preparing_portrait')
-                make_portrait(root, config)
-                if read(root, 'agent.json').get('needs_user'):
-                    return
-                update(root, phase='awaiting_approval', waiting_since=datetime.now(timezone.utc).isoformat())
+        # V2-24: the summary is built from the compiled storyboard; confirmation waits for the portrait too.
+        board = _plan_from_beats(root, config)
+        update(root, storyboard=beat_summaries(board))
+        if record.get('storyboard_first') and not record.get('approved'):
+            update(root, phase='preparing_portrait')
+            make_portrait(root, config)
+            if read(root, 'agent.json').get('needs_user'):
                 return
-        else:
-            board = plan_job(root, config)
-            if not record.get('storyboard'):
-                present(root, config, board)
-        if read(root, 'agent.json').get('storyboard_first') and not read(root, 'agent.json').get('approved'):
             update(root, phase='awaiting_approval', waiting_since=datetime.now(timezone.utc).isoformat())
             return
         update(root, phase='generating_and_repairing')
@@ -513,28 +497,6 @@ def launch(root):
     update(root, worker_pid=proc.pid)
 
 
-def edit_board(root, edit, config):
-    original = read(root, 'storyboard.json')
-    job = read(root, 'job.json'); identity = read(root, 'identity.json')
-    staging = root/'edits'/uuid.uuid4().hex
-    staging.mkdir(parents=True)
-    # Use the same planner and full validation, leaving the approved candidate untouched on failure.
-    edit_config = dict(config); edit_config['repair_cycle_enabled'] = False
-    from storycg.cycle import settings
-    remaining = settings()['max_llm_calls'] - count_usage(root)['llm_calls']
-    if remaining <= 0:
-        raise BudgetExceeded('llm_budget')
-    candidate = plan_story(staging, job['story'], identity, job['shot_count'], config['model_service_url'],
-        max_calls=remaining, retries=min(3, remaining), config=edit_config,
-        feedback='User storyboard modification (preserve all other facts):\n'+edit+'\nPrevious storyboard:\n'+json.dumps(original, ensure_ascii=False))
-    validate_storyboard(candidate, job['shot_count'], identity)
-    from jsonschema import Draft202012Validator
-    from storycg.planning import production_schema
-    Draft202012Validator(production_schema()).validate(candidate)
-    present(root, config, candidate)
-    save_json_atomic(root/'storyboard.json', candidate)
-
-
 def beats_cli(argv):
     """`beats-guide` prints the writing guide; `compile` checks a beats file without generating images."""
     parser = argparse.ArgumentParser(prog='storycg')
@@ -588,17 +550,20 @@ def main(argv):
         return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', '_worker'):
+    # Help-only entries: beats-guide, compile and detect are dispatched before this parser runs.
+    sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
+    sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
+    sub.add_parser('detect', help='local detector development tool (not a story step)')
+    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
         if name in ('make', 'approve', 'resume'):
             command.add_argument('--foreground', action='store_true')
         if name == 'make':
-            command.add_argument('--beats', type=Path)
+            command.add_argument('--beats', type=Path, help='required: the beats file written with beats-guide')
             command.add_argument('--character', required=True)
             command.add_argument('--story', required=True)
             command.add_argument('--shots', type=int, default=4)
-            command.add_argument('--storyboard-first', action='store_true')
             command.add_argument('--no-confirm', action='store_true',
                                  help='beats mode stops for confirmation by default; this runs straight through')
             command.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
@@ -608,8 +573,10 @@ def main(argv):
             command.add_argument('--reference-path',type=Path)
             command.add_argument('--tag')
             command.add_argument('--work')
+        if name == 'resolve':
+            command.add_argument('--tag', help='explicit canonical character tag')
+            command.add_argument('--work', help='work name or copyright tag for disambiguation')
         if name == 'approve':
-            command.add_argument('--edit')
             command.add_argument('--beats', type=Path, help='recompile with a new beats file; stays awaiting_approval')
             command.add_argument('--redo-portrait', action='store_true', help='one more portrait; stays awaiting_approval')
         if name == 'pick':
@@ -619,24 +586,25 @@ def main(argv):
     root = (args.job_dir or PROJECT/'jobs'/('cg-'+uuid.uuid4().hex[:12])).resolve()
     code = 0
     picked = None
+    resolved = None
     try:
         if not root.is_relative_to(PROJECT):
             raise ValueError('agent job paths must be inside the project workspace')
         if args.command == 'make':
+            if args.beats is None:
+                raise ValueError('make needs --beats: write the storyboard with beats-guide, check it with compile, then run make --beats FILE')
             options = {k: v for k, v in {'identity_control': args.identity_control, 'generation_seed': args.seed,'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v is not None}
             config = apply_options(load_config(args.config), options); config['repair_cycle_enabled'] = True
             if (root/'agent.json').exists():
                 raise ValueError('job already exists; use status/resume/approve')
-            beats_src = args.beats.resolve() if args.beats else None
-            if beats_src is not None and not beats_src.is_file():
+            beats_src = args.beats.resolve()
+            if not beats_src.is_file():
                 raise ValueError(f'beats file not found: {args.beats}')
             new_job(root, args.character, args.story, args.shots, generation_options=options, generation_config=config)
-            beats_fields = {}
-            if beats_src is not None:
-                shutil.copyfile(beats_src, root/'beats.json')
-                beats_fields = {'beats': 'beats.json', 'beats_sha256': hashlib.sha256((root/'beats.json').read_bytes()).hexdigest()}
+            shutil.copyfile(beats_src, root/'beats.json')
+            beats_fields = {'beats': 'beats.json', 'beats_sha256': hashlib.sha256((root/'beats.json').read_bytes()).hexdigest()}
             # V2-24: beats mode confirms by default; --no-confirm runs straight through.
-            confirm = (beats_src is not None or args.storyboard_first) and not args.no_confirm
+            confirm = not args.no_confirm
             update(root, phase='queued', needs_user=False, storyboard_first=confirm, approved=False, **beats_fields)
         elif not (root/'job.json').exists():
             raise ValueError('story job not found')
@@ -684,13 +652,14 @@ def main(argv):
                     if args.shot is None or args.candidate is None:
                         raise ValueError('pick needs --shot and --candidate')
                     picked = pick_delivery(root, args.shot, args.candidate)
+                elif args.command == 'resolve':
+                    # Identity choice (V2-29: kept for the SKILL's ambiguity step); a locked result is required before resume.
+                    resolved = resolve_job(root, work=args.work, character_tag=args.tag)
                 elif args.command == 'approve' and (args.beats is not None or args.redo_portrait):
                     # V2-24: confirmation steps that stay at awaiting_approval.
                     record = read(root, 'agent.json')
                     if record.get('phase') != 'awaiting_approval':
                         raise ValueError('approve requires awaiting_approval')
-                    if args.edit:
-                        raise ValueError('--edit cannot be combined with --beats or --redo-portrait')
                     if args.beats is not None and not record.get('beats'):
                         raise ValueError('approve --beats is only for beats-mode jobs')
                     job_config = read(root, 'job.json')['generation_config']
@@ -703,15 +672,6 @@ def main(argv):
                 elif args.command == 'approve':
                     if read(root, 'agent.json').get('phase') != 'awaiting_approval':
                         raise ValueError('approve requires awaiting_approval')
-                    if args.edit and read(root, 'agent.json').get('beats'):
-                        raise ValueError('beats 方式不支持 --edit：请写新的 beats 文件，用 approve --beats FILE 重新编译')
-                    if args.edit:
-                        try:
-                            is_file = Path(args.edit).is_file()
-                        except OSError:
-                            is_file = False
-                        edit = Path(args.edit).read_text() if is_file else args.edit
-                        edit_board(root, edit, read(root, 'job.json')['generation_config'])
                     end_wait(root)
                     update(root, approved=True, phase='queued')
                     if args.foreground:
@@ -730,6 +690,10 @@ def main(argv):
         result = status(root)
         if picked is not None:
             result['pick'] = picked
+        if resolved is not None:
+            result['resolve'] = resolved
+            if resolved.get('status') != 'locked':
+                code = 2
         if result.get('error'):
             code = 1
     except Exception as exc:

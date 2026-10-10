@@ -440,7 +440,7 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         json.dumps(schema, ensure_ascii=False, indent=2),
         '```',
         '',
-        '## 2. 写作规则（与模型分镜使用的规则相同）',
+        '## 2. 写作规则（compile 按这些规则和词汇表校验）',
         writing_rules(shot_count).strip(),
         '',
         '## 3. 首镜规则',

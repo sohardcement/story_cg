@@ -5,7 +5,6 @@ import copy
 import re
 from pathlib import Path
 
-import httpx
 from jsonschema import Draft202012Validator
 
 from storycg.state import save_json_atomic
@@ -280,7 +279,7 @@ def writing_rules(shot_count: int) -> str:
     """
     instructions = (
         "Return only schema JSON. Plan exactly " + str(shot_count) + " visually causal shots. "
-        "Descriptions/action/expression are concise English for display and audit ONLY. "
+        "Prose fields (narrative_role, composition_reason, spatial_relation, change_from_previous, story_note) are concise English for display and audit ONLY. "
         "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
         "No character names, franchises or physical appearance tags in any state. "
         "Body parts may occur only as direct targets of the current physical action in pose, "
@@ -288,10 +287,10 @@ def writing_rules(shot_count: int) -> str:
         "Keep each body-target field as one plain action clause; place no other clauses or "
         "appearance adjectives in that field. "
         "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
-        "Eye states and actions on the eyes (closed eyes, half-closed eyes, one eye closed, "
-        "wiping eyes, tears) are allowed in action or expression fields; eye color, shape and "
+        "Eye states (closed eyes, half-closed eyes, one eye closed, tears) go in expression; an eye action "
+        "listed in the vocabulary (wiping_tears) may be the pose; eye color, shape and "
         "size remain forbidden. "
-        "Use emotions such as surprised, confused, smile in shot.tags. "
+        "Put the emotion in shot.expression as one tag from the expression list (surprised, confused, smile, ...). "
         "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
         + FIRST_SHOT_RULE + "Vary framing and camera_angle "
         "between adjacent shots; identical pairs require a meaningful composition_reason. "
@@ -324,164 +323,22 @@ def writing_rules(shot_count: int) -> str:
     return instructions
 
 
-def plan_story(job_dir: str | Path, story: str, identity: dict, shot_count: int,
-               model_url: str, *, max_calls: int = 5, retries: int = 5,
-               client: httpx.Client | None = None, config: dict | None = None,
-               tag_registry=None, feedback: str | None = None) -> dict:
-    job_dir = Path(job_dir)
-    plan_path = job_dir / "storyboard.json"
-    if plan_path.exists():
-        board = json.loads(plan_path.read_text(encoding="utf-8"))
-        saved_changes = [entry.get('outfit', {}).get('change_at_shot') for entry in board.get('shots', [])]
-        validate_storyboard(board, shot_count, identity)
-        if [entry['outfit']['change_at_shot'] for entry in board['shots']] != saved_changes:
-            save_json_atomic(plan_path, board)  # persist the re-derived outfit changes
-        from storycg.shot_vocab import validate_shot_vocab
-        validate_shot_vocab(board, identity.get('identity_tier'), config)
-        from storycg.story_rules import validate_story_rules
-        return validate_story_rules(board, allow_obscured=(config or {}).get("allow_obscured_protagonist", False))
-    if client is None:
-        with httpx.Client(base_url=model_url.rstrip("/"), timeout=180,
-                          trust_env=False) as owned:
-            return plan_story(job_dir, story, identity, shot_count, model_url,
-                              max_calls=max_calls, retries=retries, client=owned, config=config, tag_registry=tag_registry, feedback=feedback)
-    model_response = client.get("/models")
-    model_response.raise_for_status()
-    models = model_response.json()["data"]
-    available = [item for item in models if item.get("loaded", True) and
-                 "chat" in item.get("capabilities", ["chat"])]
-    if not available:
-        raise ValueError("model service has no loaded chat model")
-    model = available[0]["id"]
-    log_path = job_dir / "plan_log.json"
-    log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"calls": []}
-    instructions = writing_rules(shot_count)
-    from storycg.shot_vocab import prompt_section
-    instructions += prompt_section(identity.get('identity_tier'), config)
-    from storycg.shot_contract import planner_schema, materialize
-    schema=planner_schema(production_schema())
-    outfit_tags = [item["tag"].replace("_", " ") for item in
-                   identity.get("default_outfit_tags", [])]
-    base_user_content = story
-    if outfit_tags:
-        base_user_content += ("\nSourced canonical outfit tags (clothing only): " +
-                              ", ".join(outfit_tags) +
-                              ". Use these in clothing_state unless the story changes clothes.")
-    if feedback:
-        base_user_content += "\nDiagnosis from actual generated images; rewrite to address it:\n" + feedback
-    streak_rule = None
-    streak = 0
-    attempts = 0
-    for _ in range(min(retries, max(0, max_calls-len(log['calls'])))):
-        attempts += 1
-        if len(log["calls"]) >= max_calls:
-            raise ValueError("LLM call budget exhausted")
-        gate=None
-        if (config or {}).get("repair_cycle_enabled"):
-            from storycg.budget import Budget
-            from storycg.cycle import settings
-            gate=Budget(job_dir,settings());gate.check(llm=1)
-        call = {"model": model, "status": "started", "planning_contract": "single_moment_compiled_v2"}
-        log["calls"].append(call)
-        save_json_atomic(log_path, log)
-        try:
-            previous = log["calls"][-2] if len(log["calls"]) > 1 else None
-            user_content = base_user_content
-            if previous and previous.get("error"):
-                user_content += ("\nThe previous storyboard was rejected: " + previous["error"] +
-                                 f"\nRewrite all {shot_count} shots to satisfy the schema and remove every "
-                                 "appearance attributes. Preserve physical actions and their body-part targets, "
-                                 "contact and direction; never replace an action to avoid an anatomy word. "
-                                 "Keep each body-target field as one plain action clause; place no other clauses "
-                                 "or appearance adjectives in that field. "
-                                 "Use emotion words only for expression. "
-                                 "Do not copy an invalid field unchanged. Previous invalid JSON:\n" + previous.get("raw", ""))
-            response = client.post("/chat/completions", timeout=min(180,gate.remaining_seconds()) if gate else 180, json={
-                "model": model, "temperature": 0.2, "max_tokens": 6500,
-                "messages": [{"role": "system", "content": instructions},
-                             {"role": "user", "content": user_content}],
-                "response_format": {"type": "json_schema", "json_schema": {
-                    "name": "storyboard", "strict": True, "schema": schema}},
-            })
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            call["raw"] = content
-            board = json.loads(content)
-            schema_errors = list(Draft202012Validator(schema).iter_errors(board))
-            if schema_errors:
-                raise ValueError(f"storyboard schema: {schema_errors[0].json_path}: {schema_errors[0].message}")
-            model_changes = [entry.get('outfit', {}).get('change_at_shot')
-                             for entry in board.get('shots', [])]
-            def record_outfit_changes():
-                call['outfit_changes'] = [
-                    {'shot': entry['number'],
-                     'model_value': model_changes[index] if index < len(model_changes) else None,
-                     'derived': entry['outfit'].get('change_at_shot')}
-                    for index, entry in enumerate(board.get('shots', []))]
-            board = materialize(board)
-            # Later HTTP/schema checks may trigger a retry after the current
-            # action has already been resolved safely. Keep that action and its
-            # context, rather than let a new model response replace its meaning.
-            anchors = {}
-            for prior in log['calls'][:-1]:
-                for record in prior.get('tag_validation', []):
-                    if record.get('action') not in ('pose_omitted', 'pose_replaced'):
-                        continue
-                    match = re.fullmatch(r'\$\.shots\[(\d+)\]\.shot\.pose', record.get('pose_field', ''))
-                    if match:
-                        anchors.setdefault(int(match[1]), record)
-            for index, anchor in anchors.items():
-                shot = board['shots'][index]['shot']
-                from storycg.tags import canonical_tag
-                preserved = anchor.get('replacement') or canonical_tag(anchor['input'])
-                call.setdefault('pose_anchors', []).append({'shot': index + 1,
-                    'input_pose': shot['pose'], 'preserved_pose': preserved,
-                    'reason': 'preserve previously resolved action across a planning retry'})
-                shot.update(pose=preserved, action=preserved, description=preserved,
-                            tags=list(dict.fromkeys([preserved, shot['expression']])))
-                for key in ('spatial_relation','change_from_previous'):
-                    shot[key] = anchor['semantic_context'][key]
-            # Reject appearance/identity additions before discarding unknown tags.
-            record_outfit_changes()
-            validate_storyboard(board, shot_count, identity, config)
-            from storycg.tags import TagRegistry, validate_tag_lists
-            if tag_registry is None:
-                with httpx.Client(base_url="https://danbooru.donmai.us", timeout=30, trust_env=False) as tag_client:
-                    registry = TagRegistry(job_dir / "cache" / "tags", client=tag_client)
-                    try:
-                        validate_tag_lists(board, registry, config, drop_unknown=True)
-                    finally:
-                        call['tag_validation'] = registry.records
-            else:
-                before = len(tag_registry.records)
-                try:
-                    validate_tag_lists(board, tag_registry, config, drop_unknown=True)
-                finally:
-                    call['tag_validation'] = tag_registry.records[before:]
-            from storycg.shot_vocab import validate_shot_vocab
-            record_outfit_changes()
-            board = validate_storyboard(board, shot_count, identity, config)
-            call['shot_vocab'] = validate_shot_vocab(board, identity.get('identity_tier'), config)
-            from storycg.story_rules import validate_story_rules
-            validate_story_rules(board, allow_obscured=(config or {}).get('allow_obscured_protagonist', False))
-        except (ValueError, KeyError, IndexError, httpx.HTTPError) as exc:
-            call["status"] = "invalid"
-            call["error"] = f"{type(exc).__name__}: {exc}"
-            from storycg.story_rules import StoryRuleViolation
-            rule_id = exc.rule_id if isinstance(exc, StoryRuleViolation) else None
-            call['rule_id'] = rule_id
-            if rule_id:
-                streak = streak + 1 if rule_id == streak_rule else 1
-            else:
-                streak = 0
-            streak_rule = rule_id
-            call['consecutive_rule_rejections'] = streak
-            save_json_atomic(log_path, log)
-            if streak >= 3:
-                raise ValueError(f"分镜连续 3 次违反同一规则 {rule_id}，已停止；{exc}；日志：{log_path}") from exc
-            continue
-        call["status"] = "valid"
-        save_json_atomic(log_path, log)
-        save_json_atomic(plan_path, board)
-        return board
-    raise ValueError(f"storyboard failed validation after {attempts} calls (limit {max_calls}); last error: {log['calls'][-1].get('error', 'no call available') if log['calls'] else 'no call available'}; see {log_path}")
+def saved_storyboard(job_dir: str | Path, shot_count: int, identity: dict, config: dict | None = None) -> dict:
+    """V2-29: the job's storyboard is the one `beats compile` wrote (storyboard.json). No model is called.
+
+    The saved board is re-validated on every use; outfit changes are re-derived and persisted if they moved.
+    A job with no compiled storyboard is refused with the next step to take.
+    """
+    plan_path = Path(job_dir) / "storyboard.json"
+    if not plan_path.exists():
+        raise ValueError("no compiled storyboard for this job: write the beats file with beats-guide, "
+                         "check it with compile, then run make --beats")
+    board = json.loads(plan_path.read_text(encoding="utf-8"))
+    saved_changes = [entry.get('outfit', {}).get('change_at_shot') for entry in board.get('shots', [])]
+    validate_storyboard(board, shot_count, identity)
+    if [entry['outfit']['change_at_shot'] for entry in board['shots']] != saved_changes:
+        save_json_atomic(plan_path, board)  # persist the re-derived outfit changes
+    from storycg.shot_vocab import validate_shot_vocab
+    validate_shot_vocab(board, identity.get('identity_tier'), config)
+    from storycg.story_rules import validate_story_rules
+    return validate_story_rules(board, allow_obscured=(config or {}).get("allow_obscured_protagonist", False))
