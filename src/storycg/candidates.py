@@ -255,6 +255,7 @@ def _passed(slot):
 
 
 DEVIATION_LINES_PER_SHOT = 6
+BLIND_ITEMS = ('where', 'event', 'action', 'change', 'ending', 'uncertainty')
 
 
 def _audit_path(root, selected):
@@ -281,7 +282,7 @@ def _audit_deviation_lines(root, selected, group=None):
     summary of the whole group (V2-32 rework 1): this shot only repeats it when it differs."""
     if selected is None:
         return ['- 没有选中候选，无审核记录。']
-    from storycg.display import read_json, short
+    from storycg.display import read_json, flat
     head = ('- 通过了筛选：人数检查、多余肢体检查' if not selected['screen']
             else '- 通过了筛选：否（' + '；'.join(selected['screen']) + '，用户指定保留）')
     audit_path = _audit_path(root, selected)
@@ -298,7 +299,7 @@ def _audit_deviation_lines(root, selected, group=None):
                 unreliable.append(key)
             if item.get('status') in ('fail', 'minor'):
                 tag = '可靠' if reliable else '未经可靠审核'
-                deviations.append(f"- 审核观察到的偏差：{label} {key} {item['status']}（{tag}）：{short(item.get('reason'))}")
+                deviations.append(f"- 审核观察到的偏差：{label} {key} {item['status']}（{tag}）：{flat(item.get('reason'))}")
     lines = [head]
     if not deviations:
         lines.append('- 审核观察到的偏差：无（没有 fail 或 minor 项）')
@@ -392,7 +393,7 @@ def _final_narrative_lines(cycle):
 def _final_shot_lines(root, cycle, number, selected):
     """V2-34: the final review's single and consistency items of one shot that are fail or minor and that the
     selected candidate's own audit did not report. At most DEVIATION_LINES_PER_SHOT lines per shot."""
-    from storycg.display import short
+    from storycg.display import flat
     final = cycle.get('final_review') or {}
     known = _candidate_deviation_keys(root, selected)
     deviations = []
@@ -405,7 +406,7 @@ def _final_shot_lines(root, cycle, number, selected):
                     continue
                 if item.get('status') in ('fail', 'minor'):
                     tag = '可靠' if item.get('reliability') == 'reliable' else '未经可靠审核'
-                    deviations.append(f"- 终审 · {label} · {key}（{item['status']}，{tag}）：{short(_item_reason(item))}")
+                    deviations.append(f"- 终审 · {label} · {key}（{item['status']}，{tag}）：{flat(_item_reason(item))}")
     if not deviations:
         return []
     if len(deviations) > DEVIATION_LINES_PER_SHOT:
@@ -489,13 +490,12 @@ def result_text(root, store=None):
         lines += _audit_deviation_lines(root, picks[number], group)
         lines += _final_shot_lines(root, cycle, number, picks[number])
         lines.append('')
+    from storycg.display import flat
+    # V2-36: all six blind items in this order; an item that is missing or empty is skipped.
     blind = (cycle.get('final_review') or {}).get('narrative_blind', {}).get('data', {})
+    blind_lines = [f"- {key}：{flat(blind[key])}" for key in BLIND_ITEMS if blind.get(key)]
     lines += ['## 看图复述', '', '以下是终审的盲审模型只看图写的，不是剧情原文：', '']
-    if blind:
-        lines += [f"- event：{blind.get('event', '')}", f"- action：{blind.get('action', '')}",
-                  f"- ending：{blind.get('ending', '')}"]
-    else:
-        lines.append('- 终审没有给出看图复述。')
+    lines += blind_lines or ['- 终审没有给出看图复述。']
     lines.append('')
     issues = []
     if (board.get('props') or any(e['shot'].get('key_props') or e['shot'].get('prop_tags') for e in board.get('shots', []))):

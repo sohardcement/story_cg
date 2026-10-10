@@ -6,9 +6,6 @@ records a job already wrote (portrait.json, portrait_attempts.json, plan_log.jso
 import json
 from pathlib import Path
 
-REASON_CHARS = 160
-
-
 def read_json(path, default=None):
     path = Path(path)
     if not path.exists():
@@ -16,9 +13,9 @@ def read_json(path, default=None):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def short(text, limit=REASON_CHARS):
-    text = ' '.join(str(text or '').split())
-    return text if len(text) <= limit else text[:limit] + '…'
+def flat(text):
+    """V2-36: the reason on one line, whitespace only. Never cut: a truncated reason misleads the user."""
+    return ' '.join(str(text or '').split())
 
 
 def portrait_review(root):
@@ -43,7 +40,7 @@ def portrait_review(root):
         for key, item in data.items():
             if isinstance(item, dict) and item.get('status') not in ('pass', 'minor', 'not_applicable'):
                 review['failed_items'].append({'item': key, 'status': item.get('status'),
-                                               'reason': short(item.get('reason'), 240), 'source': source,
+                                               'reason': flat(item.get('reason')), 'source': source,
                                                'reliable': item.get('reliability') == 'reliable'})
     review['note'] = '定妆图审核只记录、不拦截，请用户看图确认'
     return review
