@@ -376,7 +376,10 @@
     - 清单里 307 个名字对应多行；
     - 雷姆的 wiki 外貌冲突还在，所以发色、瞳色两个可靠项缺失；
     - 清单对应 v16，底模是 v17，留出集里的效果没有重测。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-25.md`，fb58ec6 |
-| V2-26 测试不读运行时缓存 | 已派 | — | Haiku 5.5 subagent（续用） | `orders/V2-26.md` |
+| V2-26 测试不读运行时缓存 | **通过**（14f4590，合入主线 cd8377e）。
+  - `test_v2_12`、`test_v2_20` 改读缓存夹具，`test_p9_02_rework1` 改读接缝图夹具，夹具共 11MB，其中 4 张原尺寸 PNG 约 5.6MB，要按像素量接缝。
+  - `.v2` 和主线工作区跑全量，都是 1000 passed。
+  - 已知问题：`tools/test_p10_02.py` 还读 `runs/` 下的产物，干净的树里会失败；`test_p10_05_saved_evidence` 和 `test_v2_02` 读 `jobs/` 下已入库的文件。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-26.md`，14f4590 |
 | 第 ③ 步对比集运行（`verify/v2/run_v3.py`，`--no-confirm`，beats-v3） | **4 组跑完**（22:36–00:07），出图 53 张。**用户判定 4/4 可用（D66），第 ③ 步通过**。判定页 https://claude.ai/artifact/GvSEJ58mArz5F8dgZ4d8Sn（`verify/v2/compare3/`，判定存在页面数据库的 `verdicts` 集合）。
   - 监工看图倾向：4 组都没看到否决项，都判"可用"，第 4 组偏弱。
   - 筛选：
