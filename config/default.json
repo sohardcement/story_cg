@@ -54,10 +54,6 @@
       "dutch_angle"
     ]
   },
-  "planning": {
-    "max_calls": 5,
-    "retries": 5
-  },
   "shot_vocab": {
     "path": "config/shot_vocab.json",
     "observation_log": "calibration/shot_vocab_observations.jsonl"
