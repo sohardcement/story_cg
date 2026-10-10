@@ -31,6 +31,57 @@ def _contains(outer, inner):
     return outer[0] <= inner[0] and outer[1] <= inner[1] and outer[2] >= inner[2] and outer[3] >= inner[3]
 
 
+def _area(box):
+    return max(0, box[2]-box[0])*max(0, box[3]-box[1])
+
+
+def _intersection(a, b):
+    return _area([max(a[0],b[0]), max(a[1],b[1]), min(a[2],b[2]), min(a[3],b[3])])
+
+
+def _overlap(a, b):
+    """Intersection over the SMALLER box's area: 1.0 means the smaller box lies inside the other."""
+    smaller = min(_area(a), _area(b))
+    return _intersection(a, b)/smaller if smaller > 0 else 0.0
+
+
+def _face_in(face, box):
+    """Fraction of the face's own area that lies inside the person box."""
+    return _intersection(face, box)/_area(face) if _area(face) > 0 else 0.0
+
+
+def _two_people_supported(a, b, faces, cfg):
+    """Two person boxes stay two people only when two different major faces each sit in one box only."""
+    limit = cfg['face_in_box']
+    only_a = any(_face_in(f['bbox'],a) >= limit and _face_in(f['bbox'],b) < limit for f in faces)
+    only_b = any(_face_in(f['bbox'],b) >= limit and _face_in(f['bbox'],a) < limit for f in faces)
+    return only_a and only_b
+
+
+def _person_groups(persons, faces, ids, cfg):
+    """Group person boxes that describe one body; a group is one person.
+
+    Two boxes are one body when the smaller one is almost entirely inside the other
+    (person_overlap) and the major faces do not show two separate people (see
+    _two_people_supported). Groups are joined transitively with union-find.
+    """
+    parent = {i: i for i in ids}
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for position, a in enumerate(ids):
+        for b in ids[position+1:]:
+            if _overlap(persons[a]['bbox'], persons[b]['bbox']) >= cfg['person_overlap'] \
+                    and not _two_people_supported(persons[a]['bbox'], persons[b]['bbox'], faces, cfg):
+                parent[find(a)] = find(b)
+    groups = {}
+    for i in ids:
+        groups.setdefault(find(i), []).append(i)
+    return sorted(sorted(group) for group in groups.values())
+
+
 def protagonist_count(faces, persons, shot, *, config=None):
     cfg = (config or settings())['count']
     largest = max((f['area_ratio'] for f in faces), default=0)
@@ -40,8 +91,13 @@ def protagonist_count(faces, persons, shot, *, config=None):
     # contain a low-confidence individual, as in the supervisor's calibration.
     merged = [i for i,p in enumerate(persons) if sum(i != j and p['bbox'] != q['bbox']
               and _contains(p['bbox'],q['bbox']) for j,q in enumerate(persons)) >= 2]
-    person_ids = [i for i,p in enumerate(persons) if i not in merged
-                  and p['confidence'] >= cfg['person_confidence'] and p['area_ratio'] >= cfg['person_area']]
+    major_faces = [faces[i] for i in face_ids]
+    groups = _person_groups(persons, major_faces, [i for i in range(len(persons)) if i not in merged], cfg)
+    passing = lambda p: p['confidence'] >= cfg['person_confidence'] and p['area_ratio'] >= cfg['person_area']
+    # One group is one person; its representative is its most confident passing box.
+    person_ids = [max((i for i in group if passing(persons[i])), key=lambda i: persons[i]['confidence'])
+                  for group in groups if any(passing(persons[i]) for i in group)]
+    duplicate_groups = [group for group in groups if len(group) > 1]
     count = max(len(face_ids),len(person_ids))
     reflection = declares_reflection(shot)
     allowed = 1 + int(reflection)
@@ -50,7 +106,8 @@ def protagonist_count(faces, persons, shot, *, config=None):
     return evidence('none_visible' if count==0 else 'duplicate' if count>allowed else 'ok',
                     protagonist_count=count, allowed_count=allowed, reflection=reflection,
                     other_people=shot.get('other_people', []), major_face_indices=face_ids,
-                    major_person_indices=person_ids, merged_person_indices=merged, thresholds=cfg)
+                    major_person_indices=person_ids, merged_person_indices=merged,
+                    duplicate_person_groups=duplicate_groups, thresholds=cfg)
 
 
 def detect_face_record(source, output, *, faces=None):

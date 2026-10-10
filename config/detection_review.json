@@ -5,7 +5,9 @@
     "face_confidence": 0.45,
     "relative_face_area": 0.3,
     "person_confidence": 0.5,
-    "person_area": 0.08
+    "person_area": 0.08,
+    "person_overlap": 0.8,
+    "face_in_box": 0.5
   },
   "colors": {
     "accessory_expansion": 0.45,
