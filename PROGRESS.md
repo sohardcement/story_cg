@@ -23,6 +23,13 @@
 
 - **D46（2026-10-08）**：Codex 订阅到期，执行者改为 omp（`ai938729/glm-5.3`，推理强度 max）。`verify/dispatch.sh` 已改；AGENTS.md 追加第 9 条。omp 没有写入沙盒，所以第 9 条写明了写入范围和禁止的 git 操作，监工每张工单都核对主线工作区。冒烟（只读）通过：`logs/OMP-SMOKE.jsonl`。
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
+- **D71（用户，2026-10-10）skill 精简**。用户原话："A清理 B 清理 comfyui-erotic-comic 这个生图效果一般 D 不用管"。
+  - 已做（能恢复的都已归档到 `~/.config/magpie/skill-archive/2026-10-10/`，见那里的 README）：
+    - dsh 预设 `comfyui-studio`（里面是 4 个 9-16 的旧副本）整个归档；
+    - `lora-dataset-tagging` 归档。它和总库里更新的 `lora-dataset-captioning` 重复，而 `~/.claude/skills`、`~/.codex/skills` 都是指向 `~/.agents/skills` 的链接，所以只有这一份；
+    - `comfyui-erotic-comic` 用 `magpie library skill rm` 移出总库，magpie 的备份是 `backups/2026-10-10_09-34-43`。
+  - 保留：`comfyui-image`、`comfyui-video`，以及 Hermes 里的 3 个 comfyui skill。D 组的开发类 skill 不动。
+  - 待做：用 v2 换掉指向旧项目的 `story-cg-director`，先开 V2-27 让 skill 不依赖特定工具、改名 `story-cg`，再由监工换总库里的条目、重装 Hermes 的副本。
 - **D70（用户，2026-10-10）v2 合入主线**。用户原话："合吧"。
   - 合并提交是 master 上的 ecf2617，合入的是 v2 截至 e67f4f2（V2-24）的内容。合并前的主线打了标签 `v1-final`。
   - 预演没有冲突，v2 新加的 281 个文件也没有和主线工作区里未入库的文件重名。
@@ -381,6 +388,7 @@
   - `test_v2_12`、`test_v2_20` 改读缓存夹具，`test_p9_02_rework1` 改读接缝图夹具，夹具共 11MB，其中 4 张原尺寸 PNG 约 5.6MB，要按像素量接缝。
   - `.v2` 和主线工作区跑全量，都是 1000 passed。
   - 已知问题：`tools/test_p10_02.py` 还读 `runs/` 下的产物，干净的树里会失败；`test_p10_05_saved_evidence` 和 `test_v2_02` 读 `jobs/` 下已入库的文件。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-26.md`，14f4590 |
+| V2-27 skill 不依赖特定工具、改名 story-cg（D71） | 已派，出图 0 张 | — | Haiku 5.5 subagent（新开，带第 11 条警示） | `orders/V2-27.md` |
 | 第 ③ 步对比集运行（`verify/v2/run_v3.py`，`--no-confirm`，beats-v3） | **4 组跑完**（22:36–00:07），出图 53 张。**用户判定 4/4 可用（D66），第 ③ 步通过**。判定页 https://claude.ai/artifact/GvSEJ58mArz5F8dgZ4d8Sn（`verify/v2/compare3/`，判定存在页面数据库的 `verdicts` 集合）。
   - 监工看图倾向：4 组都没看到否决项，都判"可用"，第 4 组偏弱。
   - 筛选：
