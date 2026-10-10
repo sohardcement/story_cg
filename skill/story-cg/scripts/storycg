@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+skill_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+if [[ -f "$skill_root/project_path" ]]; then
+  IFS= read -r project_root < "$skill_root/project_path"
+else
+  # Not installed by the installer: fall back to the repo layout (skill/story-cg/ is two levels below the project root).
+  project_root=$(cd -- "$skill_root/../.." 2>/dev/null && pwd || true)
+  if [[ -z "$project_root" || ! -f "$project_root/src/storycg/__main__.py" || ! -x "$project_root/.venv/bin/python" ]]; then
+    printf '%s\n' '{"needs_user":true,"reason":"resource_unavailable","question":"Skill 未配置项目路径，且不在项目目录结构中，请由安装者运行安装脚本。","options":[]}'
+    exit 1
+  fi
+fi
+if [[ ! -x "$project_root/.venv/bin/python" ]]; then
+  printf '%s\n' '{"needs_user":true,"reason":"resource_unavailable","question":"项目 Python 环境不可用，请恢复后重试。","options":[]}'
+  exit 1
+fi
+cd -- "$project_root"
+export PYTHONPATH="$project_root/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$project_root/.venv/bin/python" -m storycg "$@"
