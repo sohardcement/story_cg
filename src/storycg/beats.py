@@ -418,7 +418,7 @@ def character_guide(identity, config=None):
     tier, known, source = wai_list_tier(identity, config)
     if not known:
         determined = identity.get('identity_tier')
-        if determined in ('L1', 'L2', 'L3', 'L4'):
+        if determined in ('L1', 'L2'):
             tier, known, source = determined, True, '已判定'
         else:
             tier, known = cached_identity_tier(identity, config)
@@ -430,8 +430,15 @@ def character_guide(identity, config=None):
         column = 'L2'
         note = (f'层级 {tier}（{source}）' if known else '层级未知')
         note += '；取档按 L2 一列（角色 LoRA 关闭，不读 L1 一列）'
+    from storycg import wai_list
+    tag = identity.get('character_tag')
+    unsupported = None
+    if tag and not wai_list.tier_row(tag, wai_list.settings_from(config)):
+        # V2-38: only characters on the WAI list are supported; the guide says so instead of failing.
+        unsupported = '不支持：' + wai_list.refusal_question(wai_list.settings_from(config))
     return {'character': identity.get('character_tag') or identity.get('input_name'),
             'locked': identity.get('status') == 'locked',
+            'unsupported': unsupported,
             'outfit_tags': [item['tag'] for item in identity.get('default_outfit_tags', [])],
             'outfit_rule': OUTFIT_RULE,
             'tier': tier if known else None,
@@ -479,8 +486,10 @@ def _character_section(info):
     if not info:
         return ['## 4. 角色（未指定 --character）', '未指定角色：标准服装与本层级词汇表未列出。'
                 '需要时运行 beats-guide --character 角色名。', '']
-    lines = ['## 4. 角色：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下信息仅供参考）'),
-             '标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）'),
+    lines = ['## 4. 角色：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下信息仅供参考）')]
+    if info.get('unsupported'):
+        lines.append(info['unsupported'])
+    lines += ['标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）'),
              info['outfit_rule'],
              info['tier_note'],
              info['vocab'].strip(),

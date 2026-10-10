@@ -210,21 +210,5 @@
   "generation_identity_control": {
     "mechanism": "ipadapter",
     "ipadapter_strength": 0.4
-  },
-  "l3": {
-    "max_attempts": 3,
-    "weights": [
-      0.55,
-      0.65,
-      0.75
-    ],
-    "diagnosis_reason": "Knowledge probe vetoed by sourced feature comparison; strengthen face reference only for diagnosed appearance failures, and reinforce sourced clothing for outfit failures. No seed-only retries.",
-    "max_seconds": 900,
-    "max_vision_calls": 18,
-    "outfit_weights": [
-      1.0,
-      1.2,
-      1.4
-    ]
   }
 }

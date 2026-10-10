@@ -92,7 +92,7 @@ def find_name(rows, query):
 def evidence(loaded, row, settings):
     return {'source': 'wai_list', 'file': str(Path(settings['csv']).relative_to(PROJECT)),
             'sha256': loaded['sha256'], 'list_rows': len(loaded['rows']),
-            'manifest_note': '清单对应 WAI Illustrious v16，项目底模是 v17',
+            'manifest_note': MANIFEST_NOTE,
             'matched_line': row['line'], 'list_tag': row['tag'], 'list_name': row['cn']}
 
 
@@ -117,3 +117,14 @@ def tier_row(tag, settings):
         if normalize(row['tag']) == target:
             return evidence(loaded, row, settings)
     return None
+
+
+MANIFEST_NOTE = '清单对应 WAI Illustrious v16，项目底模是 v17'
+
+
+def refusal_question(settings):
+    """V2-38: the question a character outside the list gets. Names the list file and its version note."""
+    loaded = load(settings)
+    rel = str(Path(settings['csv']).relative_to(PROJECT))
+    return ('这个角色不在 WAI 角色清单里，底模多半画不好，建议换一个清单里的角色。'
+            f'清单文件：{rel}（{MANIFEST_NOTE}；sha256 {loaded["sha256"][:12]}…）。')

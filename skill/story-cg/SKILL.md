@@ -5,6 +5,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 
 使用本 skill 处理单主角剧情 CG（单人日常，道具只作陪衬）。擅长表情、动作、身份与服装一致，以及场景变化；不擅长道具的数量、归属和状态，不支持两个具名角色同框，也不擅长“拿错东西”这类靠道具归属推理的情节，以及远处的小人物。道具问题照常记录为已知问题，不否决、不修复；道具依赖剧情照常出图并提醒可能读不出，不额外提问。以本 skill 所在目录定位 `scripts/storycg`，用其绝对路径在终端执行；流程由 Python 编排。
 
+- 角色范围（V2-38）：只支持 WAI 角色清单（`data/wai/waiIllustriousSDXL_v160_characters.csv`）里的角色。角色不在清单里时，`compile`、`make` 会返回 `needs_user`，`reason` 为 `character_not_in_wai_list`，`question` 已写明原因和清单路径；原样转告用户，建议换一个清单里的角色，不要重试或换 seed。`beats-guide --character` 对清单外角色只会在输出里写“不支持”。
 - 标准流程（beats 方式）：
   1. 运行 `scripts/storycg beats-guide --character '角色名' --shots 4`，读完输出的 schema、写作规则、该角色的标准服装 tag 和本层级的词汇表（含撞键说明）。剧情没换衣服时服装 tag 原样用标准服装；换衣服的镜头写新衣服的 tag；
   2. 按说明写好 beats 文件（一个 JSON 对象，保存为文件）；
