@@ -453,7 +453,7 @@ def tier_generation_config(config,identity):
     cfg.pop('generation_reference',None)
     cfg.pop('character_lora',None)
     cfg['identity_control']={**cfg.get('identity_control',{}),**copy.deepcopy(load_rules()['generation_identity_control'])}
-    # Optional Qwen layout stays configured; probes strip every image input separately.
+    # Probes strip every image input separately.
     if tier=='L1':
         if not identity.get('lora'):
             raise ValueError('L1 missing character LoRA evidence')
@@ -603,7 +603,7 @@ def ensure_identity_tier(job_dir,identity,config,client,*,inventory=None,referen
             return needs_user(root,identity,'底模身份未验证且没有足够的可靠参考图')
         cfg=copy.deepcopy(config)
         cfg.pop('generation_reference',None);cfg.pop('character_lora',None)
-        cfg['identity_control']={'mechanism':'none'};cfg['layout_mode']='none'
+        cfg['identity_control']={'mechanism':'none'}
         cfg['sampler']['denoise']=1.0
         cfg['generation_seed']=rules['tier_probe']['seed']
         cfg['budget']['max_images_per_job']=rules['tier_probe']['max_tests']

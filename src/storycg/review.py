@@ -345,13 +345,8 @@ def reliability_note_lines(report=None, config=None):
     for key, item in (report or {}).get('reliability', {}).items():
         if isinstance(item.get('note'), str) and item['note'].strip():
             items[key] = item
-    lines = [f'- {key}: {item["note"].strip()}' for key, item in items.items()
-             if isinstance(item.get('note'), str) and item['note'].strip()]
-    from storycg.review_v3 import enabled_items, ALL_ITEMS
-    active = enabled_items(config or {})
-    lines.extend(f'- {key}: 未经审核；该项未经可靠审核（本次流程未启用）。'
-                 for key in ALL_ITEMS if key not in active)
-    return lines
+    return [f'- {key}: {item["note"].strip()}' for key, item in items.items()
+            if isinstance(item.get('note'), str) and item['note'].strip()]
 
 
 def audit_single(vlm, path, entry, props, config, purpose):
@@ -485,8 +480,7 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             source.convert('RGB').save(reference_full)
         from storycg.detection_review import detect_face_record
         reference_detection,reference_crop=detect_face_record(reference_full,reference_face)
-    from storycg.review_v3 import enabled as v3_enabled
-    report = {'version': 3 if v3_enabled(config) else 2, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
+    report = {'version': 2, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
               'inputs': inputs, 'single': [], 'faces': [], 'consistency': [],
               'rule': 'any fail/unknown/missing/error => 未通过; otherwise any minor => 有瑕疵但可选; all pass => 通过'}
     if portrait:
@@ -542,19 +536,6 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
                 result = extra_part.merge_into(result, extra_part.check(vlm, path, identity, f'consistency_{number:02d}_extra_body_part'))
             if pair:
                 result['face_pair'] = str(pair.relative_to(job_dir))
-            from storycg import review_v3
-            if review_v3.enabled(config):
-                outfit_ref = review_v3.outfit_reference(number - 1, board['shots'], paths,
-                    reference_full if portrait else None)
-                prepared = review_v3.prepare(path, outfit_ref, identity, entry,
-                    artifacts / f'v3_{number:02d}', items=review_v3.enabled_items(config))
-                supplementary = review_v3.audit(vlm, prepared, config, f'v3_{number:02d}')
-                result['v3'] = supplementary
-                if supplementary['status'] != 'pass':
-                    result['status'] = 'fail'
-                    result['error'] = supplementary.get('error', 'v3 audit failed')
-                else:
-                    result.setdefault('data', {}).update(supplementary['data'])
             report['consistency'].append({'shot': number, 'checklist': checks, **result})
             statuses.extend(result_statuses(result))
         blind_paths,thumbnail_records = blind_thumbnails(paths,artifacts/'blind',

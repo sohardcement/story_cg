@@ -33,10 +33,8 @@
     "denoise": 1.0
   },
   "budget": {
-    "max_repairs_per_shot": 3,
     "max_images_per_job": 40,
-    "max_job_minutes": 60,
-    "stop_after_no_improvement_rounds": 2
+    "max_job_minutes": 60
   },
   "camera_tags": {
     "front": [],
@@ -223,10 +221,8 @@
     ]
   },
   "character_lora_matching": false,
-  "delivery_mode": "candidates",
   "candidates_per_shot": 3,
   "pairwise_pick": true,
-  "portrait_mode": "single",
   "style_file": "style.json",
   "portrait": {
     "framing": "full",
@@ -261,23 +257,12 @@
   },
   "reference_models": {
     "ipadapter": "ip-adapter-plus-face_sdxl_vit-h.safetensors",
-    "clip_vision": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
-    "qwen_unet": "qwen-image-edit-2511-Q4_K_M.gguf",
-    "qwen_clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-    "qwen_vae": "qwen_image_vae.safetensors",
-    "qwen_lightning": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors"
+    "clip_vision": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
   },
   "identity_control": {
     "mechanism": "ipadapter",
     "ipadapter_strength": 0.4,
     "selection_status": "supervisor selected P3-01: plus-face SDXL 0.4"
-  },
-  "layout_mode": "none",
-  "layout_denoise": 0.55,
-  "supplementary_review": {
-    "extra_protagonist": false,
-    "accessories_zoom": false,
-    "outfit_detail_vs_portrait": false
   },
   "framing": {
     "wide": {

@@ -90,7 +90,8 @@ def test_cycle_result_shows_note_without_item_records(tmp_path, source):
     if source == 'report':
         report['reliability'] = {'extra_protagonist': {'note': NOTE}}
         config_file(root, note='当前配置不同说明')
-    cycle.deliver(root, {'shots': {}, 'final_review': report}, config, None)
+    from storycg import delivery
+    delivery.deliver(root, {'shots': {}, 'final_review': report}, config, None)
     text = (root / 'result.md').read_text()
     assert '- extra_protagonist: ' + NOTE in text
     assert '当前配置不同说明' not in text
