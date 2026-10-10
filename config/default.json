@@ -468,5 +468,10 @@
   "tier_cache": {
     "path": "cache/identity_tiers.json",
     "identity_policy": "Model identity comes from the ComfyUI inventory (GET /experiment/models/<folder>): the exact file name plus the size that request reports. A failed request, an entry the inventory does not list, or a missing size disables caching for that run; local bytes, mtime and training hashes are never substituted."
+  },
+  "wai_list": {
+    "enabled": true,
+    "csv": "data/wai/waiIllustriousSDXL_v160_characters.csv",
+    "manifest": "data/wai/manifest.json"
   }
 }

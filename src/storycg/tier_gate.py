@@ -76,6 +76,18 @@ def ensure_identity_tier(job_dir,identity,config,client,**kwargs):
     from storycg.identity_enrichment import outfit_hair_ornaments
     root = Path(job_dir).resolve()
     identity = outfit_hair_ornaments(identity)
+    from storycg import wai_list
+    if not character_lora_matching_enabled(config) and identity.get('character_tag'):
+        # V2-25: a character on the WAI list is drawable from its tag alone: L2, no probe image.
+        row=wai_list.tier_row(identity['character_tag'],wai_list.settings_from(config))
+        if row:
+            result=copy.deepcopy(identity)
+            for key in ('reason','question','user_can_provide'): result.pop(key,None)
+            result.update(identity_tier='L2',tier_evidence={'status':'wai_list',
+                'reason':'角色在 WAI 清单内，只靠 tag 可画出，直接判 L2，不出探针图',
+                'generation_count':0,'vision_calls':0,'wai_list':row})
+            save_json_atomic(root/'identity.json',result)
+            return result
     if not config.get('tier_cache') or not identity.get('character_tag'):
         return _determine_identity_tier(root, identity, config, client, **kwargs)
     try:

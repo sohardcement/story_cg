@@ -54,7 +54,8 @@ def resolve_job(job_dir: str | Path, *, work=None, character_tag=None) -> dict:
             raise ValueError("identity already locked; use a new job for a different selection")
     job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
     options = {k: v for k, v in {"work": work or job.get('generation_options',{}).get('work'), "character_tag": character_tag or job.get('generation_options',{}).get('character_tag')}.items() if v}
-    identity = resolve_identity(job["character"], job_dir / "cache" / "danbooru", **options)
+    identity = resolve_identity(job["character"], job_dir / "cache" / "danbooru",
+                                wai=job.get("generation_config", {}).get("wai_list"), **options)
     save_json_atomic(path, identity)
     return identity
 
