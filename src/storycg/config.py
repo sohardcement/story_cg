@@ -30,6 +30,7 @@ def load_config(path: str | Path) -> dict:
         raise ValueError("style_loras must be a list; an empty list means no style LoRA (V2-20)")
     if config["budget"]["max_images_per_job"] < 1:
         raise ValueError("max_images_per_job must be positive")
+    check_removed_switches(config)
     return config
 
 
@@ -42,26 +43,28 @@ def character_lora_matching_enabled(config: dict | None) -> bool:
     return bool((config or {}).get("character_lora_matching", False))
 
 
-DELIVERY_MODES = ("candidates", "repair")
+class RemovedMode(ValueError):
+    """A job snapshot or config still asks for a delivery path that V2-28 removed."""
 
 
-def delivery_mode(config: dict | None) -> str:
-    """V2-21 (TASK-v2 §10.3): "candidates" (default: 3 candidates per shot, screen, pick one) or
-    "repair" (the legacy repair cycle, kept behind this switch)."""
-    value = (config or {}).get("delivery_mode", "candidates")
-    if value not in DELIVERY_MODES:
-        raise ValueError(f"delivery_mode must be one of {DELIVERY_MODES}")
-    return value
+# V2-28: the repair delivery, the gated portrait and the Qwen layout were removed. Only the value on the
+# left is still accepted (old snapshots carry it); any other value is refused with the message.
+REMOVED_SWITCHES = {
+    "delivery_mode": ("candidates", "修图方式已删除（V2-28）：配置或任务快照里是 delivery_mode={value!r}，"
+                      "现在只有候选交付（每镜 3 张候选、筛选、自动挑一张）；请新建任务。"),
+    "portrait_mode": ("single", "定妆图门禁已删除（V2-28）：配置或任务快照里是 portrait_mode={value!r}，"
+                      "现在定妆图只出 1 张、审核只记录；请新建任务。"),
+    "layout_mode": ("none", "Qwen 布局已删除（V2-28）：配置或任务快照里是 layout_mode={value!r}，"
+                    "现在不再使用 Qwen；请新建任务。"),
+}
 
 
-def portrait_mode(config: dict | None) -> str:
-    """"single": the portrait is used once, its audit is only recorded (default in candidate mode);
-    "gated": the legacy D7 gate with Qwen repairs. Defaults follow delivery_mode."""
-    default = "single" if delivery_mode(config) == "candidates" else "gated"
-    value = (config or {}).get("portrait_mode", default)
-    if value not in ("single", "gated"):
-        raise ValueError("portrait_mode must be 'single' or 'gated'")
-    return value
+def check_removed_switches(config: dict | None) -> None:
+    """Raise RemovedMode when a config or job snapshot asks for a removed delivery path."""
+    for key, (kept, message) in REMOVED_SWITCHES.items():
+        value = (config or {}).get(key, kept)
+        if value != kept:
+            raise RemovedMode(message.format(value=value))
 
 
 def candidates_per_shot(config: dict | None) -> int:

@@ -86,12 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     resume.add_argument('--config', default='config/default.json', type=Path)
     for command in (new, run, resume):
         command.add_argument('--identity-control', choices=['none', 'ipadapter'])
-        command.add_argument('--layout-mode', choices=['none', 'qwen'])
         command.add_argument('--seed', type=int)
     args = parser.parse_args(argv)
     options = {key: value for key, value in {
         'identity_control': getattr(args, 'identity_control', None),
-        'layout_mode': getattr(args, 'layout_mode', None),
         'generation_seed': getattr(args, 'seed', None)}.items() if value is not None}
 
 
@@ -143,7 +141,6 @@ def main(argv: list[str] | None = None) -> int:
             saved_options = job.get('generation_options', {})
             if (args.job_dir/'state.json').exists():
                 frozen = {'identity_control': config.get('identity_control', {}).get('mechanism'),
-                          'layout_mode': config.get('layout_mode', 'none'),
                           'generation_seed': config.get('generation_seed')}
                 if any(frozen.get(k) != v for k,v in options.items()):
                     raise ValueError('existing state has different generation conditions; create a new job')

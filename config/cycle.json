@@ -1,53 +1,4 @@
 {
-  "enabled": true,
-  "problem_methods": {
-    "eye_color": [
-      "face_detail",
-      "instruction_edit"
-    ],
-    "accessories": [
-      "face_detail",
-      "instruction_edit"
-    ],
-    "hair_color": [
-      "face_detail",
-      "instruction_edit"
-    ],
-    "hairstyle": [
-      "face_detail",
-      "relayout"
-    ],
-    "outfit": [
-      "instruction_edit",
-      "relayout"
-    ],
-    "action": [
-      "relayout"
-    ],
-    "hands": [
-      "relayout"
-    ],
-    "composition": [
-      "relayout"
-    ],
-    "framing": [
-      "relayout"
-    ],
-    "scene": [
-      "relayout"
-    ],
-    "narrative": [
-      "relayout"
-    ],
-    "protagonist_count": [
-      "seed",
-      "instruction_edit",
-      "relayout"
-    ],
-    "extra_body_part": [
-      "seed"
-    ]
-  },
   "extra_body_part": {
     "source": "V2-16 (D59). Prompt and schema taken from the V2-15 method M3 (reports/V2-15.md, vision_method.py). Calibration on 80 labelled delivered images: 5/6 positives found, 1 negative flagged (re-labelled uncertain by the supervisor); sample is small (6 positives).",
     "prompt": "This image should show exactly one main character{subject_clause}. Look carefully for any body part that does NOT belong to the main character: an extra leg, arm, hand, head, hair mass or torso, or a partial second person, including a small cut-off piece at the frame edge. Ignore the main character's own legs, arms, hands, hair and clothing when they are attached to the main character's body, and ignore background objects. Set extra_part to true only if you can see such a part that is clearly not attached to the main character or is a second person. Give the location of the part (left, right, top, bottom, center, or none) and a short description. Respond with JSON only.",
@@ -64,24 +15,14 @@
       }
     }
   },
-  "max_rounds_per_shot": 3,
   "max_images": 40,
   "max_minutes": 60,
-  "max_consecutive_no_improvement": 2,
   "max_vision_calls": 139,
   "max_llm_calls": 28,
-  "metric": "strict decrease of reliable fail count; failed or incomplete audit never improves; ties retain incumbent",
-  "instruction_edit": {
-    "style_restore": false,
-    "denoise": 0.25
-  },
   "story_rules": {
     "max_obscured": 1,
     "detached_position_requires_separated": true,
     "hand_owner_required": true
   },
-  "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM.",
-  "final_review_reserve_minutes": 8,
-  "candidate_identity_regression": "reject new reliable hair_color/outfit fail even if total decreases",
-  "diagnosis_validation_retries": 1
+  "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM."
 }

@@ -17,7 +17,7 @@ from jsonschema import validate
 
 from storycg.budget import Budget, BudgetExceeded, GuardedComfy, count_usage
 from storycg.comfy import ComfyClient
-from storycg.config import load_config
+from storycg.config import check_removed_switches, load_config
 from storycg.controls import apply_options
 from storycg.pipeline import new_job, resolve_job, plan_job, run_story_job, make_contact_sheet, tier_recheck_eligible
 from storycg.planning import plan_story, validate_storyboard
@@ -144,13 +144,6 @@ def check_resources(config):
         required.extend([('IPAdapterModelLoader', 'ipadapter_file', reference['ipadapter']),
                          ('CLIPVisionLoader', 'clip_name', reference['clip_vision'])])
         node_only.extend(('IPAdapterAdvanced', 'LoadImage'))
-    from storycg.config import delivery_mode
-    if config.get('layout_mode') == 'qwen' or (config.get('repair_cycle_enabled') and delivery_mode(config) == 'repair'):
-        required.extend([('UnetLoaderGGUF', 'unet_name', reference['qwen_unet']),
-                         ('LoraLoaderModelOnly', 'lora_name', reference['qwen_lightning']),
-                         ('CLIPLoader', 'clip_name', reference['qwen_clip']),
-                         ('VAELoader', 'vae_name', reference['qwen_vae'])])
-        node_only.extend(('TextEncodeQwenImageEditPlus', 'ModelSamplingAuraFlow', 'EmptySD3LatentImage'))
     nodes = {}
     with httpx.Client(base_url=config['comfyui_url'],
                       timeout=config['http_timeout_seconds'], trust_env=False) as client:
@@ -172,7 +165,7 @@ def generate(root, config):
     from storycg.cycle import settings
     client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()))
     try:
-        state = run_story_job(root, config, client, review_dir=root/'delivery')
+        state = run_story_job(root, config, client)
     finally:
         client.close()
     if state.get('status')=='needs_user':
@@ -182,7 +175,7 @@ def generate(root, config):
         raise ResourceUnavailable('身份控制所需资源或层级实现不可用：'+state['status'])
     if (root/'manifest.json').exists():
         deliver(root)
-    complete = (root/'contact_sheet.jpg').exists() and not read(root, 'cycle.json').get('blocked')
+    complete = (root/'contact_sheet.jpg').exists()
     update(root, phase='completed' if complete else 'stopped', finished_at=datetime.now(timezone.utc).isoformat())
 
 
@@ -254,7 +247,7 @@ def make_portrait(root, config, *, redo=False):
     from storycg.cycle import settings
     client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()))
     try:
-        state = run_story_job(root, config, client, review_dir=root/'delivery', stop_after_portrait=True, redo_portrait=redo)
+        state = run_story_job(root, config, client, stop_after_portrait=True, redo_portrait=redo)
     finally:
         client.close()
     if state.get('status') == 'needs_user':
@@ -297,6 +290,10 @@ def execute(root):
     config = read(root, 'job.json')['generation_config']
     config['repair_cycle_enabled'] = True
     try:
+        # V2-28: a repair-era snapshot or cycle.json stops here with a clear error.
+        check_removed_switches(config)
+        from storycg.delivery import refuse_repair_cycle
+        refuse_repair_cycle(root)
         end_wait(root)
         update(root, finished_at=None, needs_user=False, reason=None, question=None, options=[], error=None)
         if not read(root, 'agent.json').get('intake'):
@@ -486,11 +483,10 @@ def status(root):
             'question': record.get('question'), 'options': record.get('options', []),
             'notices': record.get('notices', []), 'storyboard': record.get('storyboard', []),
             'error': record.get('error'), 'progress': {'completed_shots': done, 'total_shots': total},
-            'usage': count_usage(root), 'repair_rounds': {n: len(s.get('history', [])) for n, s in cycle.get('shots', {}).items()},
-            'repair_stops': {n: s.get('stop') for n, s in cycle.get('shots', {}).items()},
+            'usage': count_usage(root),
             'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
             'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
-            'repair_blocked': cycle.get('blocked'), 'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
+            'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
             'attempts': [{k: a.get(k) for k in ('shot_id', 'attempt_number', 'status', 'prompt_id', 'image', 'error')}
                          for a in state.get('attempts', [])],
             'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
@@ -498,7 +494,7 @@ def status(root):
 
 def _confirmation(root):
     """V2-24: what the user confirms at awaiting_approval: tier, portrait, candidates per shot."""
-    from storycg.config import candidates_per_shot, portrait_mode
+    from storycg.config import candidates_per_shot
     portrait = read(root, 'portrait.json')
     config = read(root, 'job.json').get('generation_config', {})
     return {'identity_tier': read(root, 'identity.json').get('identity_tier'),
@@ -506,7 +502,6 @@ def _confirmation(root):
             'portrait_image': str(root/portrait['image']['path']) if portrait.get('image') else None,
             'portrait_face': str(root/portrait['face']['path']) if portrait.get('face') else None,
             'portrait_attempts': len(read(root, 'portrait_attempts.json', []) or []),
-            'portrait_mode': portrait_mode(config),
             'candidates_per_shot': candidates_per_shot(config)}
 
 
@@ -608,11 +603,7 @@ def main(argv):
                                  help='beats mode stops for confirmation by default; this runs straight through')
             command.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
             command.add_argument('--identity-control', choices=['none', 'ipadapter'])
-            command.add_argument('--layout-mode', choices=['none', 'qwen'])
             command.add_argument('--seed', type=int)
-        if name=='resume':
-            command.add_argument('--repair-shot',type=int)
-            command.add_argument('--max-new-images',type=int,default=8)
         if name in ('make','resume'):
             command.add_argument('--reference-path',type=Path)
             command.add_argument('--tag')
@@ -632,7 +623,7 @@ def main(argv):
         if not root.is_relative_to(PROJECT):
             raise ValueError('agent job paths must be inside the project workspace')
         if args.command == 'make':
-            options = {k: v for k, v in {'identity_control': args.identity_control, 'layout_mode': args.layout_mode, 'generation_seed': args.seed,'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v is not None}
+            options = {k: v for k, v in {'identity_control': args.identity_control, 'generation_seed': args.seed,'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v is not None}
             config = apply_options(load_config(args.config), options); config['repair_cycle_enabled'] = True
             if (root/'agent.json').exists():
                 raise ValueError('job already exists; use status/resume/approve')
@@ -687,12 +678,6 @@ def main(argv):
                             old.update(status='locked',identity_tier='tier_pending_L3_L4',needs_user=False)
                             old['tier_evidence']['validation_completed']=False
                         save_json_atomic(root/'identity.json',old)
-                if args.command=='resume' and args.repair_shot is not None:
-                    if not 1<=args.max_new_images<=8:raise ValueError('targeted repair image cap must be 1..8')
-                    from storycg.runtime_gate import reopen_targeted_repair
-                    reopen_targeted_repair(root,[args.repair_shot],max_new_images=args.max_new_images)
-                    end_wait(root)
-                    update(root,phase='queued',finished_at=None)
                 if args.command == 'deliver':
                     deliver(root)
                 elif args.command == 'pick':
@@ -710,6 +695,7 @@ def main(argv):
                         raise ValueError('approve --beats is only for beats-mode jobs')
                     job_config = read(root, 'job.json')['generation_config']
                     job_config['repair_cycle_enabled'] = True
+                    check_removed_switches(job_config)
                     if args.beats is not None:
                         recompile_beats(root, args.beats, job_config)
                     if args.redo_portrait:

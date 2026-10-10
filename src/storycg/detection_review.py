@@ -169,43 +169,6 @@ def blind_thumbnails(paths, output_dir, *, long_edge=None):
     return outputs,records
 
 
-def repair_mask(source, result, purpose, output_dir, *, config=None):
-    """Persist detection-derived mask + provenance; no semantic object guesses."""
-    output_dir=Path(output_dir)
-    cached=output_dir/'region.json'
-    source_sha=hashlib.sha256(Path(source).read_bytes()).hexdigest()
-    if cached.exists():
-        record=json.loads(cached.read_text())
-        if record['provenance']['source_sha256']!=source_sha or record['provenance']['purpose']!=purpose:
-            raise ValueError('persisted detection mask source/purpose mismatch')
-        path=Path(record['mask_path'])
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=record['mask_sha256']:
-            raise ValueError('persisted detection mask hash mismatch')
-        return record
-    cfg=config or settings()
-    result=detect.detect_image(source) if result is None else result
-    size=tuple(result['size']);faces=result['faces'];persons=result['persons']
-    count=protagonist_count(faces,persons,{},config=cfg)
-    ids=count['major_face_indices']
-    primary=max(ids,key=lambda i:faces[i]['area_ratio'],default=None)
-    provenance={'source_sha256':hashlib.sha256(Path(source).read_bytes()).hexdigest(),
-                'purpose':purpose,'primary_face_index':primary,'uncertain':False}
-    if purpose=='face':
-        if primary is None:raise ValueError('face_not_detected')
-        mask=detect.feather_mask(faces[primary],size)
-        provenance['method']='detected_face_box'
-    else:raise ValueError('unsupported detector mask purpose')
-    bounds=mask.getbbox()
-    if not bounds:raise ValueError('empty detection mask')
-    output_dir=Path(output_dir);output_dir.mkdir(parents=True,exist_ok=True)
-    path=output_dir/'mask.png';mask.save(path)
-    record={'mask_path':str(path),'mask_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
-            'bbox':[v/d for v,d in zip(bounds,[size[0],size[1],size[0],size[1]])],
-            'provenance':provenance,'size':list(size),'config_snapshot':cfg,'detector_config':detect.load_detect_config()}
-    (output_dir/'region.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
-    return record
-
-
 # Keep the frozen calibration vocabulary for reading historical observations.
 DETECTION_KEYS = ('eye_color_sampled', 'accessory_color_sampled', 'protagonist_count')
 ACTIVE_DETECTION_KEYS = ('accessory_color_sampled', 'protagonist_count')

@@ -12,7 +12,7 @@ def spaces(text):
 def full_negative_prompt(config, parts):
     """The negative prompt a shot is submitted with: config negative, then the assembled shot negatives.
 
-    Shared by the first round (pipeline) and the repair attempts (repairs), so a repair cannot drop tags (V2-19).
+    Every candidate of a shot is submitted with it (candidates.run_candidate_delivery).
     """
     return ", ".join(filter(None, [config["negative_prompt"], parts["negative_tags"]]))
 

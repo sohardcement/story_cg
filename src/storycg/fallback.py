@@ -175,7 +175,7 @@ def ensure_l3(root,identity,config,client,*,references,reference_root,vlm=None,f
     attempt_path=root/session/'attempts.json'
     attempts=json.loads(attempt_path.read_text()) if attempt_path.exists() else []
     cfg=copy.deepcopy(config);cfg.pop('character_lora',None);cfg.pop('generation_reference',None)
-    cfg['auto_retry_failed']=False;cfg['layout_mode']='none';cfg['sampler']['denoise']=1
+    cfg['auto_retry_failed']=False;cfg['sampler']['denoise']=1
     cfg['prefix_namespace']=root.name+'_l3_'+session.name
     cfg['budget']['max_images_per_job']=policy['max_attempts']
     def finalize(item):

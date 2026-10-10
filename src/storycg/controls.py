@@ -11,11 +11,11 @@ def apply_options(config, options):
     options = options or {}
     control = config.setdefault('identity_control', {})
     control['mechanism'] = options.get('identity_control', control.get('mechanism', 'ipadapter'))
-    config['layout_mode'] = options.get('layout_mode', config.get('layout_mode', 'none'))
     if control['mechanism'] not in ('none', 'ipadapter'):
         raise ValueError('identity_control must be none or ipadapter')
-    if config['layout_mode'] not in ('none', 'qwen'):
-        raise ValueError('layout_mode must be none or qwen')
+    # V2-28: old jobs may carry layout_mode in their options; only 'none' is still accepted.
+    from storycg.config import check_removed_switches
+    check_removed_switches({'layout_mode': options.get('layout_mode', 'none')})
     if not 0 <= control.get('ipadapter_strength', 0.4) <= 1:
         raise ValueError('invalid IPAdapter strength')
     if 'generation_seed' in options:

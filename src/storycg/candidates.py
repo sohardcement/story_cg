@@ -6,7 +6,7 @@ failing the protagonist-count gate or showing a positive extra-body-part finding
 The selection order is the failure tiers of TASK-v2 §0 (identity, then action/expression, then
 minor count, then candidate number). A shot whose candidates all fail screening gets one more
 round of the same size; if still all screened, the best of all candidates is delivered and the
-reason is written down. There is no repair, no narrative repair, and no Qwen workflow here.
+reason is written down. Since V2-28 this is the only delivery (the repair delivery was removed).
 """
 import copy
 import hashlib
@@ -161,8 +161,6 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
     from storycg.assembly import assemble_prompt, full_negative_prompt
     from storycg.cycle import settings
     root = Path(job_dir).resolve()
-    if config.get('layout_mode') == 'qwen':
-        raise ValueError('layout_mode qwen belongs to the repair delivery; set delivery_mode to repair')
     cycle_cfg = settings()
     budget = budget or Budget(root, cycle_cfg)
     per = candidates_per_shot(config)
@@ -200,7 +198,7 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
 
 
 def _finish(root, config, client, identity, board, store, cycle_cfg):
-    from storycg.runtime_gate import deliver
+    from storycg.delivery import deliver
     from storycg.shot_vocab import record_observations
     cycle = {'version': 1, 'config': cycle_cfg, 'shots': {}, 'phase': 'candidate_selection',
              'allow_obscured': config.get('allow_obscured_protagonist', False), 'delivery_mode': 'candidates'}
@@ -341,7 +339,7 @@ def result_text(root, store=None):
 
 
 def write_result_md(root, store=None):
-    """Rewrite result.md of a candidate job; a no-op for jobs without candidates.json (repair jobs)."""
+    """Rewrite result.md of a candidate job; a no-op for jobs without candidates.json (old repair jobs)."""
     root = Path(root)
     if not _store_path(root).exists():
         return
@@ -350,7 +348,7 @@ def write_result_md(root, store=None):
 
 def publish_candidates(root):
     """Candidate artefacts for every delivery write: sheet at the job root and in delivery/, result.md,
-    manifest records. A no-op for jobs without a candidate store (repair jobs)."""
+    manifest records. A no-op for jobs without a candidate store (old repair jobs)."""
     root = Path(root)
     if not _store_path(root).exists():
         return None

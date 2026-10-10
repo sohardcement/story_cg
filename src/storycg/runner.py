@@ -223,7 +223,7 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         "dropped_scene_tags": list(dropped_scene_tags or []),
         # V2-18 (D60): the indoor-precipitation negatives added to this shot, and the tags skipped with a reason.
         "indoor_precipitation_negative": indoor_negative,
-        # V2-21: candidate number within the shot (None for ordinary and repair attempts).
+        # V2-21: candidate number within the shot (None for portrait, tier and other single attempts).
         "candidate": candidate,
     }
     state["attempts"].append(attempt)
@@ -243,7 +243,7 @@ def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
 
 def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: str,
                 config: dict, client, *, negative_prompt: str | None = None,
-                repair_diagnosis: dict | None = None, generation_reference: dict | None = None,
+                generation_reference: dict | None = None,
                 dropped_scene_tags: list | None = None, indoor_negative: dict | None = None,
                 seed: int | None = None) -> dict:
     job_dir = Path(job_dir)
@@ -261,23 +261,8 @@ def run_gen_one(job_dir: str | Path, shot_id: str, positive_tags: str, framing: 
         matching = [attempt for attempt in state["attempts"] if attempt["shot_id"] == shot_id]
         if matching:
             attempt = matching[-1]
-            if generation_reference is not None and generation_reference != attempt.get("reference") and repair_diagnosis is None:
-                raise ValueError("shot already exists with different generation reference; diagnosis required")
-            if repair_diagnosis is not None and attempt['status'] == 'completed':
-                if not all(repair_diagnosis.get(k) for k in ('diagnosis', 'hypothesis', 'changes')):
-                    raise ValueError("repair needs diagnosis, hypothesis and changes")
-                old_negative = attempt['workflow']['5']['inputs'].get('text', attempt['workflow']['5']['inputs'].get('prompt'))
-                new_negative = negative_prompt if negative_prompt is not None else old_negative
-                same_conditioning = (attempt['positive_tags'], attempt['framing'], old_negative) == (positive_tags, framing, new_negative) and (generation_reference is None or generation_reference == attempt.get("reference"))
-                if same_conditioning and attempt.get('repair_diagnosis') == repair_diagnosis:
-                    return state  # A completed diagnosed repair is idempotent.
-                if same_conditioning:
-                    raise ValueError("repair must change conditioning, not seed alone")
-                replacement = _new_attempt(job_dir, state, shot_id, positive_tags, framing, new_negative, generation_reference=generation_reference, dropped_scene_tags=dropped_scene_tags, indoor_negative=indoor_negative)
-                replacement['repair_diagnosis'] = repair_diagnosis
-                _save(job_dir, state)
-                _process(job_dir, state, replacement, client, recovering=False)
-                return state
+            if generation_reference is not None and generation_reference != attempt.get("reference"):
+                raise ValueError("shot already exists with different generation reference")
             if negative_prompt is not None and attempt["workflow"]["5"]["inputs"].get("text", attempt["workflow"]["5"]["inputs"].get("prompt")) != negative_prompt:
                 raise ValueError("shot already exists with different negative prompt")
             if attempt["positive_tags"] != positive_tags or attempt["framing"] != framing:

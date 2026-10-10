@@ -41,13 +41,6 @@ def narrative_findings(result, context=None):
     return filtered
 
 
-def narrative_repair_needed(result, context=None):
-    if (context or {}).get('prop_dependent') is not False:
-        return False  # mixed narrative cannot safely trigger prop repairs
-    return result.get('status')=='pass' and any(
-        narrative_findings(result,context).get('data',{}).get(k,{}).get('status')=='fail' for k in ('key_events','ending'))
-
-
 def delivery_scope_notes(root):
     """Fixed v2 delivery notice plus the saved storyboard adaptation, if any."""
     path = Path(root)/'storyboard.json'
