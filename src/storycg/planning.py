@@ -180,6 +180,34 @@ def appearance_forbidden(value, *, body_action=False):
     return bool(en_hit or zh_hit)
 
 
+# V2-33: which rule a body-target value broke, for the error text only. appearance_forbidden still decides.
+BODY_TARGET_NOUNS = frozenset({'face', 'eyes', 'eye', 'mouth', 'ears', 'ear', 'lips', 'lip', 'nose',
+                               'hands', 'hand', 'fingers', 'finger', 'palms', 'palm'})
+SHAPE_SIZE_WORDS = frozenset({'big', 'large', 'small', 'tiny', 'round', 'narrow', 'wide', 'slanted', 'tareme',
+                              'tsurime', 'droopy', 'sharp', 'almond', 'long', 'short'})
+
+
+def body_target_violation(value):
+    """Kind of the body-target rule breach in `value`, or None when appearance_forbidden passes it.
+
+    'appearance': the value names appearance (a Chinese appearance word, a hair/build word, a colour or a
+    shape/size word, or an appearance noun other than a body target).
+    'clause': no appearance word, but the value is not a single plain action clause (extra clauses, reasons,
+    a second action). The field then accepts one action clause only.
+    """
+    if not appearance_forbidden(value, body_action=True):
+        return None
+    if APPEARANCE_ZH.search(value):
+        return 'appearance'
+    from storycg.tags import colour_words
+    normalized = re.sub(r'[_-]', ' ', re.sub(r'\beye[ -]level\b', '', value, flags=re.I))
+    words = {word.lower() for word in re.findall(r'[A-Za-z]+', normalized)}
+    if words & (set(colour_words()) | SHAPE_SIZE_WORDS):
+        return 'appearance'
+    hits = {match.group(0).lower() for match in APPEARANCE_EN.finditer(normalized)}
+    return 'appearance' if hits - BODY_TARGET_NOUNS else 'clause'
+
+
 def _strings(value):
     if isinstance(value, str):
         yield value

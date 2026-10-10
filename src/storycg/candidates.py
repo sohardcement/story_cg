@@ -327,6 +327,14 @@ def _group_difference_line(unreliable, group):
     return ('- 与整组汇总不同：' + '；'.join(parts)) if parts else ''
 
 
+def _portrait_item_text(item):
+    """V2-33: one failed portrait item; detection items are marked, and so is whether the item is a reliable one
+    (result.md carries no per-item "not reliably reviewed" sentence; that stays in review.md)."""
+    source = '，检测项' if item.get('source') == 'detection' else ''
+    kind = '可靠项' if item.get('reliable', True) else '非可靠项'
+    return f"{item['item']}（{item['status']}{source}）：{item['reason'].rstrip('.。')}（{kind}）"
+
+
 def _group_deviation_lines(root, cycle, group):
     """V2-32: group and layer conclusions as stored, plus the raw portrait review when it did not pass."""
     from storycg.display import portrait_review
@@ -344,7 +352,7 @@ def _group_deviation_lines(root, cycle, group):
         lines.append('- 未经可靠审核（整组汇总）：无')
     portrait = portrait_review(root)
     if portrait and portrait['raw_status'] != 'pass':
-        items = '；'.join(f"{x['item']}（{x['status']}）：{x['reason'].rstrip('.。')}" for x in portrait['failed_items']) or '未记录具体项'
+        items = '；'.join(_portrait_item_text(x) for x in portrait['failed_items']) or '未记录具体项'
         lines.append(f"- 定妆图原始审核未通过：{items}。{portrait['note']}。")
     return lines
 

@@ -205,7 +205,7 @@ def _collect_errors(board, shot_count, identity, config):
     reporting only.
     """
     from storycg.identity_enrichment import category_for, load_rules
-    from storycg.planning import appearance_forbidden, production_schema
+    from storycg.planning import appearance_forbidden, body_target_violation, production_schema
     from storycg.prompt_rules import companion_conflicts
     from storycg.shot_contract import EXPRESSION_TAGS, moment
     from storycg.shot_vocab import classify_shots, load_vocab, substitute_text, vocab_tier
@@ -298,8 +298,13 @@ def _collect_errors(board, shot_count, identity, config):
                   for value in _strings(field)]
         for field, value, body_action in pairs:
             if appearance_forbidden(value, body_action=body_action):
-                _add(errors, number, field, f'外貌描写 "{value}" 不允许',
-                     '删除外貌、发色、瞳色、体型等描写；眼睛状态和体位动作可以保留')
+                if body_action and body_target_violation(value) == 'clause':
+                    _add(errors, number, field, f'这个字段只能写一个动作子句："{value}"',
+                         '只保留一个动作子句（如 "close eyes"、"hands on face"）；原因、时间、并列的第二个动作'
+                         '移到别的字段或删去；眼睛状态和体位动作可以保留')
+                else:
+                    _add(errors, number, field, f'外貌描写 "{value}" 不允许',
+                         '删除外貌、发色、瞳色、体型等描写；眼睛状态和体位动作可以保留')
             if any(term and re.search(rf"(?<!\w){re.escape(term.replace('_', ' '))}(?!\w)",
                                       value.replace('_', ' '), re.I) for term in identity_terms):
                 _add(errors, number, field, f'角色名或作品名 "{value}" 不允许', '删除角色名、作品名')

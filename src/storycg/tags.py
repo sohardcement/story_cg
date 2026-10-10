@@ -1,8 +1,13 @@
 """Exact Danbooru tag existence checks, with persisted positive/negative responses."""
+from functools import lru_cache
 from pathlib import Path
+import hashlib
+import json
 import re
 import httpx
 from storycg.identity import BASE_URL, _CachedDanbooru
+
+COLOR_SNAPSHOT_DIR = Path(__file__).resolve().parents[2] / 'cache' / 'tag_groups'
 
 
 def canonical_tag(value):
@@ -10,15 +15,59 @@ def canonical_tag(value):
 
 
 # Colour vocabulary shared by identity exclusion rules (V2-31). Shade words qualify a colour.
-COLOR_WORDS = ('red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'white',
-               'black', 'grey', 'gray', 'brown', 'silver', 'gold')
+# V2-33: the colour names come from the Danbooru tag group "colors" snapshot (its "Single Color Themes"
+# section, e.g. "Aqua theme" -> aqua), checksum-verified at load; the list below is a hand-written supplement
+# for names that the group does not list. The V2-31 list is a subset of the union.
+MANUAL_COLOR_WORDS = ('red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'white',
+                      'black', 'grey', 'gray', 'brown', 'silver', 'gold',
+                      'teal', 'cyan', 'navy', 'beige', 'turquoise', 'magenta', 'violet', 'lavender',
+                      'maroon', 'indigo', 'cream', 'khaki', 'ivory', 'crimson', 'scarlet', 'lime', 'mint', 'peach')
 SHADE_WORDS = ('light', 'dark', 'pale', 'bright', 'golden')
-_COLOR_PREFIX = re.compile(rf"^(?:(?:{'|'.join(SHADE_WORDS)})_)?({'|'.join(COLOR_WORDS)})_(.+)$")
 
 
-def color_split(tag):
-    """Return (colour, garment noun) for a colour-prefixed tag such as brown_shoes, else None."""
-    match = _COLOR_PREFIX.match(canonical_tag(tag))
+def _snapshot_colour_words():
+    """Single-colour theme names of tag_group:colors, verified against its provenance sha256 and title."""
+    raw = (COLOR_SNAPSHOT_DIR / 'colors.json').read_bytes()
+    provenance = json.loads((COLOR_SNAPSHOT_DIR / 'colors.provenance.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(raw).hexdigest() != provenance['sha256']:
+        raise ValueError('colors source cache checksum mismatch')
+    page = json.loads(raw)
+    if page.get('title') != 'tag_group:colors':
+        raise ValueError('incorrect colors wiki source')
+    lines = page['body'].splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith('h4#single-color-themes')), None)
+    if start is None:
+        raise ValueError('colors source has no single-color themes section')
+    words = set()
+    for line in lines[start + 1:]:
+        if line.startswith('h4#'):
+            break
+        for link in re.findall(r'\[\[([^\]|]+)\]\]', line):
+            match = re.fullmatch(r'([A-Za-z]+) theme', link.strip(), re.I)
+            if match:
+                words.add(match.group(1).lower())
+    if not words:
+        raise ValueError('colors source has no single-color theme links')
+    return frozenset(words)
+
+
+@lru_cache(maxsize=1)
+def colour_words():
+    """Colour names used to group colour-prefixed tags: the colors group snapshot plus the manual supplement."""
+    return tuple(sorted(_snapshot_colour_words() | set(MANUAL_COLOR_WORDS)))
+
+
+@lru_cache(maxsize=8)
+def _colour_prefix(words):
+    return re.compile(rf"^(?:(?:{'|'.join(SHADE_WORDS)})_)?({'|'.join(sorted(words, key=len, reverse=True))})_(.+)$")
+
+
+def color_split(tag, words=None):
+    """Return (colour, garment noun) for a colour-prefixed tag such as brown_shoes, else None.
+
+    `words` overrides the colour vocabulary (the V2-33 replay uses the pre-V2-33 list to show the change)."""
+    words = colour_words() if words is None else tuple(words)
+    match = _colour_prefix(words).match(canonical_tag(tag))
     return (match.group(1), match.group(2)) if match else None
 
 def _split_prop_attribute(tag, kind, registry, path):
