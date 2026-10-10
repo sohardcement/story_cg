@@ -476,18 +476,26 @@ def status(root):
              'result': str(root/'result.md') if (root/'result.md').exists() else None,
              'manifest': str(root/'manifest.json') if manifest else None}
     total = read(root, 'job.json').get('shot_count', 0)
-    return {'job_id': root.name, 'job_dir': str(root), 'phase': phase, 'active': active,
-            'needs_user': record.get('needs_user', False), 'reason': record.get('reason'),
-            'question': record.get('question'), 'options': record.get('options', []),
-            'notices': record.get('notices', []), 'storyboard': _summary_for_status(root, record, phase),
-            'error': record.get('error'), 'progress': _progress(root, total, cycle),
-            'usage': count_usage(root),
-            'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
-            'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
-            'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
-            'attempts': [{k: a.get(k) for k in ('shot_id', 'attempt_number', 'status', 'prompt_id', 'image', 'error')}
-                         for a in state.get('attempts', [])],
-            'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
+    result = {'job_id': root.name, 'job_dir': str(root), 'phase': phase, 'active': active,
+              'needs_user': record.get('needs_user', False), 'reason': record.get('reason'),
+              'question': record.get('question'), 'options': record.get('options', []),
+              'notices': record.get('notices', []), 'storyboard': _summary_for_status(root, record, phase),
+              'error': record.get('error'), 'progress': _progress(root, total, cycle),
+              'usage': count_usage(root),
+              'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
+              'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
+              'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
+              'attempts': [{k: a.get(k) for k in ('shot_id', 'attempt_number', 'status', 'prompt_id', 'image', 'error')}
+                           for a in state.get('attempts', [])],
+              'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
+    if phase == 'identity_confirmed':
+        # V2-34: after resolve the status names the locked character and the next step, not the old question.
+        identity = read(root, 'identity.json')
+        result['locked_identity'] = {'character_tag': identity.get('character_tag'), 'work_tag': identity.get('work_tag'),
+                                     'identity_tier': identity.get('identity_tier')}
+        result['next_step'] = (f"身份已锁定为 {identity.get('character_tag')}（作品 {identity.get('work_tag')}）："
+                               '运行 resume 继续定档与出图。')
+    return result
 
 
 def _summary_for_status(root, record, phase):
@@ -527,11 +535,23 @@ def _is_candidate_job(job_config):
     return 'candidates_per_shot' in (job_config or {})
 
 
+def _generated_candidates(state):
+    """V2-34: the completed images per shot, counted from the submission ledger (state.json attempts), one per
+    candidate number. candidates.json gets a record only after the audit, so it lags behind a finished image."""
+    done = {}
+    for attempt in state.get('attempts', []):
+        if attempt.get('status') == 'completed' and str(attempt.get('shot_id', '')).startswith('shot') \
+                and attempt.get('candidate') is not None:
+            done.setdefault(attempt['shot_id'], set()).add(attempt['candidate'])
+    return done
+
+
 def _progress(root, total, cycle):
     """V2-32: stage by stage. completed_shots is the number of shots with a picked candidate (not shots with
     one finished image). V2-33: in a candidate-delivery job completed_shots is always the picked count, and
     before candidates.json is written every shot is 0 generated / 0 picked. Only jobs whose config has no
-    candidate delivery (repair era) keep the attempt-based count."""
+    candidate delivery (repair era) keep the attempt-based count. V2-34: candidates_generated comes from
+    state.json; reviewed and picked still come from candidates.json."""
     from storycg.config import candidates_per_shot
     job_config = read(root, 'job.json').get('generation_config', {})
     if not _is_candidate_job(job_config):
@@ -539,13 +559,14 @@ def _progress(root, total, cycle):
         done = len({a['shot_id'] for a in state.get('attempts', []) if a['status'] == 'completed' and a['shot_id'].startswith('shot')})
         return {'completed_shots': done, 'total_shots': total, 'shots': [], 'final_review_done': cycle.get('phase') == 'complete'}
     store = read(root, 'candidates.json', {})
+    generated = _generated_candidates(read(root, 'state.json'))
     per = candidates_per_shot(job_config)
     shots = []
     for number in range(1, total + 1):
         slot = store.get(str(number), {})
         cands = slot.get('candidates', [])
         shots.append({'shot': number,
-                      'candidates_generated': sum(1 for r in cands if r['status'] == 'completed'),
+                      'candidates_generated': len(generated.get(f'shot{number:02d}', set())),
                       'candidates_expected': per * slot.get('rounds', 1),
                       'candidates_reviewed': sum(1 for r in cands if r.get('conclusion') is not None),
                       'picked': slot.get('selected') is not None})
@@ -738,6 +759,13 @@ def main(argv):
                 elif args.command == 'resolve':
                     # Identity choice (V2-29: kept for the SKILL's ambiguity step); a locked result is required before resume.
                     resolved = resolve_job(root, work=args.work, character_tag=args.tag)
+                    record = read(root, 'agent.json')
+                    if resolved.get('status') == 'locked' and record.get('phase') == 'needs_user' \
+                            and record.get('reason') == 'identity_ambiguous':
+                        # V2-34: the ambiguity question is answered; drop it so status stops repeating it.
+                        end_wait(root)
+                        update(root, phase='identity_confirmed', needs_user=False, reason=None,
+                               question=None, options=[], error=None)
                 elif args.command == 'approve' and (args.beats is not None or args.redo_portrait):
                     # V2-24: confirmation steps that stay at awaiting_approval.
                     record = read(root, 'agent.json')

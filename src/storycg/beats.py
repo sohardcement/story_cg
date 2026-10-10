@@ -393,6 +393,19 @@ def collision_notes(config=None):
     return notes
 
 
+def wai_list_tier(identity, config=None):
+    """V2-34: the tier the tier gate gives without a cache entry (V2-25): with character LoRA matching off, a
+    character on the WAI list is L2 from its tag alone. Returns (tier, known, source); reads the list only."""
+    from storycg import wai_list
+    from storycg.config import character_lora_matching_enabled
+    tag = identity.get('character_tag')
+    if not tag or character_lora_matching_enabled(config):
+        return None, False, None
+    if wai_list.tier_row(tag, wai_list.settings_from(config)):
+        return 'L2', True, 'WAI 清单'
+    return None, False, None
+
+
 def character_guide(identity, config=None):
     """Standard outfit tags and the vocabulary section for this character (V2-12).
 
@@ -401,12 +414,15 @@ def character_guide(identity, config=None):
     """
     from storycg.config import character_lora_matching_enabled
     from storycg.shot_vocab import prompt_section, vocab_tier
-    determined = identity.get('identity_tier')
-    if determined in ('L1', 'L2', 'L3', 'L4'):
-        tier, known, source = determined, True, '已判定'
-    else:
-        tier, known = cached_identity_tier(identity, config)
-        source = '来自缓存'
+    # V2-34 r1: same order as ensure_identity_tier: WAI list (LoRA off) first, then the cache.
+    tier, known, source = wai_list_tier(identity, config)
+    if not known:
+        determined = identity.get('identity_tier')
+        if determined in ('L1', 'L2', 'L3', 'L4'):
+            tier, known, source = determined, True, '已判定'
+        else:
+            tier, known = cached_identity_tier(identity, config)
+            source = '来自缓存'
     if character_lora_matching_enabled(config):
         column = tier if known else 'L1/L2 保守档'
         note = (f'层级 {tier}（{source}）' if known else '层级未知，按保守档（L1/L2 较保守的组合）')
