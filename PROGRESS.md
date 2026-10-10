@@ -23,6 +23,12 @@
 
 - **D46（2026-10-08）**：Codex 订阅到期，执行者改为 omp（`ai938729/glm-5.3`，推理强度 max）。`verify/dispatch.sh` 已改；AGENTS.md 追加第 9 条。omp 没有写入沙盒，所以第 9 条写明了写入范围和禁止的 git 操作，监工每张工单都核对主线工作区。冒烟（只读）通过：`logs/OMP-SMOKE.jsonl`。
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
+- **D70（用户，2026-10-10）v2 合入主线**。用户原话："合吧"。
+  - 合并提交是 master 上的 ecf2617，合入的是 v2 截至 e67f4f2（V2-24）的内容。合并前的主线打了标签 `v1-final`。
+  - 预演没有冲突，v2 新加的 281 个文件也没有和主线工作区里未入库的文件重名。
+  - 主线工作区跑全量测试：977 passed、2 failed。失败的 2 个是 `test_v2_12::test_real_cache_reads_only_entries_under_the_current_style_set` 和 `test_v2_20::test_existing_cache_entries_do_not_hit_the_default_key`，它们都直接读运行时的 `cache/identity_tiers.json`，这个文件不入库，主线工作区里没有。不是合并引入的缺陷，开 V2-26 改成读夹具。
+  - Hermes 从现在起跑的是 v2 代码，v2 在 Hermes 上没测过（Hermes 兼容延后）。
+  - V2-25 还在 `.v2/` 里做，验收后再合一次。之后继续在 `.v2/` 工作树开发，每单验收后合入主线。
 - **D69（用户，2026-10-10）接入 WAI 角色清单**（`mirabarukaso/character_select_stand_alone_app` 的 `waiIllustriousSDXL_v160_characters.csv`，MIT，5093 个角色）。
   - 用途：中文名查角色，以及清单里的角色直接判 L2。
   - 依据：留出集里 2B 名字有歧义、被误判 L3，雷姆被判 L4。
