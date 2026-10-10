@@ -16,6 +16,7 @@ from jsonschema import Draft202012Validator
 from PIL import Image, ImageOps
 
 from storycg.closed_eyes import drop_eye_colour_check, mark_eye_colour_not_applicable
+from storycg.net_errors import json_body
 from storycg.state import save_json_atomic
 
 TEXT = {'type': 'string', 'minLength': 1}
@@ -108,7 +109,7 @@ class VisionClient:
             response = self.http.get(self.url + '/models')
             record['raw_response'] = response.text
             response.raise_for_status()
-            available = [m for m in response.json()['data'] if m.get('loaded', True)
+            available = [m for m in json_body(response)['data'] if m.get('loaded', True)
                          and 'vision' in m.get('capabilities', [])
                          and 'json_schema' in m.get('capabilities', [])]
             if not available:
@@ -156,7 +157,7 @@ class VisionClient:
                                       timeout=min(180, remaining))
             raw = response.text
             response.raise_for_status()
-            envelope = response.json()
+            envelope = json_body(response)
             choice = envelope['choices'][0]
             if choice.get('finish_reason') not in (None, 'stop'):
                 raise ValueError('incomplete or refused response')

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import httpx
 
+from storycg.net_errors import json_body
+
 
 class ComfyClient:
     def __init__(self, base_url: str, timeout_seconds: float, *, transport=None):
@@ -22,12 +24,12 @@ class ComfyClient:
             response = self.http.post("/upload/image", files={"image": (path.name, stream, "image/png")},
                                       data={"type": image_type, "subfolder": subfolder, "overwrite": "false"})
         response.raise_for_status()
-        return response.json()
+        return json_body(response)
 
     def submit_prompt(self, workflow: dict, client_id: str) -> str:
         response = self.http.post("/prompt", json={"prompt": workflow, "client_id": client_id})
         response.raise_for_status()
-        result = response.json()
+        result = json_body(response)
         if "prompt_id" not in result:
             raise ValueError(f"ComfyUI did not return prompt_id: {result}")
         return result["prompt_id"]
@@ -35,17 +37,17 @@ class ComfyClient:
     def get_queue(self) -> dict:
         response = self.http.get("/queue")
         response.raise_for_status()
-        return response.json()
+        return json_body(response)
 
     def get_history(self, prompt_id: str) -> dict:
         response = self.http.get(f"/history/{prompt_id}")
         response.raise_for_status()
-        return response.json()
+        return json_body(response)
 
     def get_all_history(self) -> dict:
         response = self.http.get("/history")
         response.raise_for_status()
-        return response.json()
+        return json_body(response)
 
     def wait_for_history(self, prompt_id: str, interval_seconds: float, timeout_seconds: float) -> dict | None:
         deadline = time.monotonic() + timeout_seconds
@@ -70,9 +72,9 @@ class ComfyClient:
     def get_model_metadata(self, folder: str, filename: str) -> dict:
         response = self.http.get(f"/view_metadata/{folder}", params={"filename": filename})
         response.raise_for_status()
-        return response.json()
+        return json_body(response)
 
     def list_model_files(self, folder: str) -> list[dict]:
         response = self.http.get(f"/experiment/models/{folder}")
         response.raise_for_status()
-        return response.json()
+        return json_body(response)

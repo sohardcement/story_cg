@@ -5,6 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
+from storycg.net_errors import json_body
 from storycg.state import save_json_atomic
 
 
@@ -40,7 +41,7 @@ def injection_available(config,client):
     missing=[];sources=[]
     for node,item in required.items():
         url='/object_info/'+node
-        response=client.http.get(url);response.raise_for_status();nodes=response.json()
+        response=client.http.get(url);response.raise_for_status();nodes=json_body(response)
         sources.append(config['comfyui_url']+url)
         if node not in nodes:missing.append(node)
         elif item and item[1] not in nodes[node]['input']['required'][item[0]][0]:missing.append(item[1])

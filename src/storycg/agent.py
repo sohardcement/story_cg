@@ -19,6 +19,7 @@ from storycg.budget import Budget, GuardedComfy, count_usage
 from storycg.comfy import ComfyClient
 from storycg.config import check_removed_switches, load_config
 from storycg.controls import apply_options
+from storycg.net_errors import RESOURCE_FAILURES, json_body
 from storycg.pipeline import new_job, resolve_job, run_story_job, make_contact_sheet, tier_recheck_eligible
 from storycg.beats import BeatsError, beats_guide, character_guide, compile_beats
 from storycg.state import save_json_atomic
@@ -97,7 +98,7 @@ def runtime_json(root, config, purpose, content, schema):
     try:
         with httpx.Client(base_url=config['model_service_url'].rstrip('/'), timeout=180, trust_env=False) as client:
             response = client.get('/models'); response.raise_for_status()
-            models = [m for m in response.json()['data'] if m.get('loaded', True) and 'chat' in m.get('capabilities', ['chat'])]
+            models = [m for m in json_body(response)['data'] if m.get('loaded', True) and 'chat' in m.get('capabilities', ['chat'])]
             if not models:
                 raise ResourceUnavailable('运行时模型服务没有可用的 chat 模型。')
             response = client.post('/chat/completions', json={
@@ -106,7 +107,7 @@ def runtime_json(root, config, purpose, content, schema):
                              {'role': 'user', 'content': content}],
                 'response_format': {'type': 'json_schema', 'json_schema': {'name': purpose, 'strict': True, 'schema': schema}}})
             response.raise_for_status()
-            entry['raw'] = response.json()['choices'][0]['message']['content']
+            entry['raw'] = json_body(response)['choices'][0]['message']['content']
             result = json.loads(entry['raw']); validate(result, schema)
             entry['status'] = 'valid'
             return result
@@ -119,6 +120,10 @@ def runtime_json(root, config, purpose, content, schema):
 
 class ResourceUnavailable(ValueError):
     pass
+
+
+# V2-35: every network or resource failure the entries answer with needs_user (see storycg/net_errors.py).
+RESOURCE_ERRORS = (*RESOURCE_FAILURES, ResourceUnavailable)
 
 
 def check_resources(config):
@@ -138,7 +143,7 @@ def check_resources(config):
         response = client.get('/system_stats'); response.raise_for_status()
         for name in dict.fromkeys([row[0] for row in required] + node_only):
             response = client.get('/object_info/'+name); response.raise_for_status()
-            info = response.json()
+            info = json_body(response)
             if name not in info:
                 raise ResourceUnavailable('所需节点缺失：'+name)
             nodes[name] = info[name]
@@ -342,7 +347,7 @@ def execute(root):
             return
         update(root, phase='generating_and_repairing')
         generate(root, config)
-    except (httpx.HTTPError, ResourceUnavailable) as exc:
+    except RESOURCE_ERRORS as exc:
         question(root, 'resource_unavailable', '关键资源不可用：'+str(exc)+'。请恢复资源后运行 resume，或调整资源配置后新建任务。')
     except Exception as exc:
         # Validation/programming/budget failures are not a reason to ask the user.
@@ -609,7 +614,7 @@ def beats_cli(argv):
             config = load_config(args.config)
             try:
                 identity = resolve_identity(args.character, PROJECT/'cache'/'danbooru')
-            except (httpx.HTTPError, ResourceUnavailable) as exc:
+            except RESOURCE_ERRORS as exc:
                 print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
                 return 1
             info = character_guide(identity, config)
@@ -625,7 +630,7 @@ def beats_cli(argv):
             print(json.dumps({'status': 'identity_not_locked', 'identity': identity}, ensure_ascii=False, indent=2))
             return 2
         identity = _ensure_tier_before_planning(root, config, identity)
-    except (httpx.HTTPError, ResourceUnavailable) as exc:
+    except RESOURCE_ERRORS as exc:
         # V2-33: a Danbooru 500 or a lost connection is a needs_user answer, as in make, not a traceback.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
@@ -639,7 +644,7 @@ def beats_cli(argv):
         print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc),
                           'character_guide': guide}, ensure_ascii=False, indent=2))
         return 2
-    except (httpx.HTTPError, ResourceUnavailable) as exc:
+    except RESOURCE_ERRORS as exc:
         # The tag existence checks call Danbooru during compile; the same failure as above.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
@@ -811,13 +816,15 @@ def main(argv):
         code = 1
         print(f'storycg: {type(exc).__name__}: {exc}', file=sys.stderr)
         result = status(root) if root.is_relative_to(PROJECT) and (root/'job.json').exists() else {'job_dir': str(root), 'needs_user': False}
-        if root.is_relative_to(PROJECT) and (root/'job.json').exists() and isinstance(exc, (httpx.HTTPError, ResourceUnavailable)):
+        if root.is_relative_to(PROJECT) and (root/'job.json').exists() and isinstance(exc, RESOURCE_ERRORS):
             record = read(root, 'agent.json')
             question(root, 'resource_unavailable', '关键资源不可用：'+str(exc)+'。请恢复后重试当前命令。')
             if args.command == 'approve':
                 update(root, phase='awaiting_approval')
             result = status(root)
         result['error'] = f'{type(exc).__name__}: {exc}'
+    if args.command in ('make', 'resolve') and result.get('needs_user') and result.get('reason') == 'resource_unavailable':
+        code = 1  # V2-35: a missing network or resource ends make/resolve with the needs_user JSON and exit 1
     if args.command != '_worker':
         print(json.dumps(result, ensure_ascii=False))
     return code
