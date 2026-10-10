@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 
+from storycg.net_errors import json_body
 from storycg.state import save_json_atomic
 
 
@@ -47,7 +48,7 @@ class _CachedDanbooru:
         response = self.client.get(path, params=params, headers={"User-Agent": USER_AGENT})
         self.last_request = time.monotonic()
         response.raise_for_status()
-        payload = response.json()
+        payload = json_body(response)
         save_json_atomic(cache, {"url": url, "response": payload})
         return payload, url
 

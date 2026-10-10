@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import httpx
 from storycg.config import character_lora_matching_enabled
 from storycg.identity_enrichment import load_rules
+from storycg.net_errors import json_body
 from storycg.state import save_json_atomic
 
 DIAGNOSTIC_ITEMS = frozenset(('outfit', 'accessories', 'hair_ornaments'))
@@ -177,7 +178,7 @@ def download_references(character_tag,job_dir,client,*,rules=None,identity=None)
     for page in range(1,cfg.get('max_pages',1)+1):
         params={'tags':query,'limit':cfg.get('candidate_limit',cfg['count'])}
         if page>1:params['page']=page
-        response=client.get('/posts.json',params=params);response.raise_for_status();batch=response.json()
+        response=client.get('/posts.json',params=params);response.raise_for_status();batch=json_body(response)
         queries.append({'url':str(response.url),'response':batch})
         for post in batch:query_urls[post['id']]=str(response.url)
         posts.extend(batch)
@@ -492,7 +493,7 @@ def live_inventory(config,client,reference_client,job_dir,*,now=None,sleep=None)
     """
     from datetime import datetime,timezone
     info=client.http.get('/object_info/LoraLoader');info.raise_for_status()
-    names=lora_names(info.json())
+    names=lora_names(json_body(info))
     from storycg.model_metadata import cached_lora_metadata
     metadata,metadata_status=cached_lora_metadata(config,client,names)
     tags=sorted({t for m in metadata.values() for t in _frequencies(m)})
@@ -511,7 +512,7 @@ def live_inventory(config,client,reference_client,job_dir,*,now=None,sleep=None)
         categories=[]
         for offset in range(0,len(tags),80):
             response=_tags_json_with_backoff(reference_client,{'search[name_comma]':','.join(tags[offset:offset+80]),'limit':100},sleep=sleep)
-            categories.append({'url':str(response.url),'response':response.json()})
+            categories.append({'url':str(response.url),'response':json_body(response)})
         status='expired' if entry is not None and entry.get('tags')==tags else 'miss'
         category_cache={'key':key,'status':status,'stored_at':current.isoformat()}
         cache['entries'][key]={'stored_at':current.isoformat(),'tags':tags,'categories':categories}
