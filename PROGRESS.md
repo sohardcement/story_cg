@@ -487,6 +487,17 @@
   - `beats-guide` 改为先查 WAI 清单，和正式判定顺序一致（返工 1）。改完后芙莉莲、雷姆都显示"L2（WAI 清单）"。
   - 测试：监工在 `.v2` 复跑 797 passed。主线第一次跑全量时，`test_beats_guide_shows_wai_list_l2_not_a_cache_l3_through_the_entry` 失败了一次，子进程输出了 traceback；单独跑能过，第二次全量 797 passed。
   - 判断：这个入口测试会经过 `beats-guide` 访问真实的 Danbooru，主线的 Danbooru 缓存不全，所以测试受网络影响、结果不稳定。另外，出现 traceback 说明有一类网络异常没被 V2-33 的资源错误处理接住。开 V2-35 修。 | 1 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-34.md`，f15ef02 |
+| V2-35 测试离线化、资源错误捕获补全 | **通过**（d11a8fd，合入主线 2e3e13e）。
+  - 测试在 socket 层拦截非回环连接，子进程也通过 `sitecustomize` 一并拦截；会话结束时，只要出现过一次真实网络请求，测试就判失败。
+  - 入口测试改用离线的 Danbooru 快照。
+  - `compile`、`beats-guide`、`make`、`resolve` 遇到超时、连接重置、SSL、HTTP 4xx/5xx、响应解析失败，统一输出 needs_user 的 JSON，退出码 1。程序本身的错误照常报出。
+  - 测试结果：
+    - 监工在 `.v2` 复跑：806 passed；
+    - 主线工作区连跑两次：都是 806 passed。主线的 Danbooru 缓存不全，又有网络拦截，能通过就说明测试已经不依赖网络；
+    - 执行者在空缓存的干净副本上跑：806 passed。
+  - 已知问题：
+    - 不加 `--foreground` 时，`make` 的资源失败要等到后台 worker 跑起来、之后查 `status` 才能看到；
+    - 几处有意保留的降级仍然只记录后继续执行。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-35.md`，d11a8fd |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
