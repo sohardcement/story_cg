@@ -300,6 +300,7 @@
 | 留出集层级判定（`verify/v2/run_tier.py`，拼图 `verify/v2/tier_holdout_sheet.jpg`）：雷姆、初音、2B 探针各 1 张，2B 另有 L3 定妆图 1 张 | 4 | 264 |
 | 留出集第 2 组（初音未来，`.v2/jobs/cg-778717bdaa05`，22 分钟） | 13 | 277 |
 | 留出集第 3 组（2B，`.v2/jobs/cg-b6dcbc8f995f`，21 分钟，L3） | 13 | 290 |
+| V2-37 提示词对照实验（执行者，`.v2/reports/assets/V2-37/`）：芙莉莲和初音 × 3 个镜头 × 2 个 seed × A/B 两种写法 | 24 | 314 |
 
 ### 工单
 
@@ -525,6 +526,11 @@
   - 看图复述现在把盲审的六项都写出来：where、event、action、change、ending、uncertainty。远坂凛那组漏掉的三条不确定性，这次都补上了。
   - 偏差原因、定妆失败原因不再截断。每镜最多 6 行的上限不变。
   - 监工复跑 814 passed，主线 814 passed。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-36.md`，b08f82b |
+| V2-37 提示词写法对照实验（D75） | 出图完成（v2 分支，实验工具不改正式代码），**等用户判定**。
+  - 出图 24 张，没有跳过，没有调用审核器。
+  - 两种写法的长度：A 是 24–31 个 tag、311–368 个字符，B 是 11–14 个 tag、128–161 个字符。
+  - 判定页：https://claude.ai/artifact/XWASrmCe5i6PWTq26DkhQj（`verify/v2/ab_page/`，结果写进数据库的 `ab` 集合）。页面上不放监工的倾向。
+  - 已知的出入：初音一组的负向提示词里多了源任务场景带来的 snowing 和 snow；同一个角色的 A、B 两组负向相同。 | — | Haiku 5.5 subagent（新开） | `.v2/reports/V2-37.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
