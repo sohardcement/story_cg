@@ -396,6 +396,7 @@
   - `test_v2_12`、`test_v2_20` 改读缓存夹具，`test_p9_02_rework1` 改读接缝图夹具，夹具共 11MB，其中 4 张原尺寸 PNG 约 5.6MB，要按像素量接缝。
   - `.v2` 和主线工作区跑全量，都是 1000 passed。
   - 已知问题：`tools/test_p10_02.py` 还读 `runs/` 下的产物，干净的树里会失败；`test_p10_05_saved_evidence` 和 `test_v2_02` 读 `jobs/` 下已入库的文件。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-26.md`，14f4590 |
+| V2-28 删除 v1 的修图交付路径（D72） | 进行中。第一位执行者删到一半，因额度用完中断。它用 SendMessage 续用，报错里显示发给 API 的模型是 claude-opus-5-5，不是派单时指定的 Haiku，续用时模型设置没有保留。11:37 新开一个 Haiku（明确指定 model=haiku），在它留下的改动上接着做。中断时：删了 5 个模块和 repairs.json，新建 `delivery.py`，净删约 1800 行，还没改测试 | — | Haiku 5.5 subagent（接手） | `orders/V2-28.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
