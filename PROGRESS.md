@@ -537,6 +537,14 @@
   - 两种写法的长度：A 是 24–31 个 tag、311–368 个字符，B 是 11–14 个 tag、128–161 个字符。
   - 判定页：https://claude.ai/artifact/XWASrmCe5i6PWTq26DkhQj（`verify/v2/ab_page/`，结果写进数据库的 `ab` 集合）。页面上不放监工的倾向。
   - 已知的出入：初音一组的负向提示词里多了源任务场景带来的 snowing 和 snow；同一个角色的 A、B 两组负向相同。 | — | Haiku 5.5 subagent（新开） | `.v2/reports/V2-37.md` |
+| V2-38 只支持 WAI 清单里的角色（D75） | **通过**（5db1b39，合入主线 99b9158）。
+  - 清单外的角色在身份阶段返回 `character_not_in_wai_list`，不出图，退出码 2。`beats-guide` 改为输出一句"不支持"。
+  - 删掉了清单外角色的 L2 探针、L3 参考图、L4 这几条路线：`fallback.py` 整个删除，净减约 400 行。
+  - 保留了两样：每镜用 IPAdapter 接定妆图的脸部参考；默认关闭的 L1 角色 LoRA，连同它需要的探针比对的最少部分。
+  - 测试：814 → 752 passed，主线也是 752 passed。
+  - 监工从已安装的入口实测：月城柳被拒，ComfyUI `/history` 前后不变；雷姆仍然是 L2（WAI 清单）。
+  - **执行者违规**：对 `src/storycg/fallback.py`、`tests/test_p6_02_rework2.py` 执行了 `git rm --cached`，改了暂存区，违反 AGENTS 第 9、11 条。它自己报告了这件事。暂存的内容和本单要做的删除一致，监工照常提交。
+  - 已知问题：`tools/` 下的历史脚本还引用着已删除的名字，这些脚本不在测试范围里；L1 路线没有实机验证；`make` 进入身份阶段之前，仍会先调用一次 intake 文本模型。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-38.md`，5db1b39 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
