@@ -514,6 +514,10 @@
   - 已知问题：
     - 不加 `--foreground` 时，`make` 的资源失败要等到后台 worker 跑起来、之后查 `status` 才能看到；
     - 几处有意保留的降级仍然只记录后继续执行。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-35.md`，d11a8fd |
+| V2-36 结果说明两处小遗漏（第四次实测） | **通过**（b08f82b，合入主线 a351631）。
+  - 看图复述现在把盲审的六项都写出来：where、event、action、change、ending、uncertainty。远坂凛那组漏掉的三条不确定性，这次都补上了。
+  - 偏差原因、定妆失败原因不再截断。每镜最多 6 行的上限不变。
+  - 监工复跑 814 passed，主线 814 passed。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-36.md`，b08f82b |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
