@@ -357,6 +357,63 @@ def _group_deviation_lines(root, cycle, group):
     return lines
 
 
+def _candidate_deviation_keys(root, selected):
+    """V2-34: keys the selected candidate's own audit already reports as fail or minor (read only)."""
+    if selected is None or not _audit_path(root, selected).exists():
+        return set()
+    from storycg.display import read_json
+    audit = read_json(_audit_path(root, selected))
+    return {key for part in ('single', 'consistency')
+            for key, item in ((audit.get(part) or {}).get('data') or {}).items()
+            if isinstance(item, dict) and item.get('status') in ('fail', 'minor') and not is_prop_item(key)}
+
+
+def _item_reason(item):
+    """The reason of a review item; the extra-body-part item keeps its reason one level down."""
+    if item.get('reason'):
+        return item['reason']
+    for value in (item.get('data') or {}).values():
+        if isinstance(value, dict) and value.get('reason'):
+            return value['reason']
+    return ''
+
+
+def _final_narrative_lines(cycle):
+    """V2-34: the narrative comparison of the final review, every item that is not pass, with its full reason."""
+    narrative = ((cycle.get('final_review') or {}).get('narrative_compare') or {}).get('data') or {}
+    lines = []
+    for key, item in narrative.items():
+        if isinstance(item, dict) and item.get('status') != 'pass':
+            reason = ' '.join(str(_item_reason(item)).split()) or '未记录原因'
+            lines.append(f"- 终审 · 剧情对照 · {key}（{item.get('status')}）：{reason}")
+    return lines or ['- 终审 · 剧情对照：没有非 pass 的项。']
+
+
+def _final_shot_lines(root, cycle, number, selected):
+    """V2-34: the final review's single and consistency items of one shot that are fail or minor and that the
+    selected candidate's own audit did not report. At most DEVIATION_LINES_PER_SHOT lines per shot."""
+    from storycg.display import short
+    final = cycle.get('final_review') or {}
+    known = _candidate_deviation_keys(root, selected)
+    deviations = []
+    for part, label in (('single', '单镜'), ('consistency', '一致性')):
+        for entry in final.get(part) or []:
+            if entry.get('shot') != number:
+                continue
+            for key, item in (entry.get('data') or {}).items():
+                if not isinstance(item, dict) or is_prop_item(key) or key in known:
+                    continue
+                if item.get('status') in ('fail', 'minor'):
+                    tag = '可靠' if item.get('reliability') == 'reliable' else '未经可靠审核'
+                    deviations.append(f"- 终审 · {label} · {key}（{item['status']}，{tag}）：{short(_item_reason(item))}")
+    if not deviations:
+        return []
+    if len(deviations) > DEVIATION_LINES_PER_SHOT:
+        deviations = deviations[:DEVIATION_LINES_PER_SHOT - 1] + [
+            f'- 终审另有 {len(deviations) - (DEVIATION_LINES_PER_SHOT - 1)} 项，见 review.md']
+    return deviations
+
+
 def result_text(root, store=None):
     """V2-24 (TASK-v2 §10.3 / §10.4 notes): the whole result.md of a candidate job, in the order
     overview, files, each shot, blind narrative, known issues, detail pointer. No group verdict and no
@@ -423,9 +480,14 @@ def result_text(root, store=None):
     lines += ['## 已观察到的偏差', '', '按镜列出选中候选的审核记录：通过了筛选 / 审核观察到的偏差。未经可靠审核的类别只在顶部汇总一行。', '']
     lines += _group_deviation_lines(root, cycle, group)
     lines.append('')
+    # V2-34: the final review's narrative comparison is reported here; its per-shot items follow each shot.
+    lines += ['### 终审发现', '']
+    lines += _final_narrative_lines(cycle)
+    lines.append('')
     for number in numbers:
         lines.append(f'### 第 {number} 镜')
         lines += _audit_deviation_lines(root, picks[number], group)
+        lines += _final_shot_lines(root, cycle, number, picks[number])
         lines.append('')
     blind = (cycle.get('final_review') or {}).get('narrative_blind', {}).get('data', {})
     lines += ['## 看图复述', '', '以下是终审的盲审模型只看图写的，不是剧情原文：', '']
