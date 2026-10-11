@@ -35,6 +35,8 @@
     1. 新开 V2-46，清理 `tools/` 里的一次性旧脚本，只删不加，排在 V2-44 之后、V2-45 之前。
     2. `.v2/.pytest-tmp` 已由监工清掉（13:xx），只留 V2-43b 要用的 `v2-43*` 基线；`/home` 从 89% 降到 86%。
     3. `logs/`、`reports/` 里的大文件删不删，`jobs/` 这类目录要不要加进 `.gitignore`，用户还没定，先不动。不改写 git 历史。
+       - **日志和报告已清理**（用户 21:4x："清理无用日志和报告吧"）。只删 pytest 的临时目录：名为 `pytest-*`、`*-tmp`，里面只有逐个测试的子目录，没有入库文件。主线和 `.v2` 的 `logs/`、`reports/` 下共 161 个（`pytest-*` 110 个 13.2G、`*-tmp` 51 个 0.7G），清单在 `logs/supervisor/cleanup/pytest_dirs.json`。`logs/` 7.1G → 455M，主线 `reports/` 2.1G → 411M，`.v2/reports/` 6.7G → 1.3G；`/home` 87% → 85%。
+       - 没删：所有报告 `.md`、入库文件、`logs/*.jsonl` 等文字日志、`pytest-*.log`；进行中工单要用的 `reports/assets/V2-43*`（含 V2-43b 对比基线）；`.v2/.pytest-tmp`（V2-43b 执行者还在用）；已通过工单的任务副本（`.v2/reports/assets/V2-01～03` 的 offline-job、`logs/supervisor/v242/before` 等，约 1G），它们是验收证据。
     4. 并排挑选删不删：监工先离线核对它采用的那 24 次和 7 级排序选的是否不同、哪张更好（只读 `candidates.json` 和图，不出图），结果交用户决定。
        - **核对结果：保留，不删**。采用的 24 次里有 16 次换了 7 级排序原本的选择，其余 8 次本来就选同一张。监工把这 16 对拼成盲图（左右随机，`logs/supervisor/pairwise_check/`），先判再揭晓：并排挑选选得更好 11 次（其中明显更好 6 次），原排序更好 1 次（`jobs/cg-464a13b93b61` 第 2 镜），4 次差不多。
        - 明显更好的例子：避开了室内下雨（`.v2/jobs/cg-cd6ecc9fc154` 第 1 镜）；选了闭眼的那张（`jobs/cg-e60b2498b63e` 第 2 镜）；选了在走路的而不是站定的（`jobs/cg-18ff30b9fd58` 第 1 镜）。
