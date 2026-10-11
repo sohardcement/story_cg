@@ -42,6 +42,7 @@
        - 明显更好的例子：避开了室内下雨（`.v2/jobs/cg-cd6ecc9fc154` 第 1 镜）；选了闭眼的那张（`jobs/cg-e60b2498b63e` 第 2 镜）；选了在走路的而不是站定的（`jobs/cg-18ff30b9fd58` 第 1 镜）。
        - 结论：退回的 23 次是白花的调用，但采用时质量明显更好，每组多 12 次调用值得。监工盘点时"排名次基本没用、并排挑选一半白跑"的判断，对并排挑选不成立。
   - **新顺序**：V2-43b → V2-44 → V2-46 → V2-45 → 监工实跑 → V2-40。
+  - **用户 22:5x 出门**："你自主迭代吧 我要出门了。8h后见 期待你的成果。" 监工按新顺序自行推进，不等用户；`jobs/` 等目录要不要进 `.gitignore` 仍待用户定，先不动。
 - **D78（用户，2026-10-11）skill 瘦身，依次执行**。用户先问"该 skill 现在是否臃肿？有没有过度设计"，监工盘点后给了 5 条建议，用户回复："你设置一个 goal 吧，依次执行瘦身"。
   - 盘点依据：
     - `src/storycg` 8.7k 行、49 个模块；配置 82KB。
@@ -685,7 +686,17 @@
   - 监工工单的缺陷：验证 2 只允许 `identity_tier` 消失，和"要做"第 2 条要删的 guide 字段、LoRA 句子自相矛盾；执行者照实报了超出部分，按"要做"验收。
   - 执行者：第一次交回时后台的 `compile` 还在跑（中间稿），之后自己接着做完；交回最终版时没有残留进程。
   - 遗留，并入 V2-44：`identity.py` 候选身份仍写 `lora: None`、`reference_image: None`；`status` 的阶段名还叫 `determining_tier`；词汇表首句还是"for this character tier"。 | 0 | Haiku 5.5 subagent（会话中断后 SendMessage 续派，转录核实） | `.v2/reports/V2-43b.md`，3abc63f |
-| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 拆单：V2-44a（第 1、2、6、7 条）已派，V2-44b（第 3、4、5、8 条，含 V2-43b 遗留）排在 44a 之后。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
+| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 拆单。V2-44a（第 1、2、6、7 条）**通过**（1790081，返工 1 次，合入主线 0362e11），见下一行；V2-44b（第 3、4、5、8 条，含 V2-43b 遗留）已派。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
+| V2-44a 删 repair 开关、开工预检与 LLM 计数、交付往 `review/` 的复制（D78 瘦身 4 上半） | **通过**（1790081，返工 1 次，合入主线 0362e11）。
+  - `run_story_job` 只留限额那条路，数值不变；`agent` 不再调本地文本模型（`runtime_json`、`INTAKE_SCHEMA`、`checking_requirements` 阶段都删了），`notices` 照旧只有道具那句；`usage` 去掉 `llm_calls`，`Budget.check` 去掉 `llm`，`config/cycle.json` 去掉 `max_llm_calls`；`delivery.deliver` 不再往项目根 `review/` 复制拼图；SKILL.md 删两处半句，外加跟着悬空的"冲突修改后重新 make"一句。src 增删约 +30 −110。
+  - 测试 664 → 667：删 3 个只测已删逻辑的；新增 `tests/test_v2_44a.py` 6 个。
+  - **返工 1**：
+    1. 第一版删了后台 worker 真子进程测试（它原来靠 intake 桩停下，现在会去连 Danbooru）。返工后用 V2-35 已有的离线 shim（`STORYCG_TEST_SHIM`，在 `tests/` 里，不是新加到 `src` 的钩子）保留下来：真子进程停在身份查询，原因"找不到该角色的资料"。
+    2. 验证 3 第一版桩掉了定妆图，没验证"只有定妆图审核"。返工后真跑 `make --beats` 到 `awaiting_approval`（ComfyUI 用 `tools/v2_43_capture.py` 的假服务），模型服务只收到 `GET /models` 和定妆图审核。
+    3. `test_usage_excludes_user_approval_wait` 偶发 119.99 < 120（本单之前就有的竞态），改为以 `finished_at` 为锚点，断言范围不变。
+  - 监工独立验证：全量 667 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44a.log`），合入后主线也是 667 passed；定时测试连跑 10 次全过；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；第五轮实测任务副本用改前代码（`git archive 3abc63f`）和改后入口 `deliver`，result.md 逐字节相同，`usage` 只少 `llm_calls`（3）；`src` 里已没有写项目根 `review/` 的代码；旧任务 `job.json` 里的 `repair_cycle_enabled` 被忽略、不报错。reflog 无执行者 git 操作，暂存区空，主线工作区和 Hermes 未被改动。
+  - 行为变化（接受，只影响已不能运行的旧修图任务）：重新 `deliver` 旧修图任务时，`cycle_llm_` 请求改计入 `review_calls`。主线 17 个旧任务受影响，候选任务不受影响。
+  - 小瑕疵（不返工）：恢复的子进程测试第 170 行注释还写着"停在资源检查"，和断言（停在身份查询）不一致。提交信息里的引号多了反斜杠（heredoc 写法），已合入，不改历史。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44a.md`，1790081 |
 | V2-46 清理 `tools/` 里的一次性旧脚本（D79） | 排队，V2-44 之后 | — | — | `orders/V2-46.md` |
 | V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 排队 | — | — | — |
 | V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
