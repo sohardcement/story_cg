@@ -14,7 +14,7 @@ from pathlib import Path
 import sys
 import time
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / 'config/detect.json'
@@ -190,61 +190,3 @@ def json_result(result, mask_dir=None):
                 item['mask_path'] = str(path)
         output['persons'].append(item)
     return output
-
-
-def draw_overlay(image, result):
-    import cv2
-    import numpy as np
-    image = _image(image).copy()
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default(size=max(20, image.width//42))
-    occupied = []
-    for kind, color in (('persons', '#00ff88'), ('faces', '#ffbb00')):
-        for index, item in enumerate(result[kind]):
-            if item.get('mask') is not None:
-                contours,_ = cv2.findContours(np.array(item['mask']), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-                for contour in contours:
-                    points = [tuple(point) for point in contour.reshape(-1,2).tolist()]
-                    if len(points)>1:
-                        draw.line(points+[points[0]], fill=color, width=2)
-            box = item['bbox']
-            draw.rectangle(box, outline=color, width=3)
-            label = f'{kind[0].upper()}{index+1} c={item["confidence"]:.3f} box={item["area_ratio"]:.3f}'
-            if item.get('mask_area_ratio') is not None:
-                label += f' seg={item["mask_area_ratio"]:.3f}'
-            x = min(max(0,box[0]), max(0, image.width-draw.textlength(label,font=font)))
-            y = max(0,box[1]-font.size-6)
-            bounds = draw.textbbox((x,y), label, font=font)
-            for candidate_y in [y] + list(range(0, image.height-font.size, font.size+6)):
-                candidate = draw.textbbox((x,candidate_y), label, font=font)
-                if not any(candidate[0] < b[2] and candidate[2] > b[0]
-                           and candidate[1] < b[3] and candidate[3] > b[1] for b in occupied):
-                    y, bounds = candidate_y, candidate
-                    break
-            occupied.append(bounds)
-            draw.rectangle(bounds, fill='black')
-            draw.text((x,y), label, font=font, fill=color)
-    return image
-
-
-def cli(argv):
-    import argparse
-    parser = argparse.ArgumentParser(prog='python -m storycg detect')
-    parser.add_argument('images', nargs='+', type=Path)
-    parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument('--overlay', type=Path,
-                        help='single image: output file; multiple images: output directory')
-    args = parser.parse_args(argv)
-    config = load_detect_config(args.config)
-    outputs = []
-    for index, path in enumerate(args.images):
-        result = detect_image(path, config=config)
-        output = {'image': str(path), **json_result(result)}
-        if args.overlay:
-            target = args.overlay if len(args.images)==1 else args.overlay / f'{index+1:02d}-{path.stem}.jpg'
-            target.parent.mkdir(parents=True, exist_ok=True)
-            draw_overlay(path, result).save(target)
-            output['overlay'] = str(target)
-        outputs.append(output)
-    print(json.dumps({'config': config, 'results': outputs}, ensure_ascii=False, indent=2))
-    return 0

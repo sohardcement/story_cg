@@ -5,9 +5,6 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
-    if argv and argv[0] == 'detect':
-        from storycg.detect import cli
-        return cli(argv[1:])
     from storycg.agent import main as agent_main
     return agent_main(argv)
 

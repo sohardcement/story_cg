@@ -247,9 +247,7 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
                            for c in conflicts)
         raise ValueError('action companion tag conflict: ' + detail)
     validate_contract(board)
-    view = {key: value for key, value in board.items() if key not in (
-        'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items')}
-    errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(view))
+    errors = list(Draft202012Validator(production_schema() if board.get("schema_version")==2 else STORYBOARD_SCHEMA).iter_errors(board))
     if errors:
         first = sorted(errors, key=lambda error: str(error.path))[0]
         raise ValueError(f"storyboard schema: {first.json_path}: {first.message}")

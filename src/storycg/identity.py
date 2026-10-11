@@ -229,7 +229,7 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
             'wiki_body':wiki.get('body',''),'wiki_url':wiki_url,
             'wiki_baseline':{'appearance_tags':_appearance_from_wiki(wiki.get('body',''),wiki_url),
                              'default_outfit_tags':_outfit_from_wiki(wiki.get('body',''),wiki_url)},
-            'lora':None,'reference_image':None,'candidates':candidates}
+            'candidates':candidates}
     related,related_url=source.get('/related_tag.json',{'query':' '.join(x for x in [character,rules.get('related_query_suffix','')] if x),'category':0})
     result=enrich_identity(result,related,related_url,rules)
     result['identity_block']=', '.join(x for x in ['1girl',character,chosen.get('work_tag'),

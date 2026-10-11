@@ -256,7 +256,7 @@ def execute(root):
         if identity.get('status') != 'locked':
             question(root, 'identity_ambiguous', '角色身份无法确定，请选择候选或提供作品名／角色 tag。', identity.get('candidates', []))
             return
-        update(root, phase='determining_tier')
+        update(root, phase='checking_identity')
         identity = _ensure_identity_before_planning(root, config, identity)
         if identity is None:
             return
@@ -334,6 +334,14 @@ def pick_delivery(root, number, candidate):
     return change
 
 
+def delivery_scope_notes(root):
+    """Fixed v2 delivery notice plus the saved storyboard adaptation, if any."""
+    path = Path(root)/'storyboard.json'
+    board = json.loads(path.read_text()) if path.exists() else {}
+    note = board.get('story_note', '').strip()
+    return ['道具未经审核。'] + ([note] if note else [])
+
+
 def deliver(root):
     """Rebuild from persisted selected attempts only: no HTTP, generation or review."""
     board = read(root, 'storyboard.json')
@@ -366,7 +374,6 @@ def deliver(root):
     from storycg.review import reliability_note_lines
     notes = reliability_note_lines(final_review, read(root, 'job.json').get('generation_config'))
     existing = result.read_text()
-    from storycg.v1_scope import delivery_scope_notes
     scope_notes = [note for note in delivery_scope_notes(root) if note not in existing]
     if scope_notes:
         existing += '\n' + '\n'.join(scope_notes) + '\n'
@@ -587,10 +594,9 @@ def main(argv):
         return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
-    # Help-only entries: beats-guide, compile and detect are dispatched before this parser runs.
+    # Help-only entries: beats-guide and compile are dispatched before this parser runs.
     sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
     sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
-    sub.add_parser('detect', help='local detector development tool (not a story step)')
     for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
