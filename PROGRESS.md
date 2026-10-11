@@ -671,8 +671,21 @@
     - 测试：全量 749 → 669 passed，监工复跑一致。
     - 执行者跑过一次不带路径的 `git rm --cached -q`，没有产生效果，它自己报告了，索引为空。仍然违反 AGENTS 第 9、11 条，记录在案。
     - 遗留：`tools/p6_*.py` 等约 20 个旧脚本还 import 已删的模块（pytest 不收集它们），归 V2-44。`config/review_reliability.json` 里的文件哈希是校准时的历史记录，不改。 | 0 | Haiku 5.5 subagent（新开，43a 续派） | `.v2/reports/V2-43a.md`，9a42796 |
-| V2-43b 去掉"层级"和词汇表的 L1 列（D78 瘦身 3 下半） | 已派（2026-10-11 20:5x，Haiku 5.5，转录核实）。21:20 监工会话中断，执行者停在半路：工作树改了 27 个文件（+676 −1557），全量剩 18 个失败、1 个收集错误，没写报告。21:2x 用 SendMessage 续派同一执行者，转录核实仍是 Haiku 5.5。 | — | — | `orders/V2-43b.md` |
-| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 排队，工单已写。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
+| V2-43b 去掉"层级"和词汇表的 L1 列（D78 瘦身 3 下半） | **通过**（3abc63f，合入主线 35d1198）。
+  - 词汇表每个条目只留 L2 一列；`shot_vocab`、`beats` 去掉层级参数；result.md、确认页、`status`、`compile`、`beats-guide` 不再输出层级。身份门改为 `tier_gate.ensure_wai_identity`，只查 WAI 清单，不再开 ComfyUI 客户端。新任务的 `identity.json` 写 `wai_list_match`，不写 `identity_tier`。清单外角色的 `beats-guide` 只输出"不支持"一句，退出码 2。git diff +708 −1625（含 `shot_vocab.json` −1000 行左右）。
+  - 测试 669 → 664：`test_v2_05` 按层级参数化的 5 例合并为 1 例，`test_v2_20` 测已删 `vocab_tier` 的 1 例删掉。
+  - 监工独立验证：
+    - 全量在 `.v2` 复跑 664 passed（`logs/supervisor/pytest-v2-43b.log`），合入后主线也是 664 passed（`logs/supervisor/pytest-main-v2-43b.log`）。
+    - 出图：`tools/v2_43_capture.py` 两组任务和 V2-43 基线逐字节相同。
+    - 编译：监工自己写比对，30 个 `compile` 和 V2-43 基线逐字段比，`storyboard`、`errors`、自动改写、`status` 全同；只少 `identity_tier`、guide 的 `tier`/`tier_known`/`tier_note`/`vocab_column` 和词汇表里讲 LoRA 的那一句（20 份去掉这句后逐字相同）。初音一组基线撞了 Danbooru 500，改后结果和监工 V2-43a 时用快照自跑的分镜相同。
+    - 词汇表：新 `shot_vocab.json` 20 条的分档、替代、`usable`/`total` 和旧 L2 列逐条相同，没有只靠 L1 列的替代。
+    - `beats-guide`：芙莉莲和改前只差层级一行；月城柳只输出"不支持"，退出码 2。
+    - 旧任务：`jobs/cg-ca418e4dc6c5`、`.v2/jobs/cg-8092d80fd20b` 各两份副本，分别用改前代码（`git archive 9a42796`）和改后入口跑 `deliver`、`status`：result.md 只少"层级"一行，`status` 完全相同。
+    - reflog 里没有执行者的 git 操作，暂存区为空；主线工作区和 `~/.hermes/skills/story-cg` 没被改动。
+  - 监工工单的缺陷：验证 2 只允许 `identity_tier` 消失，和"要做"第 2 条要删的 guide 字段、LoRA 句子自相矛盾；执行者照实报了超出部分，按"要做"验收。
+  - 执行者：第一次交回时后台的 `compile` 还在跑（中间稿），之后自己接着做完；交回最终版时没有残留进程。
+  - 遗留，并入 V2-44：`identity.py` 候选身份仍写 `lora: None`、`reference_image: None`；`status` 的阶段名还叫 `determining_tier`；词汇表首句还是"for this character tier"。 | 0 | Haiku 5.5 subagent（会话中断后 SendMessage 续派，转录核实） | `.v2/reports/V2-43b.md`，3abc63f |
+| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 拆单：V2-44a（第 1、2、6、7 条）已派，V2-44b（第 3、4、5、8 条，含 V2-43b 遗留）排在 44a 之后。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
 | V2-46 清理 `tools/` 里的一次性旧脚本（D79） | 排队，V2-44 之后 | — | — | `orders/V2-46.md` |
 | V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 排队 | — | — | — |
 | V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
