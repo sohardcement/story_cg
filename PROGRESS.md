@@ -687,7 +687,7 @@
   - 监工工单的缺陷：验证 2 只允许 `identity_tier` 消失，和"要做"第 2 条要删的 guide 字段、LoRA 句子自相矛盾；执行者照实报了超出部分，按"要做"验收。
   - 执行者：第一次交回时后台的 `compile` 还在跑（中间稿），之后自己接着做完；交回最终版时没有残留进程。
   - 遗留，并入 V2-44：`identity.py` 候选身份仍写 `lora: None`、`reference_image: None`；`status` 的阶段名还叫 `determining_tier`；词汇表首句还是"for this character tier"。 | 0 | Haiku 5.5 subagent（会话中断后 SendMessage 续派，转录核实） | `.v2/reports/V2-43b.md`，3abc63f |
-| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 拆单。V2-44a（第 1、2、6、7 条）**通过**（1790081，返工 1 次，合入主线 0362e11），见下一行；V2-44b（第 3、4、5、8 条，含 V2-43b 遗留）已派。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
+| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 拆单。V2-44a（第 1、2、6、7 条）**通过**（1790081，返工 1 次，合入主线 0362e11），见下一行；V2-44b（第 3、5、8 条，含 V2-43b 遗留）**通过**（0d529e6，返工 2 次，合入主线 99fac39）；第 4 条移进 V2-46。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
 | V2-44a 删 repair 开关、开工预检与 LLM 计数、交付往 `review/` 的复制（D78 瘦身 4 上半） | **通过**（1790081，返工 1 次，合入主线 0362e11）。
   - `run_story_job` 只留限额那条路，数值不变；`agent` 不再调本地文本模型（`runtime_json`、`INTAKE_SCHEMA`、`checking_requirements` 阶段都删了），`notices` 照旧只有道具那句；`usage` 去掉 `llm_calls`，`Budget.check` 去掉 `llm`，`config/cycle.json` 去掉 `max_llm_calls`；`delivery.deliver` 不再往项目根 `review/` 复制拼图；SKILL.md 删两处半句，外加跟着悬空的"冲突修改后重新 make"一句。src 增删约 +30 −110。
   - 测试 664 → 667：删 3 个只测已删逻辑的；新增 `tests/test_v2_44a.py` 6 个。
@@ -698,8 +698,15 @@
   - 监工独立验证：全量 667 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44a.log`），合入后主线也是 667 passed；定时测试连跑 10 次全过；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；第五轮实测任务副本用改前代码（`git archive 3abc63f`）和改后入口 `deliver`，result.md 逐字节相同，`usage` 只少 `llm_calls`（3）；`src` 里已没有写项目根 `review/` 的代码；旧任务 `job.json` 里的 `repair_cycle_enabled` 被忽略、不报错。reflog 无执行者 git 操作，暂存区空，主线工作区和 Hermes 未被改动。
   - 行为变化（接受，只影响已不能运行的旧修图任务）：重新 `deliver` 旧修图任务时，`cycle_llm_` 请求改计入 `review_calls`。主线 17 个旧任务受影响，候选任务不受影响。
   - 小瑕疵（不返工）：恢复的子进程测试第 170 行注释还写着"停在资源检查"，和断言（停在身份查询）不一致。提交信息里的引号多了反斜杠（heredoc 写法），已合入，不改历史。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44a.md`，1790081 |
+| V2-44b 删 v1 道具口径、`detect` 开发子命令；V2-43b 遗留（D78 瘦身 4 下半） | **通过**（0d529e6，返工 2 次，合入主线 99fac39）。
+  - 删 `v1_scope.py`（`is_prop_item` 挪到 `candidates.py`，`delivery_scope_notes` 挪到 `agent.py`，内容不变）；`beats.py`、`planning.py` 不再剔掉四个 v1 道具键、直接校验；删 `detect` 子命令（分发、帮助、`detect.cli`、`draw_overlay`），`storycg detect` 退出码 2；`identity.py` 不再写 `lora`、`reference_image`；阶段名 `determining_tier` 改为 `checking_identity`；词汇表首句去掉 "for this character tier"。src 增删约 +20 −90。
+  - 测试 667 → 666（`test_v2_29` 的 detect 参数化项）。
+  - **返工 1**：第一版删了三个 `calibration*.py`，结果 `tests/test_p9_04_execution/continue/resume.py` 收集失败：它们导入 `tools/p9_04_*.py`，后者导入已删的 `calibration_v2`。监工工单漏了这三个文件。这三个测试测的是 `tools/` 里校准运行用的函数，监工让执行者删掉，执行者的 `rm` 被 Claude Code 自动模式拦下（"Irreversible Local Destruction"），执行者没有绕过、请监工代删或加放行规则。监工不代删、不改权限（D79"顺序再调整"）。同一轮补跑了 3 个规划器时代任务（`p9_07_ownership`、`cg-21ca10448886`、`cg-fe46af4ffef6`）的 `status`/`deliver`/`resume`，改前改后结果相同；它们都在 beats 检查处停下，新的 storyboard 校验没有被真正走到。
+  - **返工 2**：第 4 条退回原样（三个模块和两个测试函数与 1790081 无差异），移进 V2-46。
+  - 监工独立验证：全量 666 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44b.log`），合入后主线也是 666 passed；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；执行者 30 个 `compile` 输出由监工脚本与 V2-43b 基线逐字段比对，只差临时路径（21）和词汇表首句（21），监工从入口另跑御坂美琴、芙莉莲两个，和执行者输出相同；第五轮实测任务副本用改前代码（`git archive 1790081`）和改后入口 `deliver`/`status`，result.md 逐字节相同、`status` 相同。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未改动。
+  - 已知（本单之前就有，不返工）：`status` 只在 `resolving_identity`、`planning`、`preparing_portrait`、`generating_and_repairing` 几个阶段把死掉的 worker 判成 `interrupted`，身份检查阶段（原 `determining_tier`、现 `checking_identity`）不在其中；现在这一步是本地查清单、很快，影响小。`tools/v2_43b_compare.py` 的汇总把词汇表改动误归为临时路径（执行者发现，另写了 `reports/assets/V2-44b/precise_compare.py`），V2-46 处理。 | 2 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44b.md`，0d529e6 |
 | V2-46 清理 `tools/` 里的一次性旧脚本（D79），并入原 V2-44 第 4 条 | 排队，挪到监工实跑之后（删测试文件曾被自动模式拦下，见 D79） | — | — | `orders/V2-46.md` |
-| V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 排队，工单已写，V2-46 之后派。依据：result.md 的"各层结论 · 一致性：未通过"主要由非可靠项的 `not_visible`（如配饰看不见）造成，可靠的终审一致性 fail 已在各镜下列出，所以删掉这一行不丢信息（D77 的"对不上"由此解决）；SKILL.md 还写着已不存在的 `repair_blocked` 和 V2-42 已删的"整组原始审核结论"。 | — | — | `orders/V2-45.md` |
+| V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 已派（V2-44b 合入后，Haiku 5.5，转录核实）。依据：result.md 的"各层结论 · 一致性：未通过"主要由非可靠项的 `not_visible`（如配饰看不见）造成，可靠的终审一致性 fail 已在各镜下列出，所以删掉这一行不丢信息（D77 的"对不上"由此解决）；SKILL.md 还写着已不存在的 `repair_blocked` 和 V2-42 已删的"整组原始审核结论"。 | — | — | `orders/V2-45.md` |
 | V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
