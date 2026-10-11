@@ -419,26 +419,24 @@ def deliver(root):
     images, drop_lines = _delivery_images(root, board, state, cycle, manifest)
     make_contact_sheet(root, root/'delivery')
     manifest.update(images=images, usage=count_usage(root), attempts=state['attempts'])
+    manifest.pop('review_gate', None)  # V2-42: the group verdict is no longer recorded, also not in older manifests
     manifest.setdefault('identity_file', 'identity.json')
     manifest.setdefault('storyboard_file', 'storyboard.json')
     manifest.setdefault('models', {'status': 'unavailable', 'reason': 'no persisted model snapshot; offline delivery does not query models'})
     final_review = cycle.get('final_review')
-    if final_review:
-        from storycg.review_gate import persist_group_gate
-        gate = persist_group_gate(root, final_review, read(root, 'job.json').get('generation_config'))
-        manifest['review_gate'] = gate
     manifest['reliability_note'] = RELIABILITY_NOTE
     save_json_atomic(root/'manifest.json', manifest)
+    if (root/'candidates.json').exists():
+        # V2-42: a candidate job's result.md is written by publish_candidates alone; the patches below are not needed.
+        from storycg.candidates import publish_candidates
+        publish_candidates(root)
+        return
     result = root/'result.md'
     existing = result.read_text() if result.exists() else '# 结果说明\n\n未保存可靠审核结论，建议用户看图确认。\n'
     existing = existing.replace(V1_RELIABILITY_NOTE, RELIABILITY_NOTE)
     if RELIABILITY_NOTE not in existing:
         existing += '\n'+RELIABILITY_NOTE+'\n'
-    if final_review:
-        from storycg.v1_scope import render_delivery
-        render_delivery(root, final_review, gate, read(root, 'job.json').get('generation_config'))
-    else:
-        result.write_text(existing)
+    result.write_text(existing)
     from storycg.review import reliability_note_lines
     notes = reliability_note_lines(final_review, read(root, 'job.json').get('generation_config'))
     existing = result.read_text()

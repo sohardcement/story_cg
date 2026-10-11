@@ -482,19 +482,14 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
         from storycg.detection_review import detect_face_record
         reference_detection,reference_crop=detect_face_record(reference_full,reference_face)
     report = {'version': 2, 'session_id': vlm.session_id, 'reference_note': reference_note, 'reference': portrait,
-              'inputs': inputs, 'single': [], 'faces': [], 'consistency': [],
+              'inputs': inputs, 'faces': [], 'consistency': [],
               'rule': 'any fail/unknown/missing/error => 未通过; otherwise any minor => 有瑕疵但可选; all pass => 通过'}
     if portrait:
         report['reference_face_detection'] = reference_detection
     statuses = []
     try:
-        for number, (path, entry) in enumerate(zip(paths, board['shots']), 1):
-            result = audit_single(vlm, path, entry, board.get('props', []), config, f'single_{number:02d}')
-            report['single'].append({'shot': number, **result})
-            statuses.extend(result_statuses(result))
-        from storycg.detection_review import detect_face_record, audit_detection, blind_thumbnails
-        report['detection_items'] = []
-        for number, (path, entry) in enumerate(zip(paths,board['shots']), 1):
+        from storycg.detection_review import detect_face_record, blind_thumbnails
+        for number, path in enumerate(paths, 1):
             result,crop = detect_face_record(path,artifacts/f'face_{number:02d}.png')
             face = {'shot':number,'detection':result,'status':'pass',
                     'face_status':'detected' if crop else 'face_not_detected'}
@@ -504,12 +499,6 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             else:
                 face['error'] = 'face_not_detected'
             report['faces'].append(face)
-            detection_items = audit_detection(path,identity,entry,
-                reference_path=reference_full if portrait else paths[0], review_config=config)
-            from storycg.detection_review import review_detection_items
-            detection_review = review_detection_items(detection_items, load_reliability(config))
-            report['detection_items'].append({'shot':number, **detection_items, 'review':detection_review})
-            statuses.extend(result_statuses(detection_review))
             # A face-free back view is an observation, not an extra visual failure.
             statuses.append(face['status'])
         for number, (path, entry, face) in enumerate(zip(paths, board['shots'], report['faces']), 1):
@@ -530,11 +519,6 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             result = audit_consistency(vlm, compare_paths, checks, config, f'consistency_{number:02d}', reference_note)
             if eyes_not_applicable:
                 mark_eye_colour_not_applicable(result)
-            # V2-16 (D59): the delivery-time review also asks the extra-body-part question (skipped on a duplicate count).
-            from storycg import extra_part
-            count_item = next(d for d in report['detection_items'] if d['shot'] == number)
-            if extra_part.should_check(count_item):
-                result = extra_part.merge_into(result, extra_part.check(vlm, path, identity, f'consistency_{number:02d}_extra_body_part'))
             if pair:
                 result['face_pair'] = str(pair.relative_to(job_dir))
             report['consistency'].append({'shot': number, 'checklist': checks, **result})
@@ -569,7 +553,6 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
     report['reliability'] = load_reliability(config)
     report['conclusion'] = conclude(statuses)
     report['layer_conclusions'] = {
-        'single': conclude(s for r in report['single'] for s in result_statuses(r)),
         'consistency': conclude([*(f['status'] for f in report['faces']),
                                 *(s for r in report['consistency'] for s in result_statuses(r))]),
         'narrative': conclude([blind['status'], *result_statuses(comparison)])}
@@ -583,8 +566,8 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
               'conclusion': report['conclusion'], 'layer_conclusions': report['layer_conclusions'],
               'reference_note': reference_note, 'reference': portrait, 'usage': report['usage'],
               'visibility': report['visibility'], 'reliability': report['reliability'],
-              'detection_items': report['detection_items'], 'blind_thumbnails': report['blind_thumbnails'],
-              'item_reviews': {layer: report[layer] for layer in ['single', 'consistency', 'detection_items']}}
+              'blind_thumbnails': report['blind_thumbnails'],
+              'item_reviews': {'consistency': report['consistency']}}
     # Preserve prior records and snapshot on repeat rather than silently replace evidence.
     archive = artifacts / f'review_{vlm.session_id}.json'
     save_json_atomic(archive, report)
@@ -605,16 +588,15 @@ def write_review_md(job_dir, report, config=None):
     notes = reliability_note_lines(report, config)
     if notes:
         lines.extend(['', '## 审核项说明', '', *notes])
-    for layer in ['single', 'consistency']:
-        lines.extend(['', f'## {layer}', ''])
-        for result in report[layer]:
-            lines.extend([f"### 第 {result['shot']} 镜", ''])
-            if result['status'] != 'pass':
-                lines.append('未通过：' + result.get('error', 'unknown'))
-            else:
-                for key, item in result['data'].items():
-                    reason = item['reason'].replace('\n', ' ')
-                    lines.append(f"- {key}: **{item['status']}** — {reason}; {item.get('reliability_note', '该项未经可靠审核')}")
+    lines.extend(['', '## consistency', ''])
+    for result in report['consistency']:
+        lines.extend([f"### 第 {result['shot']} 镜", ''])
+        if result['status'] != 'pass':
+            lines.append('未通过：' + result.get('error', 'unknown'))
+        else:
+            for key, item in result['data'].items():
+                reason = item['reason'].replace('\n', ' ')
+                lines.append(f"- {key}: **{item['status']}** — {reason}; {item.get('reliability_note', '该项未经可靠审核')}")
     lines.extend(['', '## 未经审核的不可见必需项', '', '```json',
                   json.dumps(report.get('visibility', {}), ensure_ascii=False, indent=2), '```'])
     lines.extend(['', '## 面部裁切（并排图左参考，右当前）', ''])
@@ -624,10 +606,6 @@ def write_review_md(job_dir, report, config=None):
     for item in report['consistency']:
         if item.get('face_pair'):
             lines.append(f"- 第 {item['shot']} 镜 [面部对照]({item['face_pair']})")
-    lines.extend(['', '## 本机检测审核项', ''])
-    for item in report.get('detection_items',[]):
-        values='; '.join(key+'='+str(item[key]['status']) for key in ('eye_color_sampled','accessory_color_sampled','protagonist_count') if key in item)
-        lines.append(f"- 第 {item['shot']} 镜: {values}; 主体数={item['protagonist_count']['protagonist_count']}; " + "; ".join(k+":"+v["reliability"] for k,v in item["review"]["data"].items()))
     for key in ['narrative_blind', 'narrative_compare']:
         lines.extend(['', f'## {key}', '', '```json',
                       json.dumps(report[key], ensure_ascii=False, indent=2), '```'])

@@ -337,14 +337,13 @@ def _portrait_item_text(item):
 
 
 def _group_deviation_lines(root, cycle, group):
-    """V2-32: group and layer conclusions as stored, plus the raw portrait review when it did not pass."""
+    """V2-32: layer conclusions as stored, plus the raw portrait review when it did not pass.
+    V2-42: no group verdict line and no single layer line (the final review has no single layer any more)."""
     from storycg.display import portrait_review
     final = cycle.get('final_review') or {}
-    gate = _read_json(root / 'review_gate.json')
-    raw = gate.get('raw_conclusion') or final.get('raw_conclusion') or final.get('conclusion') or '未记录'
     layers = final.get('layer_conclusions') or {}
-    lines = [f'- 整组原始审核结论：{raw}。原始审核未通过不等于这组不能用，按用户判定为准。']
-    for key, label in (('single', '单镜'), ('consistency', '一致性'), ('narrative', '剧情')):
+    lines = []
+    for key, label in (('consistency', '一致性'), ('narrative', '剧情')):
         lines.append(f"- 各层结论 · {label}：{layers.get(key, '未记录')}")
     names = list(dict.fromkeys(group))
     if names:
@@ -391,22 +390,22 @@ def _final_narrative_lines(cycle):
 
 
 def _final_shot_lines(root, cycle, number, selected):
-    """V2-34: the final review's single and consistency items of one shot that are fail or minor and that the
-    selected candidate's own audit did not report. At most DEVIATION_LINES_PER_SHOT lines per shot."""
+    """V2-34: the final review's consistency items of one shot that are fail or minor and that the
+    selected candidate's own audit did not report. At most DEVIATION_LINES_PER_SHOT lines per shot.
+    V2-42: only the consistency layer is read; the final review no longer re-runs the single-shot review."""
     from storycg.display import flat
     final = cycle.get('final_review') or {}
     known = _candidate_deviation_keys(root, selected)
     deviations = []
-    for part, label in (('single', '单镜'), ('consistency', '一致性')):
-        for entry in final.get(part) or []:
-            if entry.get('shot') != number:
+    for entry in final.get('consistency') or []:
+        if entry.get('shot') != number:
+            continue
+        for key, item in (entry.get('data') or {}).items():
+            if not isinstance(item, dict) or is_prop_item(key) or key in known:
                 continue
-            for key, item in (entry.get('data') or {}).items():
-                if not isinstance(item, dict) or is_prop_item(key) or key in known:
-                    continue
-                if item.get('status') in ('fail', 'minor'):
-                    tag = '可靠' if item.get('reliability') == 'reliable' else '未经可靠审核'
-                    deviations.append(f"- 终审 · {label} · {key}（{item['status']}，{tag}）：{flat(_item_reason(item))}")
+            if item.get('status') in ('fail', 'minor'):
+                tag = '可靠' if item.get('reliability') == 'reliable' else '未经可靠审核'
+                deviations.append(f"- 终审 · 一致性 · {key}（{item['status']}，{tag}）：{flat(_item_reason(item))}")
     if not deviations:
         return []
     if len(deviations) > DEVIATION_LINES_PER_SHOT:
