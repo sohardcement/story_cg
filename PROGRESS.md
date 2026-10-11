@@ -706,7 +706,13 @@
   - 监工独立验证：全量 666 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44b.log`），合入后主线也是 666 passed；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；执行者 30 个 `compile` 输出由监工脚本与 V2-43b 基线逐字段比对，只差临时路径（21）和词汇表首句（21），监工从入口另跑御坂美琴、芙莉莲两个，和执行者输出相同；第五轮实测任务副本用改前代码（`git archive 1790081`）和改后入口 `deliver`/`status`，result.md 逐字节相同、`status` 相同。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未改动。
   - 已知（本单之前就有，不返工）：`status` 只在 `resolving_identity`、`planning`、`preparing_portrait`、`generating_and_repairing` 几个阶段把死掉的 worker 判成 `interrupted`，身份检查阶段（原 `determining_tier`、现 `checking_identity`）不在其中；现在这一步是本地查清单、很快，影响小。`tools/v2_43b_compare.py` 的汇总把词汇表改动误归为临时路径（执行者发现，另写了 `reports/assets/V2-44b/precise_compare.py`），V2-46 处理。 | 2 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44b.md`，0d529e6 |
 | V2-46 清理 `tools/` 里的一次性旧脚本（D79），并入原 V2-44 第 4 条 | 排队，挪到监工实跑之后（删测试文件曾被自动模式拦下，见 D79） | — | — | `orders/V2-46.md` |
-| V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 已派（V2-44b 合入后，Haiku 5.5，转录核实）。依据：result.md 的"各层结论 · 一致性：未通过"主要由非可靠项的 `not_visible`（如配饰看不见）造成，可靠的终审一致性 fail 已在各镜下列出，所以删掉这一行不丢信息（D77 的"对不上"由此解决）；SKILL.md 还写着已不存在的 `repair_blocked` 和 V2-42 已删的"整组原始审核结论"。 | — | — | `orders/V2-45.md` |
+| V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | **通过**（058ba4e，返工 1 次，合入主线 bd6c57a）。
+  - result.md：删"各层结论"两行、小节说明句、"由用户换过：否"、逐镜"与整组汇总不同"；没有要列项的镜合成一行"第 N 镜：通过筛选，没有观察到偏差"；整组一行改为"至少一镜未经可靠审核的类别"；定妆图未通过只列可靠项。五个历史任务 result.md 缩短 15–30%（第五轮实测任务 7260 → 5113 字节）。D77 的"层级结论和逐镜偏差对不上"随之解决：那行本来就是非可靠项 `not_visible` 拉出来的。
+  - SKILL.md 6907 → 4552 字节：删工单号、安装细节、`progress` 字段清单、已不存在的 `repair_blocked`、V2-42 已删的"整组原始审核结论"；新增 `tests/test_v2_45.py`，检查 SKILL.md 写到的子命令、选项和 `status` 字段都真实存在。
+  - **返工 1**：第一版删了"普通创作选择自行决定"和道具依赖剧情的处理（照常出图、提醒读不出、不额外提问），第 5 步一句读不通；补回、改通。
+  - 测试 666 → 673。
+  - 监工独立验证：全量 673 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-45.log`），合入后主线也是 673 passed；`tools/v2_43_capture.py` 两组逐字节相同；`jobs/cg-e60b2498b63e` 副本用改前代码（`git archive 0d529e6`）和改后入口 `deliver`，diff 只有工单列的删改，第 2 镜可靠的 `outfit_state`、`outfit_component_1` fail 仍在；`pick --shot 2 --candidate 1` 后只有第 2 镜写"由用户换过"；通读新 SKILL.md。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被执行者改动。
+  - **Hermes 副本重装（监工，23:59）**：`~/.hermes/skills/story-cg` 里的 SKILL.md 还是 10-10 V2-27 的版本，写着已删的命令和字段，代码却跑主线。用 `tools/install_hermes_skill.sh --force` 重装，现在和主线 SKILL.md 逐字节相同，`hermes skills list` 显示 enabled，Hermes 入口 `beats-guide` 退出码 0。旧副本存在 `logs/supervisor/hermes-SKILL-before-v245.md`。Hermes 里的实际调用测试仍按用户意见推迟。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-45.md`，058ba4e |
 | V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
