@@ -627,11 +627,18 @@
   - 监工从 v2 入口在第五轮实测任务的副本上对比：12950 → 2267 字节，只少了这 4 个键，其余值相同。把副本改成 `awaiting_approval` 后，`storyboard`（6 镜）和 `confirmation` 都在，共 6307 字节。
   - 监工复跑 752 passed（改动前也是 752）。主线工作区只有监工自己的文件有变化，`~/.hermes/skills` 没被改动，reflog 里没有执行者的 git 操作。
   - 遗留：`tools/p8_02_evidence.py` 会把整个 status 写进证据，它是 v1 的工具，不影响运行。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-41.md`，6b89bff |
-| V2-42 终审不再重审选中图的单镜和多余肢体；删掉整组审核结论（D78 瘦身 2） | 进行中。
+| V2-42 终审不再重审选中图的单镜和多余肢体；删掉整组审核结论（D78 瘦身 2） | **通过**（3f9be16，返工 1 次，合入主线 d553fba）。
+  - 终审只剩每镜一致性（含脸部检测和脸部对照图）和两次剧情审核：6 镜一组从最多 20 次视觉调用降到 8 次。删除 `review_gate.py`，以及 `v1_scope.py` 里只给整组结论用的 4 个函数和 1 个常量；`delivery.deliver` 不再写那份会被 `publish_candidates` 整体覆盖的 result.md。`src`、`tests`、`tools` 合计增 125 行、删 337 行。
+  - 监工独立验证：先在主线代码（等于 v2 HEAD）上对三组任务副本跑 `deliver`，存基线（`logs/supervisor/v242/before/`）；改完后从 v2 入口对新副本再跑一次。三组 result.md 都只少"整组原始审核结论"和"各层结论 · 单镜"两行，manifest 只少 `review_gate`，拼图逐字节相同，`review_log.jsonl` 行数不变。`pick --shot 1 --candidate 2` 正常完成，result.md 写明由用户换过。
+  - **返工 1**：执行者只跑了 `tests/`（739 → 738），漏了 `tools/` 下 2 个失败的测试。失败的测试构造的是没有 `candidates.json` 的 v1 任务，生产代码已经走不到，删掉。全量 752 → 749 passed，主线同为 749。
+  - 测试数的口径：项目的"全量"是不带路径跑 pytest，含 `tools/` 的 13 个（V2-41 的 752 = 739 + 13）。今后工单里写明这一点。
+  - 工单验证 4 的后一半（候选阶段调用次数不变）没写测试。候选阶段的代码（`cycle.py`、`pairwise.py`、`audit_candidate`、`screen_reasons`、`rank_key`、`pick`）在 diff 里完全没动，监工按结构保证验收。
+  - 行为变化：`slot['final_conclusion']`（只给 `shot_vocab` 的观察记录用）改为用候选自己的单镜审核加终审一致性计算；没有 `candidates.json` 的旧修图任务，`deliver` 不再重写整组结论。
   - 第一次派工（09:1x）：执行者撞到 Haiku 会话额度上限（429，提示 12:10 恢复），在只跑了基线测试、没改代码的时候停下。监工核对工作树、主线工作区和 Hermes 都没有改动。
   - 09:3x 监工派了一个试探任务，以为 Haiku 已恢复，新开执行者重派。**这个判断是错的**：14:3x 监工查各执行者转录里的 `modelId` 才发现，用户 `/model` 切到 Cursor 以后，`model: haiku` 的指定不再生效，试探任务和第二个执行者实际都跑在 `cursor/claude-opus-5-5@300k` 上。第二个执行者存好基线（752 passed，三组 result.md 和 manifest，在 `.v2/reports/assets/V2-42/before/`）以后，撞到 Cursor Opus 的月度额度上限（429，11/7 重置）停下，代码没改。
   - 14:3x 用户把主会话切回 Claude Opus 后，监工第三次派工，又落到 Cursor Opus 上，监工发现后立刻停掉。再派一次只回复 OK 的试探任务，实际模型还是 Cursor Opus。工作树没有半截改动，主线工作区和 `~/.hermes/skills/story-cg` 都没被改动。
-  - **卡住**：本会话现在派不出 Haiku 执行者，等用户处理（重开会话，或指定别的执行者模型）。 | — | 未定 | `orders/V2-42.md` |
+  - ~~卡住~~：本会话现在派不出 Haiku 执行者，等用户处理（重开会话，或指定别的执行者模型）。
+  - 14:50 用户在新会话里说"继续"。监工先派只读试探，转录里的 `modelId` 是 `claude/claude-haiku-5-5[1m]`，随后第四次派工，执行者转录同样核实为 Haiku 5.5。上一个执行者（Cursor Opus）留下的基线不沿用，让新执行者删掉后重做。返工 1 用 SendMessage 续派，转录核实仍是 Haiku 5.5。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-42.md`，3f9be16 |
 | V2-43 删 L1/LoRA 层级（D78 瘦身 3） | 排队，工单已写 | — | — | `orders/V2-43.md` |
 | V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 排队，工单已写。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
 | V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 排队 | — | — | — |
