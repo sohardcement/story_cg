@@ -639,7 +639,11 @@
   - 14:3x 用户把主会话切回 Claude Opus 后，监工第三次派工，又落到 Cursor Opus 上，监工发现后立刻停掉。再派一次只回复 OK 的试探任务，实际模型还是 Cursor Opus。工作树没有半截改动，主线工作区和 `~/.hermes/skills/story-cg` 都没被改动。
   - ~~卡住~~：本会话现在派不出 Haiku 执行者，等用户处理（重开会话，或指定别的执行者模型）。
   - 14:50 用户在新会话里说"继续"。监工先派只读试探，转录里的 `modelId` 是 `claude/claude-haiku-5-5[1m]`，随后第四次派工，执行者转录同样核实为 Haiku 5.5。上一个执行者（Cursor Opus）留下的基线不沿用，让新执行者删掉后重做。返工 1 用 SendMessage 续派，转录核实仍是 Haiku 5.5。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-42.md`，3f9be16 |
-| V2-43 删 L1/LoRA 层级（D78 瘦身 3） | 排队，工单已写 | — | — | `orders/V2-43.md` |
+| V2-43 删 L1/LoRA 层级（D78 瘦身 3） | **拆单**。
+  - 第一次派工（15:19–15:49，Haiku 5.5，转录核实）：执行者只存了基线就停下，没改代码，建议拆单。存下的基线有：假 ComfyUI 记录候选阶段每次提交的工作流（`tools/v2_43_capture.py`，两组任务 18 次和 12 次提交，连跑两次逐字节相同）、30 个 `compile` 的输出、`beats-guide` 的输出。
+  - 拆成 V2-43a（删 L1 路线，"层级"展示和 `identity_tier` 不动，编译输出必须完全相同）和 V2-43b（去掉用户能看到的"层级"、词汇表只留一列）。V2-43a 用 SendMessage 续派给同一个执行者，转录核实仍是 Haiku 5.5。
+  - 监工另用 v2 HEAD 的冻结快照（`logs/supervisor/v2snap-3f9be16`，cache 软链到 `.v2/cache`）做了一份 `compile` 和 `beats-guide` 基线（`sup243/before/`），用来核对执行者的结论。
+  - **监工旁证发现的缺陷**（待开工单）：Danbooru 对 `related_tag.json?query=hatsune_miku+solo&category=0` 稳定返回 500，每次约 5 秒。`.v2/cache/danbooru` 里没有这条缓存，所以现在新开初音未来的任务会停在 `compile`（`resource_unavailable`）。热门角色的 related_tag 查询可能都有这个问题。 | 0 | Haiku 5.5 subagent（新开，43a 续派） | `orders/V2-43.md`、`orders/V2-43a.md` |
 | V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 排队，工单已写。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
 | V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 排队 | — | — | — |
 | V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
