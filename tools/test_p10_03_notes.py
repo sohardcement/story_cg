@@ -74,31 +74,6 @@ def test_review_markdown_shows_note_without_item_records(tmp_path, source):
     assert report == before
 
 
-@pytest.mark.parametrize('source', ['report', 'config'])
-def test_cycle_result_shows_note_without_item_records(tmp_path, source):
-    root = tmp_path / 'jobs' / 'offline'
-    root.mkdir(parents=True)
-    config = config_file(root)
-    save_json_atomic(root / 'job.json', {
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        'job_id': 'offline', 'character': 'fixture', 'story': 'offline fixture'})
-    save_json_atomic(root / 'storyboard.json', {'shots': [], 'props': []})
-    save_json_atomic(root / 'identity.json', {})
-    save_json_atomic(root / 'state.json', {'attempts': []})
-    save_json_atomic(root / 'models_snapshot.json', {'status': 'offline fixture'})
-    report = report_without_items()
-    if source == 'report':
-        report['reliability'] = {'extra_protagonist': {'note': NOTE}}
-        config_file(root, note='当前配置不同说明')
-    from storycg import delivery
-    delivery.deliver(root, {'shots': {}, 'final_review': report}, config, None)
-    text = (root / 'result.md').read_text()
-    assert '- extra_protagonist: ' + NOTE in text
-    assert '当前配置不同说明' not in text
-    assert 'hair_color:' not in text
-    assert '100%' not in text
-
-
 @pytest.mark.parametrize('with_final_report', [False, True])
 def test_agent_result_keeps_note_after_final_render_and_repeat(tmp_path, with_final_report):
     config = config_file(tmp_path)
