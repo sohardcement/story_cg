@@ -34,7 +34,7 @@ def deliver(root, cycle, config, client):
     manifest['usage'] = usage(root); manifest['repair_cycle_file'] = 'cycle.json'; manifest['repair_history'] = cycle['shots']
     manifest['attempts'] = state['attempts']
     save_json_atomic(root/'manifest.json', manifest)
-    make_contact_sheet(root, root.parent.parent/'review')
+    make_contact_sheet(root)
     # V2-21 rework 3: every rewrite of result.md keeps the candidate section.
     from storycg.candidates import publish_candidates
     publish_candidates(root)

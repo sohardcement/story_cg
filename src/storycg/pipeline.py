@@ -102,8 +102,6 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
     identity = json.loads((job_dir / "identity.json").read_text(encoding="utf-8"))
     board = json.loads((job_dir / "storyboard.json").read_text(encoding="utf-8"))
     state = load_state(job_dir)
-    log_path = job_dir / "plan_log.json"
-    log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"calls": []}
     images = []
     for entry in board["shots"]:
         shot_id = f'shot{entry["number"]:02d}'
@@ -138,7 +136,6 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
                 "review_records": prior.get("review_records", []),
                 "images": images, "usage": {"generated_images": state.get("stats", {}).get("generated_images", 0),
                                              "submission_attempts": state.get("stats", {}).get("submission_attempts", 0),
-                                             "llm_calls": len(log["calls"]),
                                              "review_calls": prior.get("usage", {}).get("review_calls", 0),
                                              "elapsed_seconds": round(elapsed, 1)}}
     for key in ("review_call_seconds", "review_elapsed_seconds"):
@@ -148,7 +145,8 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
     return manifest
 
 
-def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
+def make_contact_sheet(job_dir: str | Path, review_dir: str | Path | None = None) -> Path:
+    """Write the job's contact_sheet.jpg; with review_dir, also copy it there under the character and story name."""
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
     board = json.loads((job_dir / "storyboard.json").read_text(encoding="utf-8"))
@@ -193,6 +191,8 @@ def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
         draw.text((left, top), str(entry["number"]), font=font, fill="white")
     path = job_dir / "contact_sheet.jpg"
     sheet.save(path, "JPEG", quality=92, subsampling=0)
+    if review_dir is None:
+        return path
     review_dir = Path(review_dir)
     review_dir.mkdir(parents=True, exist_ok=True)
     short = re.sub(r"[^\w\u3400-\u9fff]+", "", job["story"])[:30]
@@ -224,11 +224,10 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[]}
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before generation")
-    if config.get("repair_cycle_enabled"):
-        from storycg.budget import Budget
-        from storycg.cycle import settings
-        gate=Budget(job_dir,settings())
-        gate.check()
+    from storycg.budget import Budget, CycleClient
+    from storycg.cycle import settings
+    gate=Budget(job_dir,settings())
+    gate.check()
     from storycg.tier_gate import ensure_wai_identity
     from storycg.tiers import tier_generation_config
     identity = ensure_wai_identity(job_dir, identity, config)
@@ -237,16 +236,12 @@ def run_story_job(job_dir: str | Path, config: dict, client,
                 'question': identity.get('question'), 'attempts': []}
     config = tier_generation_config(config)
     from storycg.reference import ensure_portrait
-    if config.get("repair_cycle_enabled"):gate.check()
+    gate.check()
     portrait_kwargs = {"redo": True} if redo_portrait else {}
-    if config.get("repair_cycle_enabled"):
-        from storycg.budget import CycleClient
-        portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
-        try:portrait=ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm,**portrait_kwargs)
-        finally:portrait_vlm.close()
-    else:
-        portrait = ensure_portrait(job_dir, identity, config, client, **portrait_kwargs)
-    if config.get("repair_cycle_enabled"):gate.check()
+    portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
+    try:portrait=ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm,**portrait_kwargs)
+    finally:portrait_vlm.close()
+    gate.check()
     if stop_after_portrait or redo_portrait:
         return {"job_id": job_dir.name, "status": "portrait_ready", "needs_user": False, "reason": None,
                 "question": None, "attempts": []}
@@ -255,8 +250,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         config = load_state(job_dir)["config"]
     else:
         config = copy.deepcopy(config)
-        if config.get("repair_cycle_enabled"):
-            config["budget"]["max_images_per_job"] -= gate.usage()["submission_attempts"]
+        config["budget"]["max_images_per_job"] -= gate.usage()["submission_attempts"]
         config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
     config = tier_generation_config(config)
     from storycg.controls import apply_options, portrait_reference

@@ -18,11 +18,10 @@
   "max_images": 40,
   "max_minutes": 60,
   "max_vision_calls": 139,
-  "max_llm_calls": 28,
   "story_rules": {
     "max_obscured": 1,
     "detached_position_requires_separated": true,
     "hand_owner_required": true
   },
-  "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision and <=60 LLM."
+  "budget_note": "Conservative per-group call caps leave room for already recorded development calls; session totals remain <=300 vision."
 }
