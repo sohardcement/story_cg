@@ -1,9 +1,0 @@
-shot01 1 3d092d12-5cdf-430e-8eca-346631316b3e success
-shot02 1 87899ee7-64d2-4667-ae4a-27a33c65bb41 success
-shot03 1 e2f7f0f1-019c-4208-9260-739e032b5d35 success
-shot04 1 89efe2f9-6e0e-47c1-afe8-a5979827c390 success
-shot01 2 7c7ccd0c-d548-490a-8ac6-860ead1fbfa3 success
-shot02 2 95fbc2f9-5655-4c42-a6ee-9deff1491fc6 success
-shot03 2 2aa37c43-f0e0-487e-bc9c-69b6cf209d30 success
-shot04 2 719b878e-30cb-4165-986d-d75015b94934 success
-PNG hashes/history, latest prompts, identity conversion, prop descriptions, scene exclusions, preview preservation, call budget and image-only blind request verified.
