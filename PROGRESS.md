@@ -44,6 +44,14 @@
   - **新顺序**：V2-43b → V2-44 → V2-46 → V2-45 → 监工实跑 → V2-40。
   - **顺序再调整（监工，23:xx）**：V2-44b 返工时，执行者删三个 P9-04 测试文件（只测 `tools/p9_04_*.py` 的函数）被 Claude Code 自动模式拦下（"Irreversible Local Destruction"），执行者没有绕过，请监工代删或加放行规则。**监工不代删、不改权限设置**：子代理被拒的操作由监工代做等于绕过拦截，这要用户定。处理：V2-44 第 4 条（v1 校准模块）退回原样、移进 V2-46；V2-46 删除多，挪到最后，再被拦就停下等用户。新顺序：V2-44b（第 3、5、8 条）→ V2-45 → 重装 Hermes 副本 → 监工实跑 → V2-46（含原 V2-44 第 4 条）→ V2-40。
   - **用户 22:5x 出门**："你自主迭代吧 我要出门了。8h后见 期待你的成果。" 监工按新顺序自行推进，不等用户；`jobs/` 等目录要不要进 `.gitignore` 仍待用户定，先不动。
+  - **监工实跑（D78 目标 6）暂停，等用户**（2026-10-12 00:1x）：
+    - 做法：新开一个 Haiku 5.5 子代理当调用方，只给它装好的 SKILL.md（`~/.claude/skills/story-cg`，指向主线）和用户式请求（`verify/v2/live-d78/PROMPT.md`：后藤一里，5 镜，醒来→拉窗帘见雪→换外套→雪中公园→伸手接雪花笑了）。
+    - 第一段正常：`beats-guide` → 写 beats → `compile`（第一次多写了 `$schema` 字段被判 invalid，删后 valid）→ `make` → 停在 `awaiting_approval`，任务 `jobs/cg-67a180fb5bc8`。定妆图 1 张，审核 1 次，124 秒。监工看定妆图：粉发、蓝黄方块发饰、粉色运动外套、灰色百褶裙，身份对，肢体正常；可靠项 `pants_under_skirt` 未见，不拦。调用方按 SKILL.md 转述了 `portrait_review` 的可靠/不可靠项。
+    - 监工以用户身份要求改分镜：第一版漏了剧情第一个情节"在被窝里醒来"（调用方因首镜必须远景自行略掉），"换上外套"仍是原来的粉色运动外套。调用方写了 `verify/v2/live-d78/beats-2.json`，`compile` 改到 valid（5 镜：远景坐在被窝里醒来、中景拉窗帘、中景坐床边穿冬季外套、远景雪中公园、中景伸手接雪花微笑）。
+    - **被拦**：调用方执行 `storycg approve jobs/cg-67a180fb5bc8 --beats verify/v2/live-d78/beats-2.json` 时被 Claude Code 权限检查拒绝（"Unrequested Commit in a Connected App"），随后一条只读 `status` 也被拒。调用方没有绕过，请监工代跑或放行。**监工不代跑、不另开任务绕过**，这要用户定。任务仍停在第一版的 `awaiting_approval`，没有进程在跑（监工读 `agent.json` 核实）。
+    - 用户回来后可以：自己在终端执行 `! /work/workspace/manga_skill/skill/story-cg/scripts/storycg approve /work/workspace/manga_skill/jobs/cg-67a180fb5bc8 --beats /work/workspace/manga_skill/verify/v2/live-d78/beats-2.json`（仍停在确认步，不出镜头图），再 `approve` 出图；或者明确告诉监工可以代跑。
+    - 出图：定妆图 1 张，累计 315/400。
+  - 等用户期间先做不依赖实跑、也不删文件的 V2-40；V2-46（删除为主）仍排在实跑之后。
 - **D78（用户，2026-10-11）skill 瘦身，依次执行**。用户先问"该 skill 现在是否臃肿？有没有过度设计"，监工盘点后给了 5 条建议，用户回复："你设置一个 goal 吧，依次执行瘦身"。
   - 盘点依据：
     - `src/storycg` 8.7k 行、49 个模块；配置 82KB。
@@ -713,7 +721,7 @@
   - 测试 666 → 673。
   - 监工独立验证：全量 673 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-45.log`），合入后主线也是 673 passed；`tools/v2_43_capture.py` 两组逐字节相同；`jobs/cg-e60b2498b63e` 副本用改前代码（`git archive 0d529e6`）和改后入口 `deliver`，diff 只有工单列的删改，第 2 镜可靠的 `outfit_state`、`outfit_component_1` fail 仍在；`pick --shot 2 --candidate 1` 后只有第 2 镜写"由用户换过"；通读新 SKILL.md。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被执行者改动。
   - **Hermes 副本重装（监工，23:59）**：`~/.hermes/skills/story-cg` 里的 SKILL.md 还是 10-10 V2-27 的版本，写着已删的命令和字段，代码却跑主线。用 `tools/install_hermes_skill.sh --force` 重装，现在和主线 SKILL.md 逐字节相同，`hermes skills list` 显示 enabled，Hermes 入口 `beats-guide` 退出码 0。旧副本存在 `logs/supervisor/hermes-SKILL-before-v245.md`。Hermes 里的实际调用测试仍按用户意见推迟。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-45.md`，058ba4e |
-| V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
+| V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 已派（2026-10-12，监工实跑等用户期间） | — | — | `orders/V2-40.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
