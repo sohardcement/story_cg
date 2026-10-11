@@ -436,7 +436,6 @@ def result_text(root, store=None):
     lines = ['# 结果说明', '', '## 概况', '',
              f"- 角色：{job.get('character', '')}（{identity.get('character_tag', '')}）",
              f"- 剧情：{job.get('story', '')}",
-             f"- 层级：{identity.get('identity_tier', '未知')}",
              f"- 镜数：{len(numbers)}",
              f"- 本组出图：{shot_images + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，定妆图 {len(portrait_attempts)} 张）",
              f"- 用时：{round(seconds / 60, 1)} 分钟" if seconds is not None else '- 用时：未记录',

@@ -367,6 +367,6 @@ def saved_storyboard(job_dir: str | Path, shot_count: int, identity: dict, confi
     if [entry['outfit']['change_at_shot'] for entry in board['shots']] != saved_changes:
         save_json_atomic(plan_path, board)  # persist the re-derived outfit changes
     from storycg.shot_vocab import validate_shot_vocab
-    validate_shot_vocab(board, identity.get('identity_tier'), config)
+    validate_shot_vocab(board, config)
     from storycg.story_rules import validate_story_rules
     return validate_story_rules(board, allow_obscured=(config or {}).get("allow_obscured_protagonist", False))

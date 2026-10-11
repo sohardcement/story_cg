@@ -38,9 +38,8 @@ def needs_user(root, identity, reason, *, question=None, persist=True):
     The stop keeps the identity's evidence and writes identity.json unless persist is False.
     """
     identity = copy.deepcopy(identity)
-    identity.update(status='needs_user', identity_tier='unsupported', needs_user=True, reason=reason,
+    identity.update(status='needs_user', needs_user=True, reason=reason,
                     question=question or (reason + '。'), user_can_provide=[])
-    identity.setdefault('tier_evidence', {})['stop_reason'] = reason
     if persist:
         save_json_atomic(Path(root)/'identity.json', identity)
     return identity
@@ -208,18 +207,15 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
             'search[query]':work,'search[type]':'tag_query','limit':10})
         work_tags={_tag(work)} | {x['value'] for x in work_entries if x.get('category')==3}
         choices=[c for c in choices if c.get('work_tag') in work_tags]
-    pending={'identity_tier':'tier_pending_comfyui','tier_evidence':{
-        'status':'not_run','reason':'ComfyUI unavailable; live LoRA metadata and unconditioned L2 generation required',
-        'generation_count':0,'vision_calls':0}}
     if not choices and not candidates:
         return needs_user(Path(cache_dir), {'input_name':name,'candidates':candidates,
-            'appearance_tags':[],'default_outfit_tags':[],**pending}, '找不到该角色的资料',
+            'appearance_tags':[],'default_outfit_tags':[]}, '找不到该角色的资料',
             question='找不到该角色的资料。请换一个角色名、角色 tag 或作品名。', persist=False)
     if len(choices)!=1:
         return {'input_name':name,'status':'needs_clarification','work_input':work,
                 'reason':'no matching character candidate' if not choices else 'ambiguous character candidates',
                 'candidates':candidates,'candidate_limit':10,'candidate_list_may_be_truncated':len(entries)>=10,
-                'appearance_tags':[],'default_outfit_tags':[],**pending}
+                'appearance_tags':[],'default_outfit_tags':[]}
     chosen=choices[0]
     character=chosen['tag']
     wiki,wiki_url=_wiki(source,character)
@@ -233,7 +229,7 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
             'wiki_body':wiki.get('body',''),'wiki_url':wiki_url,
             'wiki_baseline':{'appearance_tags':_appearance_from_wiki(wiki.get('body',''),wiki_url),
                              'default_outfit_tags':_outfit_from_wiki(wiki.get('body',''),wiki_url)},
-            'lora':None,'reference_image':None,'candidates':candidates,**pending}
+            'lora':None,'reference_image':None,'candidates':candidates}
     related,related_url=source.get('/related_tag.json',{'query':' '.join(x for x in [character,rules.get('related_query_suffix','')] if x),'category':0})
     result=enrich_identity(result,related,related_url,rules)
     result['identity_block']=', '.join(x for x in ['1girl',character,chosen.get('work_tag'),

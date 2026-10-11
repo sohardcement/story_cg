@@ -102,7 +102,7 @@ def main(argv):
     board = json.loads((root / 'storyboard.json').read_text(encoding='utf-8'))
     portrait = json.loads((root / 'portrait.json').read_text(encoding='utf-8'))
     # The generation stage of pipeline.run_job, minus the identity and portrait stages (not changed by V2-43).
-    config = tiers.tier_generation_config(job['generation_config'], identity)
+    config = tiers.tier_generation_config(job['generation_config'])
     config.pop('generation_reference', None)
     config['auto_retry_failed'] = False
     control = config['identity_control']
