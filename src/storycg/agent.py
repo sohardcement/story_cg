@@ -485,15 +485,15 @@ def status(root):
     result = {'job_id': root.name, 'job_dir': str(root), 'phase': phase, 'active': active,
               'needs_user': record.get('needs_user', False), 'reason': record.get('reason'),
               'question': record.get('question'), 'options': record.get('options', []),
-              'notices': record.get('notices', []), 'storyboard': _summary_for_status(root, record, phase),
+              'notices': record.get('notices', []),
               'error': record.get('error'), 'progress': _progress(root, total, cycle),
               'usage': count_usage(root),
               'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
-              'tier_evidence': read(root, 'identity.json').get('tier_evidence', {}),
-              'review_gate': read(root,'review_gate.json'), 'artifacts': paths,
-              'attempts': [{k: a.get(k) for k in ('shot_id', 'attempt_number', 'status', 'prompt_id', 'image', 'error')}
-                           for a in state.get('attempts', [])],
+              'artifacts': paths,
               'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
+    if phase == 'awaiting_approval':
+        # V2-41: the storyboard summary is shown to the user only at awaiting_approval.
+        result['storyboard'] = _summary_for_status(root, record, phase)
     if phase == 'identity_confirmed':
         # V2-34: after resolve the status names the locked character and the next step, not the old question.
         identity = read(root, 'identity.json')
