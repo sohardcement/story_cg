@@ -34,15 +34,6 @@ def load_config(path: str | Path) -> dict:
     return config
 
 
-def character_lora_matching_enabled(config: dict | None) -> bool:
-    """Whether dedicated character LoRAs are matched and may yield L1 (V2-20, TASK-v2 §10.4).
-
-    Off by default: no character LoRA is matched, L1 is never produced and the L1 vocabulary
-    column is not read. Turning it back on is a config change only.
-    """
-    return bool((config or {}).get("character_lora_matching", False))
-
-
 class RemovedMode(ValueError):
     """A job snapshot or config still asks for a delivery path that V2-28 removed."""
 

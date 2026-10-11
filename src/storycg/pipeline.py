@@ -84,7 +84,7 @@ def _model_manifest(config: dict, client) -> dict:
                   "hash_reason": "ComfyUI checkpoint hash endpoint unavailable",
                   **file_info("checkpoints", config["checkpoint"])}
     loras = []
-    for item in config["style_loras"] + ([config["character_lora"]] if config.get("character_lora") else []):
+    for item in config["style_loras"]:
         name = item["name"]
         try:
             metadata = client.get_model_metadata("loras", name)
@@ -231,13 +231,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         gate.check()
     from storycg.tier_gate import ensure_identity_tier
     from storycg.tiers import tier_generation_config
-    if config.get("repair_cycle_enabled"):
-        from storycg.budget import CycleClient
-        tier_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=24,max_seconds=gate.remaining_seconds())
-        try:identity=ensure_identity_tier(job_dir,identity,config,client,vlm=tier_vlm)
-        finally:tier_vlm.close()
-    else:
-        identity = ensure_identity_tier(job_dir, identity, config, client)
+    identity = ensure_identity_tier(job_dir, identity, config, client)
     if identity.get('identity_tier') not in ('L1', 'L2'):
         return {'job_id': job_dir.name, 'status': 'needs_user' if identity.get('status')=='needs_user' else identity.get('identity_tier'),
                 'needs_user':identity.get('status')=='needs_user','reason':identity.get('reason'),'question':identity.get('question'),
@@ -247,6 +241,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     if config.get("repair_cycle_enabled"):gate.check()
     portrait_kwargs = {"redo": True} if redo_portrait else {}
     if config.get("repair_cycle_enabled"):
+        from storycg.budget import CycleClient
         portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
         try:portrait=ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm,**portrait_kwargs)
         finally:portrait_vlm.close()

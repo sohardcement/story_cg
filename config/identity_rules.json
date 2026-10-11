@@ -88,61 +88,6 @@
     ]
   ],
   "wiki_variant_markers": "\\b(?:when|alternatively|alternate|sometimes|occasionally|instead|different|other)\\b|\\bas an?\\b",
-  "neutral_l2_tags": "solo, standing, looking_at_viewer, simple_background",
-  "lora": {
-    "strength_model": 0.8,
-    "strength_clip": 0.8,
-    "min_training_count": 1,
-    "min_character_share": 0.8,
-    "non_final_pattern": "(?:eval|validation|checkpoint|intermediate|(?:step|epoch)[_ -]*\\d+)",
-    "style_coexistence": "character loaded after fixed style LoRAs; identity priority; adjust weights only with recorded diagnosis"
-  },
-  "references": {
-    "count": 3,
-    "min_score": 20,
-    "query_suffix": "",
-    "candidate_limit": 100,
-    "require_solo": true,
-    "require_full_body": false,
-    "max_pages": 5,
-    "policy_version": 2,
-    "directory": "references_v2",
-    "exclude_tags": [
-      "chibi",
-      "meme",
-      "english_text",
-      "speech_bubble",
-      "text_focus",
-      "text_only",
-      "comic",
-      "cosplay",
-      "alternate_costume",
-      "sketch",
-      "monochrome",
-      "greyscale",
-      "genderswap",
-      "aged_down",
-      "aged_up"
-    ],
-    "eyewear_tags": [
-      "glasses",
-      "sunglasses",
-      "goggles",
-      "rimless_eyewear",
-      "semi-rimless_eyewear",
-      "eyewear"
-    ],
-    "eyewear_patterns": [
-      "(?:^|_)eyewear$",
-      "(?:^|_)glasses$"
-    ],
-    "selection_order": [
-      "appearance_coverage_desc",
-      "default_outfit_coverage_desc",
-      "score_desc",
-      "post_id_asc"
-    ]
-  },
   "related_query_suffix": "solo",
   "compatible_tag_groups": [
     [
@@ -181,31 +126,6 @@
     "tie_break": "wiki order",
     "missing_frequency": "unavailable; ranks after measured frequencies",
     "wiki_policy": "lock whole selected ensemble from wiki sentences, independently of identity appearance conflicts"
-  },
-  "tier_probe": {
-    "framing": "full",
-    "seed": 60101,
-    "max_tests": 1,
-    "max_vision_calls": 6,
-    "max_seconds": 600,
-    "input_policy": "character tag + work tag + neutral composition; L1 adds matched LoRA and triggers only"
-  },
-  "tier_review": {
-    "version": 3,
-    "tier_scope": "appearance_only",
-    "outfit_policy": "diagnostic only for L1/L2; setting portrait separately validates applicable clothing",
-    "image_order": [
-      "generated_test",
-      "danbooru_reference"
-    ],
-    "required_observations": [
-      "test_observation",
-      "reference_observation"
-    ],
-    "confirmation_policy": "all reliable appearance items pass; any appearance fail vetoes; not_visible neither vetoes nor confirms",
-    "aggregation_policy": "D8b",
-    "l1_protocol": "matched dedicated LoRA plus sourced identity tags",
-    "l2_protocol": "canonical character and work tags plus neutral composition only"
   },
   "generation_identity_control": {
     "mechanism": "ipadapter",

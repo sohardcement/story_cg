@@ -129,7 +129,7 @@ RESOURCE_ERRORS = (*RESOURCE_FAILURES, ResourceUnavailable)
 def check_resources(config):
     """Check health and only the node classes needed by the configured pipeline."""
     required = [('CheckpointLoaderSimple', 'ckpt_name', config['checkpoint'])]
-    for item in config['style_loras'] + ([config['character_lora']] if config.get('character_lora') else []):
+    for item in config['style_loras']:
         required.append(('LoraLoader', 'lora_name', item['name']))
     reference = config.get('reference_models', {})
     node_only = []
@@ -193,17 +193,11 @@ def _ensure_tier_before_planning(root, config, identity):
     if identity.get('status') == 'needs_user':
         question(root, identity['reason'], identity['question'])
         return None
-    from storycg.cycle import settings
-    from storycg.budget import CycleClient
     from storycg.tier_gate import ensure_identity_tier
-    gate = Budget(root, settings())
-    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), gate)
-    vlm = CycleClient(root.resolve(), config['model_service_url'], budget=gate,
-                      max_calls=24, max_seconds=gate.remaining_seconds())
+    client = ComfyClient(config['comfyui_url'], config['http_timeout_seconds'])
     try:
-        identity = ensure_identity_tier(root, identity, config, client, vlm=vlm)
+        identity = ensure_identity_tier(root, identity, config, client)
     finally:
-        vlm.close()
         client.close()
     if identity.get('status') == 'needs_user':
         question(root, identity.get('reason', 'identity_unsupported'), identity['question'])
@@ -680,7 +674,6 @@ def main(argv):
             command.add_argument('--identity-control', choices=['none', 'ipadapter'])
             command.add_argument('--seed', type=int)
         if name in ('make','resume'):
-            command.add_argument('--reference-path',type=Path)
             command.add_argument('--tag')
             command.add_argument('--work')
         if name == 'resolve':
@@ -703,7 +696,7 @@ def main(argv):
         if args.command == 'make':
             if args.beats is None:
                 raise ValueError('make needs --beats: write the storyboard with beats-guide, check it with compile, then run make --beats FILE')
-            options = {k: v for k, v in {'identity_control': args.identity_control, 'generation_seed': args.seed,'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v is not None}
+            options = {k: v for k, v in {'identity_control': args.identity_control, 'generation_seed': args.seed,'character_tag':args.tag,'work':args.work}.items() if v is not None}
             config = apply_options(load_config(args.config), options); config['repair_cycle_enabled'] = True
             if (root/'agent.json').exists():
                 raise ValueError('job already exists; use status/resume/approve')
@@ -726,18 +719,17 @@ def main(argv):
                     raise ValueError('job worker is already active; poll status')
                 if args.command != '_worker' and worker_alive(root):
                     raise ValueError('job worker is starting or active; poll status')
-                if args.command=='resume' and any((args.reference_path,args.tag,args.work)):
+                if args.command=='resume' and any((args.tag,args.work)):
                     if read(root,'state.json').get('attempts'):
                         raise ValueError('cannot change identity inputs after story submission')
                     job=read(root,'job.json');opts=job.get('generation_options',{})
                     old=read(root,'identity.json')
                     if old.get('identity_tier') in ('L1','L2') and (
                             (args.tag and args.tag!=old.get('character_tag')) or
-                            (args.work and args.work!=old.get('work_tag')) or
-                            (args.reference_path and str(args.reference_path.resolve())!=opts.get('reference_path'))):
+                            (args.work and args.work!=old.get('work_tag'))):
                         raise ValueError('identity already verified; create a new job for different identity inputs')
                     opts=job.setdefault('generation_options',{})
-                    opts.update({k:v for k,v in {'reference_path':str(args.reference_path.resolve()) if args.reference_path else None,'character_tag':args.tag,'work':args.work}.items() if v})
+                    opts.update({k:v for k,v in {'character_tag':args.tag,'work':args.work}.items() if v})
                     save_json_atomic(root/'job.json',job)
                     old=read(root,'identity.json')
                     if old.get('status')=='needs_user':
@@ -753,8 +745,7 @@ def main(argv):
                                     if (root/name).exists():shutil.move(root/name,archive/name)
                                 update(root,storyboard=[],approved=False)
                         elif old.get('character_tag'):
-                            old.update(status='locked',identity_tier='tier_pending_L1',needs_user=False)
-                            old['tier_evidence']['validation_completed']=False
+                            old.update(status='locked',needs_user=False)
                         save_json_atomic(root/'identity.json',old)
                 if args.command == 'deliver':
                     deliver(root)
