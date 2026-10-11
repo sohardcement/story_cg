@@ -18,7 +18,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 - 中断或资源恢复：`scripts/storycg resume '<job_dir>'`，再轮询 status；未确认分镜不会自动出图。
 - 重建交付文件：`scripts/storycg deliver '<job_dir>'`，不出图、不审核。
 
-stdout 是 JSON，stderr 是进度／诊断。`progress.completed_shots` 是已挑选的镜数（不是已出图的镜数）；`progress.shots` 给出每镜已出图／应出、已审核数和是否已挑选，`final_review_done` 表示终审是否完成。仅当 `needs_user=true` 时按 `question` 和 `options` 提问：角色身份不明确、关键资源不可用、要求互相冲突。身份选择可用底层 `scripts/storycg resolve '<job_dir>' --tag '候选tag'` 或 `--work '作品名'`，再 resume；冲突修改后重新 make。`awaiting_approval` 是用户主动选择的确认步骤。普通创作选择自行决定；多具名角色转述 `notices`，按指定单主角继续。
+stdout 是 JSON，stderr 是进度／诊断。`progress.completed_shots` 是已挑选的镜数（不是已出图的镜数）；`progress.shots` 给出每镜已出图／应出、已审核数和是否已挑选，`final_review_done` 表示终审是否完成。仅当 `needs_user=true` 时按 `question` 和 `options` 提问：角色身份不明确、关键资源不可用。身份选择可用底层 `scripts/storycg resolve '<job_dir>' --tag '候选tag'` 或 `--work '作品名'`，再 resume。`awaiting_approval` 是用户主动选择的确认步骤。普通创作选择自行决定。
 
 `completed` 或 `stopped` 时展示已有交付：按当前环境展示图片。能直接看图的环境（Claude Code、Cursor 等）先用读图工具打开编号拼图和候选总图，再把图片的绝对路径告诉用户；Hermes 环境用 `MEDIA:<artifacts.preview 的绝对路径>` 展示编号拼图。result.md 里的“已观察到的偏差”一节（通过了筛选／审核观察到的偏差／未经可靠审核，以及整组原始审核结论）也要转述给用户。随后附简短结果、已知问题及 `artifacts.images/result/manifest` 路径。读取 result.md：它按概况、文件、每镜（选中、理由、被筛掉的候选）、看图复述、已知问题排列，逐项审核细节见 review.md；result.md 里写明“该项未经可靠审核”的，要如实告诉用户，尤其配饰、发型、整体角色，请用户看图确认。出错时说明 error／repair_blocked，已有产物不代表审核通过。状态为 interrupted 时 resume；无交付物的 stopped 不宣称成功。
 
