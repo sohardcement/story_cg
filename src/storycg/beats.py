@@ -204,7 +204,7 @@ def _collect_errors(board, shot_count, identity, config):
     reporting only.
     """
     from storycg.identity_enrichment import category_for, load_rules
-    from storycg.planning import appearance_forbidden, body_target_violation, production_schema
+    from storycg.planning import appearance_forbidden, body_target_violation, production_schema, sequence_violation
     from storycg.prompt_rules import companion_conflicts
     from storycg.shot_contract import EXPRESSION_TAGS, moment
     from storycg.shot_vocab import classify_shots, load_vocab, substitute_text
@@ -241,6 +241,10 @@ def _collect_errors(board, shot_count, identity, config):
         except StoryRuleViolation as exc:
             _add(errors, number, ', '.join(f.split('.shot.')[-1] for f in exc.fields),
                  exc.problem, exc.correction)
+        if sequence_violation(shot.get('spatial_relation', '')):
+            _add(errors, number, 'shot.spatial_relation',
+                 f'这一镜只能画一个时刻，"{shot["spatial_relation"]}" 写了先后两个动作',
+                 '只保留画面里的那一刻；前一个动作也要画出来的话，拆成两镜')
         if any(canonical_tag(tag) in EXPRESSION_TAGS for tag in shot.get('prop_tags', [])):
             _add(errors, number, 'shot.prop_tags', '背景道具 tag 不能承担表情', '表情只放在 shot.expression')
 

@@ -208,6 +208,17 @@ def body_target_violation(value):
     return 'appearance' if hits - BODY_TARGET_NOUNS else 'clause'
 
 
+# V2-40: a shot is one still instant, so spatial_relation may not chain a second action with an order word.
+# "after" and "before" stay allowed (they give the state's cause, "relieved after the scare"); "next to" is a place.
+SEQUENCE_WORDS = re.compile(r"\b(?:then|afterwards?|subsequently|after\s+that|followed\s+by|finally|next(?!\s+to\b))\b",
+                            re.I)
+
+
+def sequence_violation(value):
+    """True when a spatial_relation value orders two actions (V2-40): one shot shows one instant."""
+    return bool(SEQUENCE_WORDS.search(value or ''))
+
+
 def _strings(value):
     if isinstance(value, str):
         yield value
@@ -240,6 +251,8 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         shot = entry['shot']
         if len(shot.get('prop_tags', [])) + len(shot.get('key_props', [])) > 1:
             raise ValueError('each shot permits at most one prop (key prop or background tag)')
+        if sequence_violation(shot.get('spatial_relation', '')):
+            raise ValueError(f"single instant: shot {entry.get('number')} spatial_relation orders two actions: {shot['spatial_relation']}")
     from storycg.prompt_rules import companion_conflicts
     conflicts = companion_conflicts(board, config)
     if conflicts:
@@ -310,6 +323,8 @@ def writing_rules(shot_count: int) -> str:
         "No character names, franchises or physical appearance tags in any state. "
         "Body parts may occur only as direct targets of the current physical action in pose, "
         "spatial_relation and change_from_previous. Preserve the action's contact and direction. "
+        "spatial_relation names the one instant this shot depicts; no then or other order words there, "
+        "and two actions in order are two shots. "
         "Keep each body-target field as one plain action clause; place no other clauses or "
         "appearance adjectives in that field. "
         "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
