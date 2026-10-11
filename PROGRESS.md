@@ -643,7 +643,15 @@
   - 第一次派工（15:19–15:49，Haiku 5.5，转录核实）：执行者只存了基线就停下，没改代码，建议拆单。存下的基线有：假 ComfyUI 记录候选阶段每次提交的工作流（`tools/v2_43_capture.py`，两组任务 18 次和 12 次提交，连跑两次逐字节相同）、30 个 `compile` 的输出、`beats-guide` 的输出。
   - 拆成 V2-43a（删 L1 路线，"层级"展示和 `identity_tier` 不动，编译输出必须完全相同）和 V2-43b（去掉用户能看到的"层级"、词汇表只留一列）。V2-43a 用 SendMessage 续派给同一个执行者，转录核实仍是 Haiku 5.5。
   - 监工另用 v2 HEAD 的冻结快照（`logs/supervisor/v2snap-3f9be16`，cache 软链到 `.v2/cache`）做了一份 `compile` 和 `beats-guide` 基线（`sup243/before/`），用来核对执行者的结论。
-  - **监工旁证发现的缺陷**（待开工单）：Danbooru 对 `related_tag.json?query=hatsune_miku+solo&category=0` 稳定返回 500，每次约 5 秒。`.v2/cache/danbooru` 里没有这条缓存，所以现在新开初音未来的任务会停在 `compile`（`resource_unavailable`）。热门角色的 related_tag 查询可能都有这个问题。 | 0 | Haiku 5.5 subagent（新开，43a 续派） | `orders/V2-43.md`、`orders/V2-43a.md` |
+  - **监工旁证，已知风险**（不开工单）：15:5x–16:4x 之间，Danbooru 对 `related_tag.json?query=hatsune_miku+solo&category=0` 一直返回 500（每次约 5 秒），17:xx 已恢复。没有缓存的角色在 Danbooru 故障期间 `compile` 会停下，报 `resource_unavailable`，这是 V2-35 设计的行为。
+  - **V2-43a 通过**（9a42796，返工 1 次，合入主线 45cf4f9）。
+    - 删掉：`tier_cache.py`、`model_metadata.py`；`tiers.py`、`tier_gate.py` 里 L1 的函数（只留 `tier_generation_config`、`wai_list_result` 和 WAI 路径）；`workflow.py` 的角色 LoRA 分支；`make`/`resume` 的 `--reference-path`；`tier_pending_L1` 分支；配置 `character_lora_matching`、`tier_cache`；`identity_rules.json` 的 `lora`、`references`、`tier_probe`、`tier_review`、`neutral_l2_tags`。`src`、`config`、`tests` 合计增 199 行、删 2052 行。调用关系表在 `.v2/reports/assets/V2-43/callgraph.md`。
+    - 出图不变：假 ComfyUI 记录两组任务的 18 次和 12 次提交，改动前后逐字节相同（执行者的验证）。
+    - 监工独立验证：冻结快照和改后代码各跑 30 个 `compile`，27 个除临时目录外逐字段相同，3 个只差 Danbooru 实时的 `post_count`。初音那组改动前撞上 500，Danbooru 恢复后用快照补跑，结果相同。清单外角色（月城柳）`compile` 仍返回 `character_not_in_wai_list`；`beats-guide` 改动前后相同；`make --help` 里已经没有 `--reference-path`。
+    - **返工 1**：第一版删了 105 个测试，其中一部分测的是保留下来的逻辑，只是拿 L1 列或 `LORA_ON` 当输入，比如不可用组合给替代、`prompt_section`、WAI 角色的执行和续跑、`outfit_hair_ornaments`。删完以后，`tests/` 和 `tools/` 里已经没有任何测试断言"替代为"。返工后这些测试改写成走 L2 列保留下来，测试数 644 → 669。
+    - 测试：全量 749 → 669 passed，监工复跑一致。
+    - 执行者跑过一次不带路径的 `git rm --cached -q`，没有产生效果，它自己报告了，索引为空。仍然违反 AGENTS 第 9、11 条，记录在案。
+    - 遗留：`tools/p6_*.py` 等约 20 个旧脚本还 import 已删的模块（pytest 不收集它们），归 V2-44。`config/review_reliability.json` 里的文件哈希是校准时的历史记录，不改。 | 0 | Haiku 5.5 subagent（新开，43a 续派） | `.v2/reports/V2-43a.md`，9a42796 |
 | V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 排队，工单已写。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
 | V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | 排队 | — | — | — |
 | V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | 排队，D78 瘦身之后 | — | — | `orders/V2-40.md` |
