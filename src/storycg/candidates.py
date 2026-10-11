@@ -280,56 +280,52 @@ def _unreliable_keys(root, selected):
     return list(dict.fromkeys(keys))
 
 
-def _audit_deviation_lines(root, selected, group=None):
+def _audit_deviation_items(root, selected):
+    """V2-32 / V2-45: the selected candidate's fail or minor items from its own audit, uncapped (read only)."""
+    if selected is None or not _audit_path(root, selected).exists():
+        return []
+    from storycg.display import read_json, flat
+    audit = read_json(_audit_path(root, selected))
+    deviations = []
+    for part, label in (('single', '单镜'), ('consistency', '一致性')):
+        for key, item in ((audit.get(part) or {}).get('data') or {}).items():
+            if not isinstance(item, dict) or is_prop_item(key):
+                continue
+            if item.get('status') in ('fail', 'minor'):
+                tag = '可靠' if item.get('reliability') == 'reliable' else '未经可靠审核'
+                deviations.append(f"- 审核观察到的偏差：{label} {key} {item['status']}（{tag}）：{flat(item.get('reason'))}")
+    return deviations
+
+
+def _audit_deviation_lines(root, selected):
     """V2-32: the selected candidate's own audit, shaped into result.md lines. Only fail/minor items are reported
-    as deviations; the verdicts are the stored ones, not recomputed here. `group` is the unreliable-category
-    summary of the whole group (V2-32 rework 1): this shot only repeats it when it differs."""
+    as deviations; the verdicts are the stored ones, not recomputed here."""
     if selected is None:
         return ['- 没有选中候选，无审核记录。']
-    from storycg.display import read_json, flat
+    from storycg.display import flat
     head = ('- 通过了筛选：人数检查、多余肢体检查' if not selected['screen']
             else '- 通过了筛选：否（' + '；'.join(selected['screen']) + '，用户指定保留）')
     audit_path = _audit_path(root, selected)
     if not audit_path.exists():
         return [head, f"- 审核记录缺失：cycle_artifacts/{selected['audit_label']}.json"]
-    audit = read_json(audit_path)
-    deviations, unreliable = [], []
-    for part, label in (('single', '单镜'), ('consistency', '一致性')):
-        for key, item in ((audit.get(part) or {}).get('data') or {}).items():
-            if not isinstance(item, dict) or is_prop_item(key):
-                continue
-            reliable = item.get('reliability') == 'reliable'
-            if not reliable:
-                unreliable.append(key)
-            if item.get('status') in ('fail', 'minor'):
-                tag = '可靠' if reliable else '未经可靠审核'
-                deviations.append(f"- 审核观察到的偏差：{label} {key} {item['status']}（{tag}）：{flat(item.get('reason'))}")
+    deviations = _audit_deviation_items(root, selected)
     lines = [head]
     if not deviations:
         lines.append('- 审核观察到的偏差：无（没有 fail 或 minor 项）')
-    difference = _group_difference_line(unreliable, group)
-    # Six lines per shot at most: the head and the difference line always stay; deviations take the rest.
-    room = DEVIATION_LINES_PER_SHOT - 1 - (1 if difference else 0)
+    # Six lines per shot at most: the head always stays; deviations take the rest.
+    room = DEVIATION_LINES_PER_SHOT - 1
     if len(deviations) > room:
         deviations = deviations[:room - 1] + [f'- 另有 {len(deviations) - (room - 1)} 项，见 review.md']
     lines += deviations
-    if difference:
-        lines.append(difference)
     return lines
 
 
-def _group_difference_line(unreliable, group):
-    """Only the categories where this shot differs from the group summary; empty string when they agree."""
-    if group is None:
-        group = []
-    only_here = [k for k in dict.fromkeys(unreliable) if k not in group]
-    reliable_here = [k for k in group if k not in unreliable]
-    parts = []
-    if only_here:
-        parts.append(f"本镜未经可靠审核、整组汇总未列：{'、'.join(only_here)}")
-    if reliable_here:
-        parts.append(f"本镜已可靠审核、整组汇总列为未审核：{'、'.join(reliable_here)}")
-    return ('- 与整组汇总不同：' + '；'.join(parts)) if parts else ''
+def _shot_is_clean(root, cycle, number, selected):
+    """V2-45: nothing to list for this shot: the selected candidate passed the screen, its own audit has no fail
+    or minor item, and the final review's consistency has nothing to list for it."""
+    return (selected is not None and not selected['screen'] and _audit_path(root, selected).exists()
+            and not _audit_deviation_items(root, selected)
+            and not _final_shot_lines(root, cycle, number, selected))
 
 
 def _portrait_item_text(item):
@@ -340,25 +336,19 @@ def _portrait_item_text(item):
     return f"{item['item']}（{item['status']}{source}）：{item['reason'].rstrip('.。')}（{kind}）"
 
 
-def _group_deviation_lines(root, cycle, group):
-    """V2-32: layer conclusions as stored, plus the raw portrait review when it did not pass.
-    V2-42: no group verdict line and no single layer line (the final review has no single layer any more)."""
+def _group_deviation_lines(root, group):
+    """V2-32 / V2-45: the group's unreliable categories, plus the raw portrait review's reliable failed items.
+    No layer conclusions. The portrait line is written only when a reliable item did not pass."""
     from storycg.display import portrait_review
-    final = cycle.get('final_review') or {}
-    layers = final.get('layer_conclusions') or {}
-    lines = []
-    for key, label in (('consistency', '一致性'), ('narrative', '剧情')):
-        lines.append(f"- 各层结论 · {label}：{layers.get(key, '未记录')}")
     names = list(dict.fromkeys(group))
-    if names:
-        lines.append(f"- 未经可靠审核（整组汇总）：{'、'.join(names)}（共 {len(names)} 项，只列类别；各镜与此不同的见各镜）")
-    else:
-        lines.append('- 未经可靠审核（整组汇总）：无')
-    portrait = portrait_review(root)
-    if portrait and portrait['raw_status'] != 'pass':
-        items = '；'.join(_portrait_item_text(x) for x in portrait['failed_items']) or '未记录具体项'
+    lines = [f"- 至少一镜未经可靠审核的类别：{'、'.join(names)}" if names else '- 至少一镜未经可靠审核的类别：无']
+    portrait = portrait_review(root) or {}
+    failed = [x for x in portrait.get('failed_items') or [] if x.get('reliable', True)]
+    if failed:
+        items = '；'.join(_portrait_item_text(x) for x in failed)
         lines.append(f"- 定妆图原始审核未通过：{items}。{portrait['note']}。")
     return lines
+
 
 
 def _candidate_deviation_keys(root, selected):
@@ -472,25 +462,31 @@ def result_text(root, store=None):
         if slot.get('user_pick') is not None and slot['user_pick'] != auto:
             lines.append(f"- 由用户换过：第 {number} 镜由用户换成候选 {slot['selected']}；看图复述是换之前那组图的。"
                          f"（审核器原选候选 {auto}）")
-        else:
-            lines.append('- 由用户换过：否')
         lines.append('')
     picks = {}
     for number in numbers:
         slot = store.get(str(number))
         picks[number] = None if slot is None else next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
     group = list(dict.fromkeys(k for selected in picks.values() for k in _unreliable_keys(root, selected)))
-    lines += ['## 已观察到的偏差', '', '按镜列出选中候选的审核记录：通过了筛选 / 审核观察到的偏差。未经可靠审核的类别只在顶部汇总一行。', '']
-    lines += _group_deviation_lines(root, cycle, group)
+    lines += ['## 已观察到的偏差', '']
+    lines += _group_deviation_lines(root, group)
     lines.append('')
     # V2-34: the final review's narrative comparison is reported here; its per-shot items follow each shot.
     lines += ['### 终审发现', '']
     lines += _final_narrative_lines(cycle)
     lines.append('')
+    # V2-45: a shot with nothing to list gets no subsection; the clean shots are summed up in one line at the end.
+    clean = []
     for number in numbers:
+        if _shot_is_clean(root, cycle, number, picks[number]):
+            clean.append(number)
+            continue
         lines.append(f'### 第 {number} 镜')
-        lines += _audit_deviation_lines(root, picks[number], group)
+        lines += _audit_deviation_lines(root, picks[number])
         lines += _final_shot_lines(root, cycle, number, picks[number])
+        lines.append('')
+    if clean:
+        lines.append(f"- 第 {'、'.join(str(n) for n in clean)} 镜：通过筛选，没有观察到偏差。")
         lines.append('')
     from storycg.display import flat
     # V2-36: all six blind items in this order; an item that is missing or empty is skipped.
