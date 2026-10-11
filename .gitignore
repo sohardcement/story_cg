@@ -13,3 +13,7 @@ models/detect/*.download
 
 # V2-10/V2-11: scratch job dirs created by `storycg compile`
 compile/
+
+# D81: runtime output; files already tracked stay tracked. Anchored so nested jobs/ in reports/assets or tests/fixtures are unaffected.
+/jobs/
+/logs/
