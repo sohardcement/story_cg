@@ -18,7 +18,6 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from storycg.config import character_lora_matching_enabled
 from storycg.story_rules import StoryRuleViolation
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -49,13 +48,10 @@ def load_vocab(config=None):
 
 
 def vocab_tier(tier, config=None):
-    """The tier whose grade column is read (V2-20, TASK-v2 §10.4).
+    """The tier whose grade column is read (V2-20, TASK-v2 §10.4; V2-43a: the L1 route is removed).
 
-    Character LoRA matching on: the tier is used as before. Off (the default): no L1 column
-    is read, and an unknown tier reads the L2 column as well.
+    Only the L2 column is read, whatever the identity says.
     """
-    if character_lora_matching_enabled(config):
-        return tier
     return "L2"
 
 
@@ -196,11 +192,7 @@ def prompt_section(tier, config=None, vocab=None):
     header = (" Shot vocabulary for this character tier from the capability probe "
               "(a shot matches an entry when framing, camera_angle and the pose tag all agree; "
               "the expression may differ).")
-    if not character_lora_matching_enabled(config):
-        header += " Character LoRA is off: the L2 column applies to every tier."
-    elif tier not in ("L1", "L2"):
-        header += (" No probe data for this tier; the conservative L1/L2 grade applies, "
-                   "so do not plan around tier-specific rescues.")
+    header += " Character LoRA is off: the L2 column applies to every tier."
     stable = [f"{_combo(item)}" for item, (grade, _) in resolved if grade == "stable"]
     sometimes = [f"{_combo(item)}" for item, (grade, _) in resolved if grade == "sometimes"]
     unusable = []

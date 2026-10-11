@@ -67,12 +67,5 @@ def build_workflow(config: dict, positive_tags: str, framing: str, seed: int, fi
         else:
             # V2-28: img2img and qwen_edit served only the removed Qwen layout and repairs.
             raise ValueError("unknown reference mechanism")
-    if config.get("character_lora"):
-        from storycg.tiers import add_character_lora
-        lora = config["character_lora"]
-        workflow = add_character_lora(workflow, lora, model_ref, clip_ref)
-        triggers = ", ".join(lora.get("trigger_words", []))
-        if triggers:
-            workflow["4"]["inputs"]["text"] += ", " + triggers
     return workflow
 

@@ -216,7 +216,6 @@
       "wide_shot"
     ]
   },
-  "character_lora_matching": false,
   "candidates_per_shot": 3,
   "pairwise_pick": true,
   "style_file": "style.json",
@@ -445,10 +444,6 @@
       "cache_path": "cache/tag_groups/posture.json"
     },
     "derivation": "Wiki bullet descendants of configured roots; exclude tags with any occurrence outside these roots."
-  },
-  "tier_cache": {
-    "path": "cache/identity_tiers.json",
-    "identity_policy": "Model identity comes from the ComfyUI inventory (GET /experiment/models/<folder>): the exact file name plus the size that request reports. A failed request, an entry the inventory does not list, or a missing size disables caching for that run; local bytes, mtime and training hashes are never substituted."
   },
   "wai_list": {
     "enabled": true,
