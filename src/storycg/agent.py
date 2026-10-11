@@ -164,8 +164,6 @@ def generate(root, config):
     if state.get('status')=='needs_user':
         question(root,state.get('reason','identity_unsupported'),state['question'])
         return
-    if state.get('status', '').startswith('tier_pending'):
-        raise ResourceUnavailable('身份控制所需资源或层级实现不可用：'+state['status'])
     if (root/'manifest.json').exists():
         deliver(root)
     complete = (root/'contact_sheet.jpg').exists()
@@ -173,37 +171,20 @@ def generate(root, config):
 
 
 
-def _ensure_tier_before_planning(root, config, identity):
-    """Determine the identity tier before planning (v2: shot vocab needs it).
+def _ensure_identity_before_planning(root, config, identity):
+    """Check the locked identity against the WAI list before planning (V2-38; V2-43b: no tier, no ComfyUI).
 
-    Planning grades every shot against the shot vocabulary by tier, so the tier must be final before the
-    storyboard call. V2-38: a character outside the WAI list stops here with needs_user, before any probe or
-    prompt. An already-determined L1/L2 tier is reused on resume without opening clients.
+    Planning grades every shot against the shot vocabulary, so the identity must be final before the storyboard
+    call. A character outside the WAI list stops here with needs_user, before any probe or prompt.
     """
-    # V2-38: the WAI list gate also holds for a tier stored by an earlier run (a resumed job, or an old L2 record).
-    from storycg import wai_list
-    from storycg.tier_gate import refuse_outside_wai_list
-    if identity.get('status') == 'locked' and identity.get('character_tag') and not wai_list.tier_row(
-            identity['character_tag'], wai_list.settings_from(config)):
-        refused = refuse_outside_wai_list(root, identity, config)
-        question(root, refused['reason'], refused['question'])
-        return None
-    if identity.get('identity_tier') in ('L1', 'L2'):
-        return identity
+    from storycg.tier_gate import ensure_wai_identity
     if identity.get('status') == 'needs_user':
         question(root, identity['reason'], identity['question'])
         return None
-    from storycg.tier_gate import ensure_identity_tier
-    client = ComfyClient(config['comfyui_url'], config['http_timeout_seconds'])
-    try:
-        identity = ensure_identity_tier(root, identity, config, client)
-    finally:
-        client.close()
+    identity = ensure_wai_identity(root, identity, config)
     if identity.get('status') == 'needs_user':
         question(root, identity.get('reason', 'identity_unsupported'), identity['question'])
         return None
-    if identity.get('identity_tier') not in ('L1', 'L2'):
-        raise ResourceUnavailable('身份控制所需资源或层级实现不可用：' + str(identity.get('identity_tier')))
     return identity
 
 def _plan_from_beats(root, config):
@@ -257,7 +238,7 @@ def make_portrait(root, config, *, redo=False):
         question(root, state.get('reason', 'identity_unsupported'), state['question'])
         return state
     if state.get('status') != 'portrait_ready':
-        raise ResourceUnavailable('身份控制所需资源或层级实现不可用：' + str(state.get('status')))
+        raise ResourceUnavailable('身份控制所需资源不可用：' + str(state.get('status')))
     return state
 
 
@@ -325,7 +306,7 @@ def execute(root):
             question(root, 'identity_ambiguous', '角色身份无法确定，请选择候选或提供作品名／角色 tag。', identity.get('candidates', []))
             return
         update(root, phase='determining_tier')
-        identity = _ensure_tier_before_planning(root, config, identity)
+        identity = _ensure_identity_before_planning(root, config, identity)
         if identity is None:
             return
         update(root, phase='planning')
@@ -489,8 +470,7 @@ def status(root):
     if phase == 'identity_confirmed':
         # V2-34: after resolve the status names the locked character and the next step, not the old question.
         identity = read(root, 'identity.json')
-        result['locked_identity'] = {'character_tag': identity.get('character_tag'), 'work_tag': identity.get('work_tag'),
-                                     'identity_tier': identity.get('identity_tier')}
+        result['locked_identity'] = {'character_tag': identity.get('character_tag'), 'work_tag': identity.get('work_tag')}
         result['next_step'] = (f"身份已锁定为 {identity.get('character_tag')}（作品 {identity.get('work_tag')}）："
                                '运行 resume 继续定档与出图。')
     return result
@@ -509,14 +489,13 @@ def _summary_for_status(root, record, phase):
 
 
 def _confirmation(root):
-    """V2-24: what the user confirms at awaiting_approval: tier, portrait, candidates per shot.
+    """V2-24: what the user confirms at awaiting_approval: portrait, candidates per shot.
     V2-32: also the storyboard's story_note, the compile's automatic rewrites and the raw portrait review."""
     from storycg.config import candidates_per_shot
     from storycg.display import compile_rewrites, portrait_review
     portrait = read(root, 'portrait.json')
     config = read(root, 'job.json').get('generation_config', {})
-    return {'identity_tier': read(root, 'identity.json').get('identity_tier'),
-            'portrait_status': portrait.get('raw_status', portrait.get('status')),
+    return {'portrait_status': portrait.get('raw_status', portrait.get('status')),
             'portrait_image': str(root/portrait['image']['path']) if portrait.get('image') else None,
             'portrait_face': str(root/portrait['face']['path']) if portrait.get('face') else None,
             'portrait_attempts': len(read(root, 'portrait_attempts.json', []) or []),
@@ -611,6 +590,9 @@ def beats_cli(argv):
                 print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
                 return 1
             info = character_guide(identity, config)
+            if info['unsupported']:
+                print(info['unsupported'])
+                return 2
         print(beats_guide(args.shots, info))
         return 0
     config = load_config(args.config)
@@ -622,7 +604,7 @@ def beats_cli(argv):
         if identity.get('status') != 'locked':
             print(json.dumps({'status': 'identity_not_locked', 'identity': identity}, ensure_ascii=False, indent=2))
             return 2
-        identity = _ensure_tier_before_planning(root, config, identity)
+        identity = _ensure_identity_before_planning(root, config, identity)
     except RESOURCE_ERRORS as exc:
         # V2-33: a Danbooru 500 or a lost connection is a needs_user answer, as in make, not a traceback.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
@@ -643,7 +625,7 @@ def beats_cli(argv):
         # The tag existence checks call Danbooru during compile; the same failure as above.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
-    print(json.dumps({'status': 'valid', 'identity_tier': identity.get('identity_tier'),
+    print(json.dumps({'status': 'valid',
                       'storyboard': board, 'job_dir': str(root), 'character_guide': guide},
                      ensure_ascii=False, indent=2))
     return 0
@@ -724,7 +706,8 @@ def main(argv):
                         raise ValueError('cannot change identity inputs after story submission')
                     job=read(root,'job.json');opts=job.get('generation_options',{})
                     old=read(root,'identity.json')
-                    if old.get('identity_tier') in ('L1','L2') and (
+                    from storycg.tier_gate import wai_locked
+                    if wai_locked(old) and (
                             (args.tag and args.tag!=old.get('character_tag')) or
                             (args.work and args.work!=old.get('work_tag'))):
                         raise ValueError('identity already verified; create a new job for different identity inputs')

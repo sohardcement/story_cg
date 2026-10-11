@@ -7,11 +7,11 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 
 - 角色范围（V2-38）：只支持 WAI 角色清单（`data/wai/waiIllustriousSDXL_v160_characters.csv`）里的角色。角色不在清单里时，`compile`、`make` 会返回 `needs_user`，`reason` 为 `character_not_in_wai_list`，`question` 已写明原因和清单路径；原样转告用户，建议换一个清单里的角色，不要重试或换 seed。`beats-guide --character` 对清单外角色只会在输出里写“不支持”。
 - 标准流程（beats 方式）：
-  1. 运行 `scripts/storycg beats-guide --character '角色名' --shots 4`，读完输出的 schema、写作规则、该角色的标准服装 tag 和本层级的词汇表（含撞键说明）。剧情没换衣服时服装 tag 原样用标准服装；换衣服的镜头写新衣服的 tag；
+  1. 运行 `scripts/storycg beats-guide --character '角色名' --shots 4`，读完输出的 schema、写作规则、该角色的标准服装 tag 和词汇表（含撞键说明）。剧情没换衣服时服装 tag 原样用标准服装；换衣服的镜头写新衣服的 tag；
   2. 按说明写好 beats 文件（一个 JSON 对象，保存为文件）；
-  3. 运行 `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4` 自查。它只解析身份、判定层级、编译分镜，不出镜头图。`invalid` 时按 `errors` 里的镜号和字段修改 beats 文件，再编译，直到 `status` 为 `valid`；
+  3. 运行 `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4` 自查。它只解析身份、编译分镜，不出镜头图。`invalid` 时按 `errors` 里的镜号和字段修改 beats 文件，再编译，直到 `status` 为 `valid`；
   4. 运行 `scripts/storycg make --character '角色名' --story '剧情' --beats '<beats 文件>' --shots 4`。beats 方式默认在分镜编好、定妆图生成好以后停在 `awaiting_approval`，不出镜头图。轮询 `scripts/storycg status '<job_dir>'`（约 15–30 秒一次）；
-  5. 到 `awaiting_approval` 时，把 `storyboard`（每镜摘要）和 `confirmation`（层级、定妆图 `portrait_image`／`portrait_face`、每镜候选张数）展示给用户；摘要里有每镜天气和场景变化，`confirmation` 里有 `story_note`（分镜改写提醒）、`compile_rewrites`（编译时的自动改写）、`portrait_review`（定妆图原始审核结论；未通过时列出未通过的项和原因，审核只记录、不拦截），这些要一并转述给用户，等用户确认；
+  5. 到 `awaiting_approval` 时，把 `storyboard`（每镜摘要）和 `confirmation`（定妆图 `portrait_image`／`portrait_face`、每镜候选张数）展示给用户；摘要里有每镜天气和场景变化，`confirmation` 里有 `story_note`（分镜改写提醒）、`compile_rewrites`（编译时的自动改写）、`portrait_review`（定妆图原始审核结论；未通过时列出未通过的项和原因，审核只记录、不拦截），这些要一并转述给用户，等用户确认；
   6. 用户确认：`scripts/storycg approve '<job_dir>'`，之后轮询 status 直到 `completed`。用户要改分镜：写新的 beats 文件，运行 `scripts/storycg approve '<job_dir>' --beats '<新 beats 文件>'`，仍停在 `awaiting_approval`，展示新的摘要（定妆图不重出）。用户不满意定妆图：`scripts/storycg approve '<job_dir>' --redo-portrait`，出一张新定妆图，仍停在 `awaiting_approval`，再次展示；
   7. 不想确认、一路跑到交付：`make` 加 `--no-confirm`；
   8. 交付后，把拼图和候选总图（`candidate_sheet.jpg`）给用户看，读取 `result.md`；用户要换某镜的图，运行 `scripts/storycg pick '<job_dir>' --shot N --candidate K`，只换选择、重建拼图和 `result.md`，不出图、不重审。K 可以是被筛掉的候选，此时结果会注明；换完以后把新拼图再给用户。

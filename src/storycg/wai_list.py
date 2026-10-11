@@ -3,7 +3,7 @@
 Two uses, both switchable by config `wai_list.enabled` (default on):
 - name lookup: a Chinese name that hits exactly one row of the list is resolved to the list's English tag,
   then to the real Danbooru character tag by an autocomplete query (see identity.resolve_identity);
-- tier: a character whose tag is in the list is L2 without a probe image (tier_gate.ensure_identity_tier).
+- identity: a character whose tag is in the list is identified from its tag alone, with no probe image (tier_gate.ensure_wai_identity).
 
 The list is written as `name（work）,tag` with spaces in the tag and no colons; it is not a Danbooru tag,
 so every use goes through `normalize` and a Danbooru match. The file's sha256 is checked against the

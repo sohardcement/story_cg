@@ -77,7 +77,7 @@ def _append_note(board, sentence):
     board['story_note'] = (note + ' ' if note else '') + sentence
 
 
-def rewrite_board(board, tier, config):
+def rewrite_board(board, config):
     """Deterministic rewrites before validation (V2-11, TASK-v2 §9). Mutates and returns board.
 
     Returns (board, rewrites). Each rewrite is logged as "第 N 镜：原值 → 新值，原因" and
@@ -87,10 +87,9 @@ def rewrite_board(board, tier, config):
     and the substitute-without-id error are validation errors, see _collect_errors.
     """
     from storycg.prompt_rules import indoor_precipitation
-    from storycg.shot_vocab import classify_shots, load_vocab, replacement_for, resolve_grade, vocab_tier
+    from storycg.shot_vocab import classify_shots, grade_of, load_vocab, replacement_for
     from storycg.tags import canonical_tag
 
-    tier = vocab_tier(tier, config)
     vocab = load_vocab(config)
     items = vocab['items']
     by_id = {item['id']: item for item in items}
@@ -115,7 +114,7 @@ def rewrite_board(board, tier, config):
         """Stable entries for this pose; the first shot may only use wide. Order: framing, angle, id."""
         found = [item for item in items if _pose_key(pose) in
                  [_pose_key(a) for a in item['action_tags']]
-                 and resolve_grade(item, tier)[0] == 'stable']
+                 and grade_of(item) == 'stable']
         if shot_index == 0:
             found = [item for item in found if item['framing'] == 'wide']
         return sorted(found, key=lambda item: (item['framing'] != shot['framing'],
@@ -135,16 +134,16 @@ def rewrite_board(board, tier, config):
         best = candidates[0]
         _set_combo(shot, best['framing'], best['camera_angle'], shot['pose'])
         log(entry['number'], 'off_table_stable', 'shot.framing, shot.camera_angle',
-            before, combo(shot), '表外组合改用本层级的稳定组合（同一动作）')
+            before, combo(shot), '表外组合改用稳定组合（同一动作）')
 
     # Rule 2: an unusable combo with a registered substitute id takes that entry's combo.
     for index, entry in enumerate(shots):
         shot = entry['shot']
         hits = _hits(items, shot)
-        unusable = [item for item in hits if resolve_grade(item, tier)[0] == 'unusable']
+        unusable = [item for item in hits if grade_of(item) == 'unusable']
         if not unusable:
             continue
-        row = replacement_for(unusable[0], tier)
+        row = replacement_for(unusable[0])
         if not row or row.get('substitute_id') is None or row['substitute_id'] not in by_id:
             continue  # rewrite-only or unknown substitute: the validation error reports the text
         substitute = by_id[row['substitute_id']]
@@ -159,7 +158,7 @@ def rewrite_board(board, tier, config):
 
     # Rule 3: more than one sometimes shot, convert from the back (never the first shot).
     def sometimes_shots():
-        return [c for c in classify_shots(board, tier, vocab=vocab) if c['grade'] == 'sometimes']
+        return [c for c in classify_shots(board, vocab=vocab) if c['grade'] == 'sometimes']
 
     if len(sometimes_shots()) > 1:
         for index in range(len(shots) - 1, 0, -1):
@@ -167,7 +166,7 @@ def rewrite_board(board, tier, config):
                 break
             entry = shots[index]
             shot = entry['shot']
-            hits = [c for c in classify_shots({'shots': [entry]}, tier, vocab=vocab)[:1]
+            hits = [c for c in classify_shots({'shots': [entry]}, vocab=vocab)[:1]
                     if c['grade'] == 'sometimes' and not c['off_table']]
             if not hits:
                 continue
@@ -208,14 +207,13 @@ def _collect_errors(board, shot_count, identity, config):
     from storycg.planning import appearance_forbidden, body_target_violation, production_schema
     from storycg.prompt_rules import companion_conflicts
     from storycg.shot_contract import EXPRESSION_TAGS, moment
-    from storycg.shot_vocab import classify_shots, load_vocab, substitute_text, vocab_tier
+    from storycg.shot_vocab import classify_shots, load_vocab, substitute_text
     from storycg.story_rules import StoryRuleViolation, validate_story_rules
     from storycg.tags import canonical_tag
     from storycg.posture_tags import validate_posture_blocks
 
     errors = []
     shots = board.get('shots', [])
-    tier = vocab_tier((identity or {}).get('identity_tier'), config)
 
     if len(shots) != shot_count:
         _add(errors, None, 'shots', f'镜数为 {len(shots)}，工单要求 {shot_count}', f'增删镜头，使镜数为 {shot_count}')
@@ -323,13 +321,13 @@ def _collect_errors(board, shot_count, identity, config):
 
     vocab = load_vocab(config)
     by_id = {item['id']: item for item in vocab['items']}
-    classified = classify_shots(board, tier, vocab=vocab)
+    classified = classify_shots(board, vocab=vocab)
     for item in classified:
         if item['grade'] == 'unusable':
             entry = by_id[item['vocab_ids'][0]]
             _add(errors, item['shot'], 'shot.pose, shot.framing, shot.camera_angle',
-                 f"动作 {item['action']} 在 {item['grade_basis']} 为不可用",
-                 f"改用替代组合：{substitute_text(entry, tier)}；或改用稳定组合")
+                 f"动作 {item['action']} 为不可用",
+                 f"改用替代组合：{substitute_text(entry)}；或改用稳定组合")
     sometimes = [item for item in classified if item['grade'] == 'sometimes']
     if len(sometimes) > 1:
         for item in sometimes:
@@ -359,37 +357,14 @@ def collision_notes(config=None):
     return notes
 
 
-def wai_list_tier(identity, config=None):
-    """V2-34: the tier the tier gate gives without a cache entry (V2-25): with character LoRA matching off, a
-    character on the WAI list is L2 from its tag alone. Returns (tier, known, source); reads the list only."""
-    from storycg import wai_list
-    tag = identity.get('character_tag')
-    if not tag:
-        return None, False, None
-    if wai_list.tier_row(tag, wai_list.settings_from(config)):
-        return 'L2', True, 'WAI 清单'
-    return None, False, None
-
-
 def character_guide(identity, config=None):
     """Standard outfit tags and the vocabulary section for this character (V2-12).
 
-    The tier comes from the identity once determined, otherwise from the tier cache only.
-    Unknown tier: the conservative L1/L2 vocabulary is printed and the guide says so.
+    V2-43b: a character outside the WAI list gets only the unsupported line (beats-guide prints that line
+    alone and exits 2); the tier lines are gone, the vocabulary has one column.
     """
-    from storycg.shot_vocab import prompt_section
-    # V2-34 r1: WAI list first, then the identity already determined. V2-43a: the tier cache is removed.
-    tier, known, source = wai_list_tier(identity, config)
-    if not known:
-        determined = identity.get('identity_tier')
-        if determined in ('L1', 'L2'):
-            tier, known, source = determined, True, '已判定'
-        else:
-            tier, known = None, False
-    column = 'L2'
-    note = (f'层级 {tier}（{source}）' if known else '层级未知')
-    note += '；取档按 L2 一列（角色 LoRA 关闭，不读 L1 一列）'
     from storycg import wai_list
+    from storycg.shot_vocab import prompt_section
     tag = identity.get('character_tag')
     unsupported = None
     if tag and not wai_list.tier_row(tag, wai_list.settings_from(config)):
@@ -400,11 +375,7 @@ def character_guide(identity, config=None):
             'unsupported': unsupported,
             'outfit_tags': [item['tag'] for item in identity.get('default_outfit_tags', [])],
             'outfit_rule': OUTFIT_RULE,
-            'tier': tier if known else None,
-            'tier_known': known,
-            'vocab_column': column,
-            'tier_note': note,
-            'vocab': prompt_section(tier if known else None, config),
+            'vocab': prompt_section(config),
             'collision_notes': collision_notes(config)}
 
 
@@ -443,14 +414,13 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
 
 def _character_section(info):
     if not info:
-        return ['## 4. 角色（未指定 --character）', '未指定角色：标准服装与本层级词汇表未列出。'
+        return ['## 4. 角色（未指定 --character）', '未指定角色：标准服装与词汇表未列出。'
                 '需要时运行 beats-guide --character 角色名。', '']
     lines = ['## 4. 角色：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下信息仅供参考）')]
     if info.get('unsupported'):
         lines.append(info['unsupported'])
     lines += ['标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）'),
              info['outfit_rule'],
-             info['tier_note'],
              info['vocab'].strip(),
              '撞键说明（同一景别、角度、动作有多个条目时）：']
     lines += ['- ' + note for note in info['collision_notes']] or ['- （无）']
@@ -484,7 +454,7 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             # Same reuse rule as plan_story: an existing storyboard is re-validated, not recompiled.
             board = json.loads(plan_path.read_text(encoding='utf-8'))
             validate_storyboard(board, shot_count, identity, config)
-            validate_shot_vocab(board, identity.get('identity_tier'), config)
+            validate_shot_vocab(board, config)
             validate_story_rules(board, allow_obscured=allow_obscured)
             record.update(status='reused', note='storyboard.json already exists and was re-validated')
             save_json_atomic(log_path, log)
@@ -499,7 +469,7 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
                 _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
             raise BeatsError(errors)
         board = materialize(parsed)
-        board, rewrites = rewrite_board(board, identity.get('identity_tier'), config)
+        board, rewrites = rewrite_board(board, config)
         record['rewrites'] = rewrites
         errors = _collect_errors(board, shot_count, identity, config)
         if errors:
@@ -526,7 +496,7 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
         record['outfit_changes'] = [{'shot': entry['number'], 'derived': entry['outfit'].get('change_at_shot')}
                                     for entry in board['shots']]
         board = validate_storyboard(board, shot_count, identity, config)
-        record['shot_vocab'] = validate_shot_vocab(board, identity.get('identity_tier'), config)
+        record['shot_vocab'] = validate_shot_vocab(board, config)
         validate_story_rules(board, allow_obscured=allow_obscured)
     except BeatsError as exc:
         record.update(status='invalid', errors=exc.errors)

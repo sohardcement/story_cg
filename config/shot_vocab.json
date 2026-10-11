@@ -12,10 +12,6 @@
   "counts_note": "total 与证据图数量一致（runs.jsonl + retest_runs.jsonl）"
  },
  "tiers": {
-  "L1": {
-   "probe_character": "月城柳",
-   "identity_file": "jobs/p9_05_office/identity.json"
-  },
   "L2": {
    "probe_character": "芙莉莲",
    "identity_file": "jobs/p9_07_ownership/identity.json"
@@ -26,7 +22,6 @@
   "sometimes",
   "unusable"
  ],
- "unknown_tier_rule": "L3/L4/无数据取 L1 与 L2 中较保守的一档（稳定 > 有时 > 不可用，取后者）",
  "off_table_rule": "动作 tag 一致但景别或视角不同、或动作不在表内：按“有时”处理（D32），与表内“有时”共享每组 1 镜名额",
  "items": [
   {
@@ -48,85 +43,36 @@
     "expressionless"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "sometimes",
-     "usable": 3,
-     "total": 6
+   "grade": "sometimes",
+   "usable": 3,
+   "total": 4,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "01_L2_s1",
+     "image": "probe/images/01_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 2175346734
     },
-    "L2": {
-     "grade": "sometimes",
-     "usable": 3,
-     "total": 4
+    {
+     "run_key": "01_L2_s2",
+     "image": "probe/images/01_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 323750779
+    },
+    {
+     "run_key": "01_L2_s3",
+     "image": "probe/images/01_芙莉莲_s3.png",
+     "order": "CAP-03",
+     "seed": 4267057907
+    },
+    {
+     "run_key": "01_L2_s4",
+     "image": "probe/images/01_芙莉莲_s4.png",
+     "order": "CAP-03",
+     "seed": 1726070474
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "01_L1_s1",
-      "image": "probe/images/01_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 2486996726
-     },
-     {
-      "run_key": "01_L1_s2",
-      "image": "probe/images/01_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 1041775343
-     },
-     {
-      "run_key": "01_L1_s3",
-      "image": "probe/images/01_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 2196785422
-     },
-     {
-      "run_key": "01_L1_s4",
-      "image": "probe/images/01_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 1707285890
-     },
-     {
-      "run_key": "01_L1_r1",
-      "image": "probe/images/01_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 2486996726
-     },
-     {
-      "run_key": "01_L1_r2",
-      "image": "probe/images/01_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 1041775343
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "01_L2_s1",
-      "image": "probe/images/01_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 2175346734
-     },
-     {
-      "run_key": "01_L2_s2",
-      "image": "probe/images/01_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 323750779
-     },
-     {
-      "run_key": "01_L2_s3",
-      "image": "probe/images/01_芙莉莲_s3.png",
-      "order": "CAP-03",
-      "seed": 4267057907
-     },
-     {
-      "run_key": "01_L2_s4",
-      "image": "probe/images/01_芙莉莲_s4.png",
-      "order": "CAP-03",
-      "seed": 1726070474
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 2,
@@ -149,78 +95,24 @@
     "expressionless"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "unusable",
-     "usable": 2,
-     "total": 6
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "02_L2_s1",
+     "image": "probe/images/02_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 3173983353
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "02_L2_s2",
+     "image": "probe/images/02_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 1873579834
     }
-   },
-   "replacements": {
-    "L1": {
-     "substitute_id": 18,
-     "note": "移动类在 L1 没有稳定项，退成站立；交付说明写“行走改为站立”"
-    }
-   },
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "02_L1_s1",
-      "image": "probe/images/02_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 2387087358
-     },
-     {
-      "run_key": "02_L1_s2",
-      "image": "probe/images/02_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 1689918833
-     },
-     {
-      "run_key": "02_L1_s3",
-      "image": "probe/images/02_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 2171885006
-     },
-     {
-      "run_key": "02_L1_s4",
-      "image": "probe/images/02_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 3426709422
-     },
-     {
-      "run_key": "02_L1_r1",
-      "image": "probe/images/02_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 2387087358
-     },
-     {
-      "run_key": "02_L1_r2",
-      "image": "probe/images/02_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 1689918833
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "02_L2_s1",
-      "image": "probe/images/02_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 3173983353
-     },
-     {
-      "run_key": "02_L2_s2",
-      "image": "probe/images/02_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 1873579834
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 3,
@@ -241,78 +133,24 @@
     "worried"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "unusable",
-     "usable": 2,
-     "total": 6
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "03_L2_s1",
+     "image": "probe/images/03_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 3442178641
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "03_L2_s2",
+     "image": "probe/images/03_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 3156738867
     }
-   },
-   "replacements": {
-    "L1": {
-     "substitute_id": 18,
-     "note": "奔跑改为站立，靠表情表现着急"
-    }
-   },
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "03_L1_s1",
-      "image": "probe/images/03_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 3948542918
-     },
-     {
-      "run_key": "03_L1_s2",
-      "image": "probe/images/03_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 1634065240
-     },
-     {
-      "run_key": "03_L1_s3",
-      "image": "probe/images/03_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 1950177229
-     },
-     {
-      "run_key": "03_L1_s4",
-      "image": "probe/images/03_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 3048878448
-     },
-     {
-      "run_key": "03_L1_r1",
-      "image": "probe/images/03_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 3948542918
-     },
-     {
-      "run_key": "03_L1_r2",
-      "image": "probe/images/03_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 1634065240
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "03_L2_s1",
-      "image": "probe/images/03_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 3442178641
-     },
-     {
-      "run_key": "03_L2_s2",
-      "image": "probe/images/03_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 3156738867
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 4,
@@ -331,61 +169,24 @@
     "smile"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "sometimes",
-     "usable": 3,
-     "total": 4
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "04_L2_s1",
+     "image": "probe/images/04_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 3781936326
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "04_L2_s2",
+     "image": "probe/images/04_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 4261319870
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "04_L1_s1",
-      "image": "probe/images/04_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 1747335082
-     },
-     {
-      "run_key": "04_L1_s2",
-      "image": "probe/images/04_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 348600067
-     },
-     {
-      "run_key": "04_L1_s3",
-      "image": "probe/images/04_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 4037096584
-     },
-     {
-      "run_key": "04_L1_s4",
-      "image": "probe/images/04_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 1504295969
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "04_L2_s1",
-      "image": "probe/images/04_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 3781936326
-     },
-     {
-      "run_key": "04_L2_s2",
-      "image": "probe/images/04_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 4261319870
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 5,
@@ -406,73 +207,24 @@
     "sad"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "sometimes",
-     "usable": 4,
-     "total": 6
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "05_L2_s1",
+     "image": "probe/images/05_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 544942177
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "05_L2_s2",
+     "image": "probe/images/05_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 1411640640
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "05_L1_s1",
-      "image": "probe/images/05_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 262689418
-     },
-     {
-      "run_key": "05_L1_s2",
-      "image": "probe/images/05_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 360479082
-     },
-     {
-      "run_key": "05_L1_s3",
-      "image": "probe/images/05_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 3694071695
-     },
-     {
-      "run_key": "05_L1_s4",
-      "image": "probe/images/05_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 3277255008
-     },
-     {
-      "run_key": "05_L1_r1",
-      "image": "probe/images/05_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 262689418
-     },
-     {
-      "run_key": "05_L1_r2",
-      "image": "probe/images/05_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 360479082
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "05_L2_s1",
-      "image": "probe/images/05_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 544942177
-     },
-     {
-      "run_key": "05_L2_s2",
-      "image": "probe/images/05_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 1411640640
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 6,
@@ -493,94 +245,39 @@
     "sleeping"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "unusable",
-     "usable": 1,
-     "total": 6
-    },
-    "L2": {
-     "grade": "unusable",
-     "usable": 0,
-     "total": 4
-    }
+   "grade": "unusable",
+   "usable": 0,
+   "total": 4,
+   "replacement": {
+    "substitute_id": 8,
+    "note": "场景要能躺（床、沙发）；场景不允许躺就不替代，按“无法可靠表现”处理"
    },
-   "replacements": {
-    "L1": {
-     "substitute_id": 8,
-     "note": "场景要能躺（床、沙发）；场景不允许躺就不替代，按“无法可靠表现”处理"
+   "evidence": [
+    {
+     "run_key": "06_L2_s1",
+     "image": "probe/images/06_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 240001466
     },
-    "L2": {
-     "substitute_id": 8,
-     "note": "场景要能躺（床、沙发）；场景不允许躺就不替代，按“无法可靠表现”处理"
+    {
+     "run_key": "06_L2_s2",
+     "image": "probe/images/06_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 3333031000
+    },
+    {
+     "run_key": "06_L2_r1",
+     "image": "probe/images/06_芙莉莲_r1.png",
+     "order": "CAP-04",
+     "seed": 240001466
+    },
+    {
+     "run_key": "06_L2_r2",
+     "image": "probe/images/06_芙莉莲_r2.png",
+     "order": "CAP-04",
+     "seed": 3333031000
     }
-   },
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "06_L1_s1",
-      "image": "probe/images/06_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 3154249835
-     },
-     {
-      "run_key": "06_L1_s2",
-      "image": "probe/images/06_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 3098694889
-     },
-     {
-      "run_key": "06_L1_s3",
-      "image": "probe/images/06_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 700115179
-     },
-     {
-      "run_key": "06_L1_s4",
-      "image": "probe/images/06_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 1614913679
-     },
-     {
-      "run_key": "06_L1_r1",
-      "image": "probe/images/06_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 3154249835
-     },
-     {
-      "run_key": "06_L1_r2",
-      "image": "probe/images/06_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 3098694889
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "06_L2_s1",
-      "image": "probe/images/06_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 240001466
-     },
-     {
-      "run_key": "06_L2_s2",
-      "image": "probe/images/06_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 3333031000
-     },
-     {
-      "run_key": "06_L2_r1",
-      "image": "probe/images/06_芙莉莲_r1.png",
-      "order": "CAP-04",
-      "seed": 240001466
-     },
-     {
-      "run_key": "06_L2_r2",
-      "image": "probe/images/06_芙莉莲_r2.png",
-      "order": "CAP-04",
-      "seed": 3333031000
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 7,
@@ -599,49 +296,24 @@
     "surprised"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "07_L2_s1",
+     "image": "probe/images/07_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 1825588051
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "07_L2_s2",
+     "image": "probe/images/07_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 3931232928
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "07_L1_s1",
-      "image": "probe/images/07_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 4100939811
-     },
-     {
-      "run_key": "07_L1_s2",
-      "image": "probe/images/07_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 242329283
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "07_L2_s1",
-      "image": "probe/images/07_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 1825588051
-     },
-     {
-      "run_key": "07_L2_s2",
-      "image": "probe/images/07_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 3931232928
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 8,
@@ -662,49 +334,24 @@
     "closed_eyes"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "08_L2_s1",
+     "image": "probe/images/08_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 282990637
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "08_L2_s2",
+     "image": "probe/images/08_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 2133082324
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "08_L1_s1",
-      "image": "probe/images/08_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 3869883291
-     },
-     {
-      "run_key": "08_L1_s2",
-      "image": "probe/images/08_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 2941981428
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "08_L2_s1",
-      "image": "probe/images/08_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 282990637
-     },
-     {
-      "run_key": "08_L2_s2",
-      "image": "probe/images/08_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 2133082324
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 9,
@@ -725,49 +372,24 @@
     "confused"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "09_L2_s1",
+     "image": "probe/images/09_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 1531168419
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "09_L2_s2",
+     "image": "probe/images/09_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 1535437037
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "09_L1_s1",
-      "image": "probe/images/09_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 1574610874
-     },
-     {
-      "run_key": "09_L1_s2",
-      "image": "probe/images/09_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 942796860
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "09_L2_s1",
-      "image": "probe/images/09_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 1531168419
-     },
-     {
-      "run_key": "09_L2_s2",
-      "image": "probe/images/09_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 1535437037
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 10,
@@ -786,49 +408,24 @@
     "worried"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "10_L2_s1",
+     "image": "probe/images/10_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 624111923
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "10_L2_s2",
+     "image": "probe/images/10_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 1531541754
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "10_L1_s1",
-      "image": "probe/images/10_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 3236301651
-     },
-     {
-      "run_key": "10_L1_s2",
-      "image": "probe/images/10_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 3304581657
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "10_L2_s1",
-      "image": "probe/images/10_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 624111923
-     },
-     {
-      "run_key": "10_L2_s2",
-      "image": "probe/images/10_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 1531541754
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 11,
@@ -849,49 +446,24 @@
    "other_shot_tags": [
     "mug"
    ],
-   "grades": {
-    "L1": {
-     "grade": "sometimes",
-     "usable": 1,
-     "total": 2
+   "grade": "sometimes",
+   "usable": 1,
+   "total": 2,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "11_L2_s1",
+     "image": "probe/images/11_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 2666558295
     },
-    "L2": {
-     "grade": "sometimes",
-     "usable": 1,
-     "total": 2
+    {
+     "run_key": "11_L2_s2",
+     "image": "probe/images/11_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 817802166
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "11_L1_s1",
-      "image": "probe/images/11_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 1046485153
-     },
-     {
-      "run_key": "11_L1_s2",
-      "image": "probe/images/11_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 1950264849
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "11_L2_s1",
-      "image": "probe/images/11_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 2666558295
-     },
-     {
-      "run_key": "11_L2_s2",
-      "image": "probe/images/11_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 817802166
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 12,
@@ -917,58 +489,27 @@
     "holding_cup",
     "right_hand"
    ],
-   "grades": {
-    "L1": {
-     "grade": "unusable",
-     "usable": null,
-     "total": null
-    },
-    "L2": {
-     "grade": "unusable",
-     "usable": null,
-     "total": null
-    }
+   "grade": "unusable",
+   "usable": null,
+   "total": null,
+   "replacement": {
+    "substitute_id": 11,
+    "note": "11 是“有时”，占用本组的“有时”名额"
    },
-   "replacements": {
-    "L1": {
-     "substitute_id": 11,
-     "note": "11 是“有时”，占用本组的“有时”名额"
+   "evidence": [
+    {
+     "run_key": "12_L2_s1",
+     "image": "probe/images/12_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 310527760
     },
-    "L2": {
-     "substitute_id": 11,
-     "note": "11 是“有时”，占用本组的“有时”名额"
+    {
+     "run_key": "12_L2_s2",
+     "image": "probe/images/12_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 995792380
     }
-   },
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "12_L1_s1",
-      "image": "probe/images/12_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 2796270207
-     },
-     {
-      "run_key": "12_L1_s2",
-      "image": "probe/images/12_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 658111834
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "12_L2_s1",
-      "image": "probe/images/12_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 310527760
-     },
-     {
-      "run_key": "12_L2_s2",
-      "image": "probe/images/12_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 995792380
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 13,
@@ -991,73 +532,48 @@
     "smartphone",
     "holding_phone"
    ],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "13_L2_s1",
+     "image": "probe/images/13_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 2972674097
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "13_L2_s2",
+     "image": "probe/images/13_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 1199104410
+    },
+    {
+     "run_key": "13_L2_s3",
+     "image": "probe/images/13_芙莉莲_s3.png",
+     "order": "CAP-03",
+     "seed": 3850754079
+    },
+    {
+     "run_key": "13_L2_s4",
+     "image": "probe/images/13_芙莉莲_s4.png",
+     "order": "CAP-03",
+     "seed": 3316301310
+    },
+    {
+     "run_key": "13_L2_r1",
+     "image": "probe/images/13_芙莉莲_r1.png",
+     "order": "CAP-04",
+     "seed": 2972674097
+    },
+    {
+     "run_key": "13_L2_r2",
+     "image": "probe/images/13_芙莉莲_r2.png",
+     "order": "CAP-04",
+     "seed": 1199104410
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "13_L1_s1",
-      "image": "probe/images/13_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 3751815253
-     },
-     {
-      "run_key": "13_L1_s2",
-      "image": "probe/images/13_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 3769835384
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "13_L2_s1",
-      "image": "probe/images/13_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 2972674097
-     },
-     {
-      "run_key": "13_L2_s2",
-      "image": "probe/images/13_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 1199104410
-     },
-     {
-      "run_key": "13_L2_s3",
-      "image": "probe/images/13_芙莉莲_s3.png",
-      "order": "CAP-03",
-      "seed": 3850754079
-     },
-     {
-      "run_key": "13_L2_s4",
-      "image": "probe/images/13_芙莉莲_s4.png",
-      "order": "CAP-03",
-      "seed": 3316301310
-     },
-     {
-      "run_key": "13_L2_r1",
-      "image": "probe/images/13_芙莉莲_r1.png",
-      "order": "CAP-04",
-      "seed": 2972674097
-     },
-     {
-      "run_key": "13_L2_r2",
-      "image": "probe/images/13_芙莉莲_r2.png",
-      "order": "CAP-04",
-      "seed": 1199104410
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 14,
@@ -1079,61 +595,36 @@
     "cat",
     "holding_animal"
    ],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "14_L2_s1",
+     "image": "probe/images/14_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 3738487103
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "14_L2_s2",
+     "image": "probe/images/14_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 879451851
+    },
+    {
+     "run_key": "14_L2_s3",
+     "image": "probe/images/14_芙莉莲_s3.png",
+     "order": "CAP-03",
+     "seed": 756609064
+    },
+    {
+     "run_key": "14_L2_s4",
+     "image": "probe/images/14_芙莉莲_s4.png",
+     "order": "CAP-03",
+     "seed": 3908269577
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "14_L1_s1",
-      "image": "probe/images/14_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 2466553496
-     },
-     {
-      "run_key": "14_L1_s2",
-      "image": "probe/images/14_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 4237978325
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "14_L2_s1",
-      "image": "probe/images/14_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 3738487103
-     },
-     {
-      "run_key": "14_L2_s2",
-      "image": "probe/images/14_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 879451851
-     },
-     {
-      "run_key": "14_L2_s3",
-      "image": "probe/images/14_芙莉莲_s3.png",
-      "order": "CAP-03",
-      "seed": 756609064
-     },
-     {
-      "run_key": "14_L2_s4",
-      "image": "probe/images/14_芙莉莲_s4.png",
-      "order": "CAP-03",
-      "seed": 3908269577
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 15,
@@ -1153,49 +644,24 @@
     "crying"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "15_L2_s1",
+     "image": "probe/images/15_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 991501296
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "15_L2_s2",
+     "image": "probe/images/15_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 1631005485
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "15_L1_s1",
-      "image": "probe/images/15_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 159868481
-     },
-     {
-      "run_key": "15_L1_s2",
-      "image": "probe/images/15_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 3806350225
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "15_L2_s1",
-      "image": "probe/images/15_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 991501296
-     },
-     {
-      "run_key": "15_L2_s2",
-      "image": "probe/images/15_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 1631005485
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 16,
@@ -1214,49 +680,24 @@
     "smug"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "16_L2_s1",
+     "image": "probe/images/16_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 2306568584
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "16_L2_s2",
+     "image": "probe/images/16_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 3336666352
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "16_L1_s1",
-      "image": "probe/images/16_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 877063868
-     },
-     {
-      "run_key": "16_L1_s2",
-      "image": "probe/images/16_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 293267909
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "16_L2_s1",
-      "image": "probe/images/16_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 2306568584
-     },
-     {
-      "run_key": "16_L2_s2",
-      "image": "probe/images/16_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 3336666352
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 17,
@@ -1276,84 +717,40 @@
     "angry"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "unusable",
-     "usable": null,
-     "total": null
-    },
-    "L2": {
-     "grade": "unusable",
-     "usable": null,
-     "total": null
-    }
+   "grade": "unusable",
+   "usable": null,
+   "total": null,
+   "replacement": {
+    "substitute_id": null,
+    "rewrite": "近景 upper_body，保留表情",
+    "note": "无替代 id；改写后按表外处理"
    },
-   "replacements": {
-    "L1": {
-     "substitute_id": null,
-     "rewrite": "近景 upper_body，保留表情",
-     "note": "无替代 id；改写后按表外处理"
+   "evidence": [
+    {
+     "run_key": "17_L2_s1",
+     "image": "probe/images/17_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 2502925501
     },
-    "L2": {
-     "substitute_id": null,
-     "rewrite": "近景 upper_body，保留表情",
-     "note": "无替代 id；改写后按表外处理"
+    {
+     "run_key": "17_L2_s2",
+     "image": "probe/images/17_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 2398531460
+    },
+    {
+     "run_key": "17_L2_r1",
+     "image": "probe/images/17_芙莉莲_r1.png",
+     "order": "CAP-04",
+     "seed": 2502925501
+    },
+    {
+     "run_key": "17_L2_r2",
+     "image": "probe/images/17_芙莉莲_r2.png",
+     "order": "CAP-04",
+     "seed": 2398531460
     }
-   },
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "17_L1_s1",
-      "image": "probe/images/17_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 584822560
-     },
-     {
-      "run_key": "17_L1_s2",
-      "image": "probe/images/17_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 1833542175
-     },
-     {
-      "run_key": "17_L1_r1",
-      "image": "probe/images/17_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 584822560
-     },
-     {
-      "run_key": "17_L1_r2",
-      "image": "probe/images/17_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 1833542175
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "17_L2_s1",
-      "image": "probe/images/17_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 2502925501
-     },
-     {
-      "run_key": "17_L2_s2",
-      "image": "probe/images/17_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 2398531460
-     },
-     {
-      "run_key": "17_L2_r1",
-      "image": "probe/images/17_芙莉莲_r1.png",
-      "order": "CAP-04",
-      "seed": 2502925501
-     },
-     {
-      "run_key": "17_L2_r2",
-      "image": "probe/images/17_芙莉莲_r2.png",
-      "order": "CAP-04",
-      "seed": 2398531460
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 18,
@@ -1374,49 +771,24 @@
     "expressionless"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "sometimes",
+   "usable": 1,
+   "total": 2,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "18_L2_s1",
+     "image": "probe/images/18_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 1062277409
     },
-    "L2": {
-     "grade": "sometimes",
-     "usable": 1,
-     "total": 2
+    {
+     "run_key": "18_L2_s2",
+     "image": "probe/images/18_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 503084317
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "18_L1_s1",
-      "image": "probe/images/18_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 946251482
-     },
-     {
-      "run_key": "18_L1_s2",
-      "image": "probe/images/18_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 961674599
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "18_L2_s1",
-      "image": "probe/images/18_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 1062277409
-     },
-     {
-      "run_key": "18_L2_s2",
-      "image": "probe/images/18_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 503084317
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 19,
@@ -1435,73 +807,24 @@
     "expressionless"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "sometimes",
-     "usable": 4,
-     "total": 6
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "19_L2_s1",
+     "image": "probe/images/19_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 4046771345
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "19_L2_s2",
+     "image": "probe/images/19_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 642040493
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "19_L1_s1",
-      "image": "probe/images/19_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 1319666128
-     },
-     {
-      "run_key": "19_L1_s2",
-      "image": "probe/images/19_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 3363681573
-     },
-     {
-      "run_key": "19_L1_s3",
-      "image": "probe/images/19_月城柳_s3.png",
-      "order": "CAP-03",
-      "seed": 1200147262
-     },
-     {
-      "run_key": "19_L1_s4",
-      "image": "probe/images/19_月城柳_s4.png",
-      "order": "CAP-03",
-      "seed": 979330418
-     },
-     {
-      "run_key": "19_L1_r1",
-      "image": "probe/images/19_月城柳_r1.png",
-      "order": "CAP-04",
-      "seed": 1319666128
-     },
-     {
-      "run_key": "19_L1_r2",
-      "image": "probe/images/19_月城柳_r2.png",
-      "order": "CAP-04",
-      "seed": 3363681573
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "19_L2_s1",
-      "image": "probe/images/19_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 4046771345
-     },
-     {
-      "run_key": "19_L2_s2",
-      "image": "probe/images/19_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 642040493
-     }
-    ]
-   }
+   ]
   },
   {
    "id": 20,
@@ -1520,49 +843,24 @@
     "smile"
    ],
    "other_shot_tags": [],
-   "grades": {
-    "L1": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "20_L2_s1",
+     "image": "probe/images/20_芙莉莲_s1.png",
+     "order": "CAP-02",
+     "seed": 2367956423
     },
-    "L2": {
-     "grade": "stable",
-     "usable": null,
-     "total": null
+    {
+     "run_key": "20_L2_s2",
+     "image": "probe/images/20_芙莉莲_s2.png",
+     "order": "CAP-02",
+     "seed": 2757975457
     }
-   },
-   "replacements": {},
-   "evidence": {
-    "L1": [
-     {
-      "run_key": "20_L1_s1",
-      "image": "probe/images/20_月城柳_s1.png",
-      "order": "CAP-02",
-      "seed": 2530734612
-     },
-     {
-      "run_key": "20_L1_s2",
-      "image": "probe/images/20_月城柳_s2.png",
-      "order": "CAP-02",
-      "seed": 1983973656
-     }
-    ],
-    "L2": [
-     {
-      "run_key": "20_L2_s1",
-      "image": "probe/images/20_芙莉莲_s1.png",
-      "order": "CAP-02",
-      "seed": 2367956423
-     },
-     {
-      "run_key": "20_L2_s2",
-      "image": "probe/images/20_芙莉莲_s2.png",
-      "order": "CAP-02",
-      "seed": 2757975457
-     }
-    ]
-   }
+   ]
   }
  ]
 }

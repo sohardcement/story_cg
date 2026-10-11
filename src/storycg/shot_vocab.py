@@ -6,8 +6,7 @@ see TASK-v2 §2.3). This module only enforces and reports those grades:
   scene differences never affect the grade; expression only picks among entries
   that share framing, angle and action (V2-12, D57: see classify_shots);
   same action with a different framing/angle is off-table;
-- tier lookup: L1/L2 read their own grade; unknown/missing data take the more
-  conservative of the two (stable > sometimes > unusable);
+- each entry has one grade (V2-43b: the L1 column and the tier argument are gone);
 - off-table actions count as sometimes (D32) and share the group quota of at
   most one sometimes shot per storyboard; unusable is rejected with the
   registered substitute;
@@ -47,45 +46,18 @@ def load_vocab(config=None):
     return json.loads(vocab_path(config).read_text(encoding="utf-8"))
 
 
-def vocab_tier(tier, config=None):
-    """The tier whose grade column is read (V2-20, TASK-v2 §10.4; V2-43a: the L1 route is removed).
-
-    Only the L2 column is read, whatever the identity says.
-    """
-    return "L2"
+def grade_of(item):
+    """Grade of one vocab entry: stable, sometimes or unusable (V2-43b: one column, no tier)."""
+    return item["grade"]
 
 
-def resolve_grade(item, tier):
-    """Grade of one vocab entry for one character tier, with its basis.
-
-    L1/L2 read their own grade. Any other tier (no data) takes the
-    more conservative of the two recorded grades.
-    """
-    grades = item["grades"]
-    if tier in grades:
-        return grades[tier]["grade"], tier
-    worst = max((grades[key]["grade"] for key in ("L1", "L2")),
-                key=lambda g: GRADE_ORDER[g])
-    return worst, "L1/L2 保守档"
+def replacement_for(item):
+    """Substitute record for an unusable entry, or None when none is registered."""
+    return item.get("replacement")
 
 
-def replacement_for(item, tier):
-    """Substitute record for an unusable entry, honoring the tier table.
-
-    Falls back to the recorded tier rows when the current tier has none of
-    its own (conservative tiers inherit the row that made the entry unusable).
-    """
-    rows = item.get("replacements", {})
-    if tier in rows:
-        return dict(rows[tier], tier=tier)
-    for fallback in ("L1", "L2"):
-        if fallback in rows:
-            return dict(rows[fallback], tier=fallback)
-    return None
-
-
-def substitute_text(item, tier):
-    row = replacement_for(item, tier)
+def substitute_text(item):
+    row = replacement_for(item)
     if row is None:
         return "无登记替代"
     if row.get("substitute_id") is None:
@@ -93,7 +65,7 @@ def substitute_text(item, tier):
     return f"{row['substitute_id']}" + (f"（{row['note']}）" if row.get("note") else "")
 
 
-def classify_shots(board, tier, vocab=None):
+def classify_shots(board, vocab=None):
     """Per-shot vocabulary classification; never raises on grades.
 
     A shot hits an entry when framing, camera_angle and the canonical action
@@ -121,40 +93,36 @@ def classify_shots(board, tier, vocab=None):
             expression_matches = [shot["expression"] in item["expression_tags"] for item in hits]
             scoped = [item for item, matched in zip(hits, expression_matches) if matched]
             scope = scoped if scoped else hits
-            resolved = [resolve_grade(item, tier) for item in scope]
-            grade = max((g for g, _ in resolved), key=lambda g: GRADE_ORDER[g])
-            basis = resolved[0][1]
+            grade = max((grade_of(item) for item in scope), key=lambda g: GRADE_ORDER[g])
         else:
-            grade, basis, expression_matches = "sometimes", tier if tier in ("L1", "L2") else "L1/L2 保守档", []
+            grade, expression_matches = "sometimes", []
         shots.append({"shot": entry.get("number", index + 1), "action": action,
                       "framing": shot["framing"], "camera_angle": shot["camera_angle"],
                       "expression": shot["expression"], "vocab_ids": [item["id"] for item in hits],
-                      "off_table": not hits, "grade": grade, "grade_basis": basis,
+                      "off_table": not hits, "grade": grade,
                       "expression_matches": expression_matches,
                       "action_matches_other_framing": near})
     return shots
 
 
-
-def validate_shot_vocab(board, tier, config=None, vocab=None):
+def validate_shot_vocab(board, config=None, vocab=None):
     """Enforce §2.2 vocabulary rules on a v2 storyboard; return classifications.
 
     Legacy (scope_version<2) boards are out of scope and return no checks.
     Raises StoryRuleViolation with the offending shot named so planner retries
-    carry the exact violation, e.g. 第 3 镜：动作 running 在 L1 为不可用，替代为 18.
+    carry the exact violation, e.g. 第 3 镜：动作 running 为不可用，替代为 18.
     """
     if board.get("scope_version") != V2_SCOPE:
         return []
     vocab = vocab or load_vocab(config)
-    tier = vocab_tier(tier, config)
     by_id = {item["id"]: item for item in vocab["items"]}
-    shots = classify_shots(board, tier, vocab=vocab)
+    shots = classify_shots(board, vocab=vocab)
     for classified in shots:
         if classified["grade"] != "unusable":
             continue
         item = by_id[classified["vocab_ids"][0]]
-        problem = (f"第 {classified['shot']} 镜：动作 {classified['action']} 在 "
-                   f"{classified['grade_basis']} 为不可用，替代为 {substitute_text(item, tier)}")
+        problem = (f"第 {classified['shot']} 镜：动作 {classified['action']} 为不可用，"
+                   f"替代为 {substitute_text(item)}")
         raise StoryRuleViolation(
             "shot_vocab_unusable",
             [f"$.shots[{classified['shot'] - 1}].shot.pose",
@@ -183,23 +151,20 @@ def _combo(item):
     return f"{item['id']} {item['framing']}/{item['camera_angle']} {item['action_tags'][0]}"
 
 
-def prompt_section(tier, config=None, vocab=None):
-    """Instruction block listing this tier's stable/sometimes/unusable combos."""
+def prompt_section(config=None, vocab=None):
+    """Instruction block listing the stable/sometimes/unusable combos."""
     vocab = vocab or load_vocab(config)
     items = vocab["items"]
-    tier = vocab_tier(tier, config)
-    resolved = [(item, resolve_grade(item, tier)) for item in items]
     header = (" Shot vocabulary for this character tier from the capability probe "
               "(a shot matches an entry when framing, camera_angle and the pose tag all agree; "
               "the expression may differ).")
-    header += " Character LoRA is off: the L2 column applies to every tier."
-    stable = [f"{_combo(item)}" for item, (grade, _) in resolved if grade == "stable"]
-    sometimes = [f"{_combo(item)}" for item, (grade, _) in resolved if grade == "sometimes"]
+    stable = [f"{_combo(item)}" for item in items if grade_of(item) == "stable"]
+    sometimes = [f"{_combo(item)}" for item in items if grade_of(item) == "sometimes"]
     unusable = []
-    for item, (grade, _) in resolved:
-        if grade != "unusable":
+    for item in items:
+        if grade_of(item) != "unusable":
             continue
-        unusable.append(f"{_combo(item)} -> {substitute_text(item, tier)}")
+        unusable.append(f"{_combo(item)} -> {substitute_text(item)}")
     section = [header]
     if stable:
         section.append(" STABLE combos, plan these first: " + "; ".join(stable) + ".")
@@ -253,8 +218,8 @@ def record_observations(job_dir, config=None, *, vocab=None, now=None):
     """Append one observation record per off-table shot after a task finishes.
 
     Records are marked not human-judged; they never change a grade by
-    themselves. Tier comes from the saved identity; runtime review conclusion
-    and evidence image come from the finished cycle or state.
+    themselves. Runtime review conclusion and evidence image come from the
+    finished cycle or state.
     """
     root = Path(job_dir)
     board_path = root / "storyboard.json"
@@ -264,12 +229,8 @@ def record_observations(job_dir, config=None, *, vocab=None, now=None):
     if board.get("scope_version") != V2_SCOPE:
         return []
     vocab = vocab or load_vocab(config)
-    identity_path = root / "identity.json"
-    identity = json.loads(identity_path.read_text(encoding="utf-8")) if identity_path.exists() else {}
-    tier = identity.get("identity_tier")
-    column = vocab_tier(tier, config)
     recorded = []
-    for classified in classify_shots(board, column, vocab=vocab):
+    for classified in classify_shots(board, vocab=vocab):
         if not classified["off_table"]:
             continue
         recorded.append({
@@ -280,10 +241,7 @@ def record_observations(job_dir, config=None, *, vocab=None, now=None):
             "framing": classified["framing"],
             "camera_angle": classified["camera_angle"],
             "expression": classified["expression"],
-            "tier": tier,
-            "grade_column": column,
             "grade": classified["grade"],
-            "grade_basis": classified["grade_basis"],
             "off_table": True,
             "action_matches_other_framing": classified["action_matches_other_framing"],
             "runtime_review": _review_conclusion(root, classified["shot"]),

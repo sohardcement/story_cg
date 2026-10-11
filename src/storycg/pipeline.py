@@ -207,7 +207,7 @@ def make_contact_sheet(job_dir: str | Path, review_dir: str | Path) -> Path:
 
 def run_story_job(job_dir: str | Path, config: dict, client,
                   *, stop_after_portrait: bool = False, redo_portrait: bool = False) -> dict:
-    """Identity tier, portrait, then the candidate delivery (V2-21; the only delivery since V2-28).
+    """Identity check (WAI list), portrait, then the candidate delivery (V2-21; the only delivery since V2-28).
 
     V2-24: `stop_after_portrait` returns right after the portrait stage (status 'portrait_ready') so the
     beats confirmation can show the portrait before any shot is generated; `redo_portrait` makes one more
@@ -221,7 +221,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         return deliver_completed(job_dir.resolve(), client)
     identity = resolve_job(job_dir)
     if identity.get("status")=="needs_user":
-        return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[],"tier_evidence":identity.get("tier_evidence",{})}
+        return {"job_id":job_dir.name,"status":"needs_user","needs_user":True,"reason":identity["reason"],"question":identity["question"],"attempts":[]}
     if identity["status"] != "locked":
         raise ValueError("identity requires clarification before generation")
     if config.get("repair_cycle_enabled"):
@@ -229,14 +229,13 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         from storycg.cycle import settings
         gate=Budget(job_dir,settings())
         gate.check()
-    from storycg.tier_gate import ensure_identity_tier
+    from storycg.tier_gate import ensure_wai_identity
     from storycg.tiers import tier_generation_config
-    identity = ensure_identity_tier(job_dir, identity, config, client)
-    if identity.get('identity_tier') not in ('L1', 'L2'):
-        return {'job_id': job_dir.name, 'status': 'needs_user' if identity.get('status')=='needs_user' else identity.get('identity_tier'),
-                'needs_user':identity.get('status')=='needs_user','reason':identity.get('reason'),'question':identity.get('question'),
-                'attempts': [], 'tier_evidence': identity.get('tier_evidence', {})}
-    config = tier_generation_config(config, identity)
+    identity = ensure_wai_identity(job_dir, identity, config)
+    if identity.get('status') == 'needs_user':
+        return {'job_id': job_dir.name, 'status': 'needs_user', 'needs_user': True, 'reason': identity.get('reason'),
+                'question': identity.get('question'), 'attempts': []}
+    config = tier_generation_config(config)
     from storycg.reference import ensure_portrait
     if config.get("repair_cycle_enabled"):gate.check()
     portrait_kwargs = {"redo": True} if redo_portrait else {}
@@ -250,7 +249,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     if config.get("repair_cycle_enabled"):gate.check()
     if stop_after_portrait or redo_portrait:
         return {"job_id": job_dir.name, "status": "portrait_ready", "needs_user": False, "reason": None,
-                "question": None, "attempts": [], "tier_evidence": identity.get("tier_evidence", {})}
+                "question": None, "attempts": []}
     board = plan_job(job_dir, config)
     if (job_dir / "state.json").exists():
         config = load_state(job_dir)["config"]
@@ -259,10 +258,10 @@ def run_story_job(job_dir: str | Path, config: dict, client,
         if config.get("repair_cycle_enabled"):
             config["budget"]["max_images_per_job"] -= gate.usage()["submission_attempts"]
         config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
-    config = tier_generation_config(config, identity)
+    config = tier_generation_config(config)
     from storycg.controls import apply_options, portrait_reference
     job = json.loads((job_dir / 'job.json').read_text())
-    config = tier_generation_config(apply_options(config, job.get('generation_options')), identity)
+    config = tier_generation_config(apply_options(config, job.get('generation_options')))
     config.pop('generation_reference', None)
     config['auto_retry_failed'] = False
     control = config['identity_control']
@@ -274,10 +273,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
 
 
 def resolve_and_validate_job(job_dir,config):
-    from storycg.comfy import ComfyClient
-    from storycg.tier_gate import ensure_identity_tier
+    from storycg.tier_gate import ensure_wai_identity
     identity=resolve_job(job_dir)
     if identity.get('status')!='locked':return identity
-    client=ComfyClient(config['comfyui_url'],config['http_timeout_seconds'])
-    try:return ensure_identity_tier(job_dir,identity,config,client)
-    finally:client.close()
+    return ensure_wai_identity(job_dir,identity,config)
