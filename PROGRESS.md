@@ -23,6 +23,17 @@
 
 - **D46（2026-10-08）**：Codex 订阅到期，执行者改为 omp（`ai938729/glm-5.3`，推理强度 max）。`verify/dispatch.sh` 已改；AGENTS.md 追加第 9 条。omp 没有写入沙盒，所以第 9 条写明了写入范围和禁止的 git 操作，监工每张工单都核对主线工作区。冒烟（只读）通过：`logs/OMP-SMOKE.jsonl`。
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
+- **D78/D79 瘦身结果（监工，2026-10-12 凌晨，用户出门期间）**：V2-41～V2-46 和 V2-40 全部通过并合入主线（4930b94）。只差监工实跑（D78 目标 6），卡在权限检查，等用户。
+  - 对照 D78 目标（基线：D78 开始前的主线 d766d96~1）：
+    1. 默认配置下出图不变：每张工单都用 `tools/v2_43_capture.py` 比过，假 ComfyUI 收到的工作流逐字节相同。**达成。**
+    2. 6 镜一组视觉调用 87 → 75：V2-42 把终审从 20 次降到 8 次，按结构算达成；没有实跑实测（实跑在等用户）。**按结构达成，未实测。**
+    3. 运行中 `status` ≤ 2.5KB：V2-41 已完成任务 12950 → 2267 字节。**达成。**
+    4. `src/storycg` 净删 1000 行以上：8751 行、49 个模块 → 7158 行、42 个模块（−1593）。**达成。**
+    5. SKILL.md 去掉工单号、安装细节、字段清单：7054 → 4552 字节，有测试保证它写到的命令、选项和 `status` 字段都真实存在；Hermes 副本已同步。**达成。**
+    6. 全量测试通过（主线 693 passed）**达成**；监工从安装入口实跑一组**未完成**（见上文"监工实跑暂停"）。
+  - 另外：`tools/` py 6182 → 551 行；`config/` 82KB → 65KB；`logs/`、`reports/` 和 `.pytest-tmp` 的临时目录清掉约 27G。
+  - 等用户的事：① 实跑的 `approve --beats`（命令见"监工实跑暂停"一条）；② `jobs/` 等目录要不要进 `.gitignore`。
+  - 已知小问题（都没开单）：`status` 不把身份检查阶段（`checking_identity`）里死掉的 worker 判成 `interrupted`；`netguard` 不拦 DNS 解析；`tools/p10_05_pytest.py` 一对文件是没人用的旧保护；重新 `deliver` 旧修图任务时 `cycle_llm_` 请求计入 `review_calls`。
 - **D79（用户，2026-10-11）瘦身范围扩大到仓库残留，依次执行**。用户又问了一次"是否臃肿、有没有过度设计"。监工第二次盘点的结论：运行时代码已经不算过度，剩下的臃肿在三处：给候选排名次的环节、D78 没覆盖的仓库残留、监工流程本身。监工问第 2、3、4 条建议要不要并进 D78，用户答复："我没有问题 依次执行吧"。
   - 盘点依据：
     - `src/storycg` 7,573 行，46 个模块。
@@ -713,7 +724,12 @@
   - **返工 2**：第 4 条退回原样（三个模块和两个测试函数与 1790081 无差异），移进 V2-46。
   - 监工独立验证：全量 666 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44b.log`），合入后主线也是 666 passed；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；执行者 30 个 `compile` 输出由监工脚本与 V2-43b 基线逐字段比对，只差临时路径（21）和词汇表首句（21），监工从入口另跑御坂美琴、芙莉莲两个，和执行者输出相同；第五轮实测任务副本用改前代码（`git archive 1790081`）和改后入口 `deliver`/`status`，result.md 逐字节相同、`status` 相同。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未改动。
   - 已知（本单之前就有，不返工）：`status` 只在 `resolving_identity`、`planning`、`preparing_portrait`、`generating_and_repairing` 几个阶段把死掉的 worker 判成 `interrupted`，身份检查阶段（原 `determining_tier`、现 `checking_identity`）不在其中；现在这一步是本地查清单、很快，影响小。`tools/v2_43b_compare.py` 的汇总把词汇表改动误归为临时路径（执行者发现，另写了 `reports/assets/V2-44b/precise_compare.py`），V2-46 处理。 | 2 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44b.md`，0d529e6 |
-| V2-46 清理 `tools/` 里的一次性旧脚本（D79），并入原 V2-44 第 4 条 | 已派（2026-10-12，V2-40 合入后；监工实跑等用户）。删测试文件曾被自动模式拦下，工单写明再被拦就停 | — | — | `orders/V2-46.md` |
+| V2-46 清理 `tools/` 里的一次性旧脚本（D79），并入原 V2-44 第 4 条 | **通过**（7bf8ebe，返工 0，合入主线 4930b94）。
+  - `tools/` 114 个文件、py 6419 行 → 10 个文件、551 行。保留：安装脚本、检测模型下载、两个 fixture 生成脚本、V2-43 出图/编译对比工具、两个被测试加载的脚本，以及 `p10_05_pytest.py` + `test_p10_05_offline.py`。`tools/test_p10_03_notes.py`（测生产代码）原样挪进 `tests/`。
+  - 原 V2-44 第 4 条：删 `calibration*.py` 三个模块、两个只测它们的测试函数、三个只测 `tools/p9_04_*.py` 的测试文件。这次删除**没有被拦**。
+  - 测试 699 → 693。
+  - 监工独立验证：全量 693 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-46.log`），合入后主线也是 693 passed；`tools/v2_43_capture.py` 两组逐字节相同；留下的 `tools/*.py` 对 `storycg` 的导入全部能解析；`src` 只少三个 `calibration*.py`；挪动的测试与原文件逐字节相同；入口 `beats-guide` 正常。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
+  - 遗留（不返工）：`p10_05_pytest.py` 和它的测试保留了，执行者的理由是它测了 `getaddrinfo` 在 DNS 前被拒、而 `tests/netguard.py` 没测这点；但测试环境实际用的是 `netguard`，这对文件测的是一个没人用的保护。由此也看出 `netguard` 只拦连接、不拦 DNS 解析。`config/review_reliability.json` 仍记着已删脚本的名字（历史记录，不改）。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-46.md`，7bf8ebe |
 | V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | **通过**（058ba4e，返工 1 次，合入主线 bd6c57a）。
   - result.md：删"各层结论"两行、小节说明句、"由用户换过：否"、逐镜"与整组汇总不同"；没有要列项的镜合成一行"第 N 镜：通过筛选，没有观察到偏差"；整组一行改为"至少一镜未经可靠审核的类别"；定妆图未通过只列可靠项。五个历史任务 result.md 缩短 15–30%（第五轮实测任务 7260 → 5113 字节）。D77 的"层级结论和逐镜偏差对不上"随之解决：那行本来就是非可靠项 `not_visible` 拉出来的。
   - SKILL.md 6907 → 4552 字节：删工单号、安装细节、`progress` 字段清单、已不存在的 `repair_blocked`、V2-42 已删的"整组原始审核结论"；新增 `tests/test_v2_45.py`，检查 SKILL.md 写到的子命令、选项和 `status` 字段都真实存在。
