@@ -155,7 +155,7 @@ def prompt_section(config=None, vocab=None):
     """Instruction block listing the stable/sometimes/unusable combos."""
     vocab = vocab or load_vocab(config)
     items = vocab["items"]
-    header = (" Shot vocabulary for this character tier from the capability probe "
+    header = (" Shot vocabulary from the capability probe "
               "(a shot matches an entry when framing, camera_angle and the pose tag all agree; "
               "the expression may differ).")
     stable = [f"{_combo(item)}" for item in items if grade_of(item) == "stable"]

@@ -244,9 +244,7 @@ def _collect_errors(board, shot_count, identity, config):
         if any(canonical_tag(tag) in EXPRESSION_TAGS for tag in shot.get('prop_tags', [])):
             _add(errors, number, 'shot.prop_tags', '背景道具 tag 不能承担表情', '表情只放在 shot.expression')
 
-    view = {key: value for key, value in board.items() if key not in (
-        'possession_swap', 'prop_dependent', 'prop_dependency_reason', 'prop_only_narrative_items')}
-    for error in Draft202012Validator(production_schema()).iter_errors(view):
+    for error in Draft202012Validator(production_schema()).iter_errors(board):
         number, field = _shot_of_path(error.absolute_path)
         _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
 

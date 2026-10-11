@@ -21,8 +21,12 @@ from storycg import extra_part
 from storycg.budget import Budget, CycleClient
 from storycg.config import candidates_per_shot, pairwise_enabled
 from storycg.review import load_reliability, reliability_key
-from storycg.v1_scope import is_prop_item
 from storycg.state import load_state, save_json_atomic
+
+
+def is_prop_item(key):
+    return key == 'props' or key.startswith('prop_')
+
 
 LEVEL_NAMES = ('count and extra body part (D29 level 0)', 'identity item (D29 level 1)',
                'outfit (D29 level 2)', 'action and expression (reliable items)',
