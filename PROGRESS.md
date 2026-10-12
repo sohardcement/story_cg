@@ -42,6 +42,7 @@
       - 副作用：动作会带出所需的道具（伞、书、手机、吉他、杯子、枕头、锅），符合"道具只作陪衬"；碰头发的动作会改发型（Saber tying_hair 变马尾、brushing_hair 散发），违反"发型对上定妆图"；镜子场景出现镜中倒影，可能触发人数检测（这是监工 beats 写了 mirror，不是动作 tag 本身）；Saber cooking 一张多了围裙。
       - **结论（监工）**：基础模型能画这些日常动作，前提是动作 tag 进提示词。改法：分镜每镜可写一个 `action_tag`（Danbooru 上存在），提示词放在姿势 tag 后面；beats-guide 列出测过的动作和结果。
       - 出图 120 张，累计 570。
+      - **落实为 V2-49**：beats 每镜可写一个 `action_tag`（Danbooru 上存在、general 类），提示词里放在姿势和表情之间；`compile` 检查重复和存在性；beats-guide 打印测过的动作表（`config/action_tags.json`）和一句写作规则。旧分镜出图不变。审核、挑选的提示词不动（已有 `spatial_relation`）。合入后监工用后藤一里实跑，带上 `under_covers`、`curtain_grab` 等动作 tag。
 - **D86（用户，2026-10-12）akml 就是 akaimelon 的替代；出图总额 500 → 600**。用户原话："akml是我今天训练的用来代替 akaimelon 的，再加100张额度吧，面部精修前现在的生成稳定吗？"TASK-v2 §5 同步改。
   - **更正 D85**：监工当时说 `akml_style_*` 是"另一套 LoRA"、不拿它顶替。不悄悄替换这一点没错，但它是用户有意做的替代品，下一轮画风对照要测它。
   - ComfyUI 上三个版本（元数据，监工只读）：`akml_style_clean`（10-12 12:45 开训，57 张图，8 轮，dim/alpha 32/16）、`akml_style_v2`（16:46，34 张，10 轮，32/16）、`akml_style_v3`（17:16，34 张，15 轮，32/32）。都以 WAI v170 训练，触发词 `akml`。用哪个版本、加不加触发词，等用户定。
@@ -840,6 +841,7 @@
   - 测试 723 → 733（`tests/test_v2_48.py` 10 个）；`test_v2_05`、`test_v2_21` 的 3 个 monkeypatch 补 `start_at` 参数，`test_p6_reference_policy` 的整字典断言加上新键。
   - 执行者提出、监工核实并接受的已知行为：`runner.run_candidate` 续跑时要求同一镜已有记录的 reference 和这次完全相同。V2-48 之前就开始出镜头图、中途中断的任务续跑会报 "shot already exists with different generation reference"，这是防止一个任务混用两种设置，报错本身是对的。监工查了两棵树里 8 个未结束的任务，都还没有带参考图的镜头记录，不受影响。
   - 监工独立验证：全量 733 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-48.log`），合入后主线也是 733 passed；`tools/v2_43_capture.py` 两组任务和 V2-43 基线逐字段比较只差 `start_at` 0.0→0.3（18、12 处），提交数不变，执行者存的新基线（`reports/assets/V2-48/capture/`）可逐字节复现；Saber、芙莉莲两个实验任务的工作流和 D83 对照所用的工作流（`verify/v2/ipa-ab2/capture-*.json`）也只差 `start_at`，也就是管线现在提交的正是用户选的 ② 设置。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-48.md`，4139e1e |
+| V2-49 分镜每镜可写一个动作 tag，进出图提示词（D87） | 已派（2026-10-13） | — | — | `orders/V2-49.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
