@@ -841,7 +841,7 @@
   - 测试 723 → 733（`tests/test_v2_48.py` 10 个）；`test_v2_05`、`test_v2_21` 的 3 个 monkeypatch 补 `start_at` 参数，`test_p6_reference_policy` 的整字典断言加上新键。
   - 执行者提出、监工核实并接受的已知行为：`runner.run_candidate` 续跑时要求同一镜已有记录的 reference 和这次完全相同。V2-48 之前就开始出镜头图、中途中断的任务续跑会报 "shot already exists with different generation reference"，这是防止一个任务混用两种设置，报错本身是对的。监工查了两棵树里 8 个未结束的任务，都还没有带参考图的镜头记录，不受影响。
   - 监工独立验证：全量 733 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-48.log`），合入后主线也是 733 passed；`tools/v2_43_capture.py` 两组任务和 V2-43 基线逐字段比较只差 `start_at` 0.0→0.3（18、12 处），提交数不变，执行者存的新基线（`reports/assets/V2-48/capture/`）可逐字节复现；Saber、芙莉莲两个实验任务的工作流和 D83 对照所用的工作流（`verify/v2/ipa-ab2/capture-*.json`）也只差 `start_at`，也就是管线现在提交的正是用户选的 ② 设置。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-48.md`，4139e1e |
-| V2-49 分镜每镜可写一个动作 tag，进出图提示词（D87） | 已派（2026-10-13） | — | — | `orders/V2-49.md` |
+| V2-49 分镜每镜可写一个动作 tag，进出图提示词（D87） | 返工 1 中（2026-10-13）。第一版：733 → 757 passed（监工复跑一致，无 NETWORK GUARD）；旧分镜出图和 V2-48 基线逐字节相同；监工把动作目录 6 组 beats 加上 `action_tag`，从 .v2 入口 compile 再 capture，13 个非头发动作 78 镜的正向提示词、seed、其余工作流和实验测过的逐字相同（`.v2/.pytest-tmp/sup-v2-49/check_action_prompts*.py`）。返工原因：`tying_hair`、`brushing_hair` 被现有外貌检查拒绝（还在 `shot.action_tag`、`shot.tags` 各报一次），但 beats-guide 动作表把它们列成能画，写作者照表写会被拒。监工决定保留外貌规则：这两个动作实测会改发型，属 §10.2 否决项。改为：表里这两条注明"compile 不接受"，action_tag 被外貌检查拦下只报一条、文字说清；加测试保证表里其余 tag 都能过 compile；顺带改 `moment()` 过时的错误文字和 V2-47 留下的 `outfit.Preserve` 缺空格（V2-47 验收时监工漏看）。 | — | — | `orders/V2-49.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
