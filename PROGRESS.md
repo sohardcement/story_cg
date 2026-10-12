@@ -545,6 +545,7 @@
 | 动作目录（监工，D87，`verify/v2/action-cat/`）：15 个动作 tag × Saber、芙莉莲 × 3 seed + 对照 | 120 | 570 |
 | V2-49 合入后监工实跑（后藤一里 5 镜带动作 tag，`jobs/cg-188b6d70c3db`）：定妆图 1 + 候选 15 | 16 | 586 |
 | 面部精修实验（监工，D87，`verify/v2/face-ab/`）：5 个远景镜 × 3 候选，检出 14 张 × denoise 0.35/0.5 | 28 | 614 |
+| V2-50 验收补测（监工，`verify/v2/face-ab/run_scenery.py`）：芙莉莲第 1 镜候选 2、3，用 V2-50 的提示词重跑精修 | 2 | 616 |
 
 ### 工单
 
@@ -860,7 +861,11 @@
   - 测试 733 → 778（`tests/test_v2_49.py` 45 个，已有测试没改）。
   - **返工 1**：`tying_hair`、`brushing_hair` 被现有外貌检查拒绝，和动作表冲突。保留外貌规则（实测会改发型，§10.2 否决项），表里这两条注明"不接受"；加测试保证表里其余 18 个 tag 都能过 compile；`moment()` 错误文字更新；补上 V2-47 留下的 `outfit.Preserve` 缺空格。
   - 监工独立验证：全量 778 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-49r1.log`），合入后主线也是 778 passed；`tools/v2_43_capture.py` 两组与 V2-48 基线逐字节相同；把动作目录 6 组 beats 加上 `action_tag`，从 .v2 入口 compile 再 capture，13 个非头发动作 78 镜的正向提示词、seed 和其余工作流与实验测过的逐字相同（实验结果可直接当作上线效果）；只带 `tying_hair` 的分镜报一条 `shot.action_tag` 错误，文字照工单。复核中 Danbooru 一度失败（`needs_user`，退出码 1），单独重跑后全部 valid。监工自己的检查留下的 27 个 compile 临时目录已删。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-49.md`，7006ece |
-| V2-50 远景小脸的面部精修（D87） | **进行中**（2026-10-13 派出）。脸长边 < 140 像素的候选出图后马上精修：裁 3 倍脸框、放大到 1024、用候选自己的工作流图生图（denoise 0.5，构图换 closeup 档）、只贴脸周围的椭圆；合成图替换候选图，原图留在记录里；精修计入出图额度，额度不够或失败时用原图继续。参数和 `verify/v2/face-ab/` 实验逐字一致，验证要求逐像素复现实验结果。 | — | Haiku 5.5 subagent | `orders/V2-50.md` |
+| V2-50 远景小脸的面部精修（D87） | **通过**（fcd3c60，返工 0，合入主线 9e82002）。
+  - 新模块 `face_refine.py`：候选出图完成、审核之前，本地检测器取置信度最高的脸，长边 < 140 像素才精修。裁剪框、精修工作流（候选自己的工作流，空 latent 换成裁剪图，denoise 0.5，节点 4 换成 closeup 构图）、贴脸椭圆都照 `verify/v2/face-ab/` 实验。精修是一次独立提交（`shot_id` 为 `shotNN_face`，`kind: face_refine`），走 runner 的提交和续跑对账，计入出图额度；合成图替换候选 attempt 的 `image`，原图记在 `face_refine` 里。额度不够记 `skipped_budget`、失败记 `failed`，都用原图继续。`assemble_prompt` 多返回 `closeup_positive_tags`；`runner._new_attempt` 多两个参数（`workflow_for`、`extra`），额度用完抛 `JobBudgetExhausted`（`ValueError` 子类）；精修 attempt 不自动重试。result.md 出图行带面部精修张数，选中候选精修过时写一行并给出原图。
+  - 测试 776 → 794（`tests/test_v2_50.py` 18 个，fixture 是主线 `jobs/cg-188b6d70c3db` 的两张候选图，已有测试没改）。**基线更正**：PROGRESS 里 V2-49 记的 778，用 021748a 干净导出只收集到 776 个，现在主线也是 776。测试文件从那以后没动过，所以当时多出的 2 个来自工作区里某个未跟踪的东西，现已不在，原因没查到。
+  - 执行者复现实验：14 张的脸框、裁剪框、seed、工作流改动和贴回（逐像素）全部一致；节点 4 的文字 12/14 逐字相同。芙莉莲第 1 镜候选 2、3 多一个 `scenery`：她的场景 tag 里有 `scenery`，实验的转换把它和构图里的一起删了，工单规定只换构图段，所以保留。**监工补测 2 张**（`verify/v2/face-ab/run_scenery.py`，拼图 `scenery_check.jpg`）：用 V2-50 代码的提示词重跑这两张，结果和实验几乎一样，眼睛都画出来了，按工单规则保留。
+  - 监工独立验证：全量 794 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-50.log`），合入后主线也是 794 passed（`pytest-main-v2-50.log`）；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同（这两个旧任务的配置里没有 `face_refine`，走的是"不精修"那条路）；核实 `make` 每次从 `config/default.json` 取配置，新任务带 `face_refine`；`comfy_output` 没有别的读者，`resume_job` 没有调用方。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-50.md`，fcd3c60 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
