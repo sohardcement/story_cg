@@ -789,7 +789,11 @@
   - **返工 1**：监工用项目的 User-Agent 查 Danbooru，工单里监工自己写的示例 `beige_coat` 是废弃 tag（0 帖），写作者照着改会被 compile 的 tag 存在性检查再拒；`white_towel`、`pink_towel` 也已废弃，浴室镜头没法补颜色。示例改为 `brown_coat`、`pink_pajamas`，毛巾等五个 tag 不算新衣服。
   - 回归：63 个分镜里拦下 15 个文件 17 段，都是真没写颜色（pajamas、dress、coat 等）；编译对比 35 个，由 valid 变 invalid 的只有 `.v2/jobs/cg-3cd4d7bfd1ae`（喜多川海梦第 3 镜 pajamas），浴室三组和基线相同。执行者首轮编译遇到 Danbooru SSL EOF 11 个，恢复后单独重跑得到真实结果。
   - 监工独立验证：全量 723 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-47r1.log`），合入后主线也是 723 passed；`tools/v2_43_capture.py` 两组逐字节相同；从入口 `compile` 实跑任务的 `beats-2.json`：报第 1 镜 pajamas、第 3 镜 coat/winter_clothes 两条，退出码 2；改成 `pink_pajamas`、`brown_coat` 后 valid，退出码 0（真实 Danbooru 存在性检查通过）；`beats-guide` 打印新句。执行者删的 90 个 compile 临时目录都在 `.v2/compile/`，主线 `compile/` 没动。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-47.md`，deff6e8 |
-| V2-48 IPAdapter 从采样 30% 处才开始（start_at 0.3，D84） | 已派（2026-10-12） | — | — | `orders/V2-48.md` |
+| V2-48 IPAdapter 从采样 30% 处才开始（start_at 0.3，D84） | **通过**（4139e1e，返工 0，合入主线 583fda3）。
+  - `identity_control` 新增 `ipadapter_start_at`（`identity_rules.json` 的 `generation_identity_control` 和 `default.json` 各一处，值 0.3）；`apply_options` 校验 0 ≤ x < 1，缺省 0.0；`portrait_reference` 返回的 reference 带 `start_at`，记进每次提交的 attempt；`workflow.py` 用 `reference.get("start_at", 0.0)`，旧记录仍为 0.0。定妆图不用 IPAdapter，不受影响。`tools/v2_43_capture.py` 只改调用那一行。src、config 增删约 +12 −5。
+  - 测试 723 → 733（`tests/test_v2_48.py` 10 个）；`test_v2_05`、`test_v2_21` 的 3 个 monkeypatch 补 `start_at` 参数，`test_p6_reference_policy` 的整字典断言加上新键。
+  - 执行者提出、监工核实并接受的已知行为：`runner.run_candidate` 续跑时要求同一镜已有记录的 reference 和这次完全相同。V2-48 之前就开始出镜头图、中途中断的任务续跑会报 "shot already exists with different generation reference"，这是防止一个任务混用两种设置，报错本身是对的。监工查了两棵树里 8 个未结束的任务，都还没有带参考图的镜头记录，不受影响。
+  - 监工独立验证：全量 733 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-48.log`），合入后主线也是 733 passed；`tools/v2_43_capture.py` 两组任务和 V2-43 基线逐字段比较只差 `start_at` 0.0→0.3（18、12 处），提交数不变，执行者存的新基线（`reports/assets/V2-48/capture/`）可逐字节复现；Saber、芙莉莲两个实验任务的工作流和 D83 对照所用的工作流（`verify/v2/ipa-ab2/capture-*.json`）也只差 `start_at`，也就是管线现在提交的正是用户选的 ② 设置。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-48.md`，4139e1e |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
