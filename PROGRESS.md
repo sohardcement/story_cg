@@ -860,6 +860,7 @@
   - 测试 733 → 778（`tests/test_v2_49.py` 45 个，已有测试没改）。
   - **返工 1**：`tying_hair`、`brushing_hair` 被现有外貌检查拒绝，和动作表冲突。保留外貌规则（实测会改发型，§10.2 否决项），表里这两条注明"不接受"；加测试保证表里其余 18 个 tag 都能过 compile；`moment()` 错误文字更新；补上 V2-47 留下的 `outfit.Preserve` 缺空格。
   - 监工独立验证：全量 778 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-49r1.log`），合入后主线也是 778 passed；`tools/v2_43_capture.py` 两组与 V2-48 基线逐字节相同；把动作目录 6 组 beats 加上 `action_tag`，从 .v2 入口 compile 再 capture，13 个非头发动作 78 镜的正向提示词、seed 和其余工作流与实验测过的逐字相同（实验结果可直接当作上线效果）；只带 `tying_hair` 的分镜报一条 `shot.action_tag` 错误，文字照工单。复核中 Danbooru 一度失败（`needs_user`，退出码 1），单独重跑后全部 valid。监工自己的检查留下的 27 个 compile 临时目录已删。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-49.md`，7006ece |
+| V2-50 远景小脸的面部精修（D87） | **进行中**（2026-10-13 派出）。脸长边 < 140 像素的候选出图后马上精修：裁 3 倍脸框、放大到 1024、用候选自己的工作流图生图（denoise 0.5，构图换 closeup 档）、只贴脸周围的椭圆；合成图替换候选图，原图留在记录里；精修计入出图额度，额度不够或失败时用原图继续。参数和 `verify/v2/face-ab/` 实验逐字一致，验证要求逐像素复现实验结果。 | — | Haiku 5.5 subagent | `orders/V2-50.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
