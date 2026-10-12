@@ -349,7 +349,7 @@ def writing_rules(shot_count: int) -> str:
         "Actions that imply closed eyes (sleeping, sleeping on desk) must never pair with open eyes; "
         "the assembler adds the closed-eyes companion tag automatically. "
         "Do not register objects, bind holders, or track ownership, state or left/right hands. "
-        "Keep setting and clothes continuous. Preserve exact temporal/weather facts and causal ending. "
+        "Keep setting and clothes continuous. When the outfit differs from the standard outfit, give the main new garment a Danbooru tag that carries its color (brown_coat or pink_pajamas, not coat or winter_clothes), and keep the same outfit tags on every shot of that outfit.Preserve exact temporal/weather facts and causal ending. "
         "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
         "when the story states it has ended. No captions or dialogue. "
         "v2 has one main person; others only anonymous backs, cropped parts or offscreen. "
