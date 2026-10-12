@@ -35,6 +35,13 @@
       - 合计 A 1/15、**B 10/15**、C 4/15。没有多手多腿，身份一致。B 会带出动作需要的道具（窗帘、瓶子），符合"道具只作陪衬"。`dressing` 太泛，穿外套要找更具体的 tag。
       - **结论：动作 tag 进提示词有效，原句效果差、不可控。** 下一步在基础模型上测一组日常动作 tag，看哪些画得出，作为改法的依据。
       - 出图 30 张，累计 450。
+    - **动作目录（23:22–23:50，`verify/v2/action-cat/`，拼图 `sheet_{saber,frieren}_b{1,2,3}.jpg`）**：15 个日常动作 tag（Danbooru 都存在），Saber、芙莉莲各 3 组 6 镜 beats，从安装入口 `compile` 全部 valid、没有被改写；工作流由管线生成（`tools/v2_43_capture.py`，假 ComfyUI），只在姿势 tag 后插入动作 tag。每个动作每角色 3 个 seed（B），另有不加 tag 的对照（A，seed 1）。120 张。监工逐张判定：
+      - **A（不加 tag）30 张里 0 张画出动作。B（加 tag）90 张里 81 张画出，5 张半对，4 张没有。**
+      - 6/6：stretching、tying_hair、drinking、holding_phone、pillow_hug、waving、holding_umbrella、reading、writing、playing_guitar。5/6：brushing_hair（Saber 一张是别人的手在给她梳头）、cooking、eating（另 1 张半对）。yawning 4/6（另 1 张半对）。**putting_on_jacket 只有 2/6**（另 3 张半对），角色本身穿着外套时读成整理衣服；和试点里 `dressing` 一样，"穿外套"类动作画不好。
+      - 结构错误 2 张（都在 B）：Saber brushing_hair 种子 2 多出一只别人的手；芙莉莲 writing 种子 3 左边缘多出半个芙莉莲。其余没看到多手多腿。
+      - 副作用：动作会带出所需的道具（伞、书、手机、吉他、杯子、枕头、锅），符合"道具只作陪衬"；碰头发的动作会改发型（Saber tying_hair 变马尾、brushing_hair 散发），违反"发型对上定妆图"；镜子场景出现镜中倒影，可能触发人数检测（这是监工 beats 写了 mirror，不是动作 tag 本身）；Saber cooking 一张多了围裙。
+      - **结论（监工）**：基础模型能画这些日常动作，前提是动作 tag 进提示词。改法：分镜每镜可写一个 `action_tag`（Danbooru 上存在），提示词放在姿势 tag 后面；beats-guide 列出测过的动作和结果。
+      - 出图 120 张，累计 570。
 - **D86（用户，2026-10-12）akml 就是 akaimelon 的替代；出图总额 500 → 600**。用户原话："akml是我今天训练的用来代替 akaimelon 的，再加100张额度吧，面部精修前现在的生成稳定吗？"TASK-v2 §5 同步改。
   - **更正 D85**：监工当时说 `akml_style_*` 是"另一套 LoRA"、不拿它顶替。不悄悄替换这一点没错，但它是用户有意做的替代品，下一轮画风对照要测它。
   - ComfyUI 上三个版本（元数据，监工只读）：`akml_style_clean`（10-12 12:45 开训，57 张图，8 轮，dim/alpha 32/16）、`akml_style_v2`（16:46，34 张，10 轮，32/16）、`akml_style_v3`（17:16，34 张，15 轮，32/32）。都以 WAI v170 训练，触发词 `akml`。用哪个版本、加不加触发词，等用户定。
@@ -522,6 +529,7 @@
 | V2-47 + V2-48 合入后监工实跑（后藤一里 5 镜，`jobs/cg-8ba55944ca31`）：定妆图 1 + 候选 15 | 16 | 411 |
 | 画风 LoRA 对照（监工，D85，`verify/v2/lora-ab/`）：3 角色 9 镜同 seed 加 Iwao178 0.4 | 9 | 420 |
 | 动作试点（监工，D87，`verify/v2/action-ab/`）：5 镜 × 3 seed × 加动作 tag / 加原句 | 30 | 450 |
+| 动作目录（监工，D87，`verify/v2/action-cat/`）：15 个动作 tag × Saber、芙莉莲 × 3 seed + 对照 | 120 | 570 |
 
 ### 工单
 
