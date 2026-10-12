@@ -23,6 +23,10 @@
 
 - **D46（2026-10-08）**：Codex 订阅到期，执行者改为 omp（`ai938729/glm-5.3`，推理强度 max）。`verify/dispatch.sh` 已改；AGENTS.md 追加第 9 条。omp 没有写入沙盒，所以第 9 条写明了写入范围和禁止的 git 操作，监工每张工单都核对主线工作区。冒烟（只读）通过：`logs/OMP-SMOKE.jsonl`。
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
+- **D82（用户，2026-10-12）下一步先做 B 和小修**。监工给了三个方向（A 画质、B 跨镜连贯、C 先用起来），建议先做 B 的便宜版加小修，用户回复："可以，先做 B 和小修吧，另外你说"素"我也赞同 是不是 ipadopter导致的？"
+  - B 的依据（监工从 ComfyUI `/history` 取实跑任务真实提交的工作流）：第 3–5 镜正向提示词里外套只有 `coat, winter clothes`，没有颜色和款式，角色 tag `gotoh hitori` 自带粉色运动外套，于是画回运动外套、第 5 镜又变成派克。落实为 V2-47：换装后的新衣服必须写带颜色的 tag，`compile` 不写就报错；写作规则加一句；顺带修确认摘要第 1 镜换装文字、`status` 中断判断补 `checking_identity`。
+  - 小修里的 PROGRESS 归档由监工自己做。
+  - "素"是不是 IPAdapter 造成的：监工做同 seed、同提示词、只去掉 IPAdapter 的对照（实跑 5 镜各 1 张），结果交用户看。
 - **D81（用户，2026-10-12）`.gitignore` 加 `/jobs/`、`/logs/`**。用户问监工有没有必要，监工建议加（运行时产物，防止误提交、减少 `git status` 噪音），用户回复"可以，你直接加吧"。只锚定项目根目录，`reports/assets`、`tests/fixtures` 里嵌套的 `jobs/` 不受影响；已入库的 2,538 个旧任务文件照旧跟踪。v2 分支 03d3fc6，合入主线 a2b5ecb。主线 `git status` 未跟踪项 325 → 140。
   - **意外：主线未跟踪文件被 stash 走，已恢复**。07:41:08 有个叫 epitaxy 的东西在 master 上执行了 stash（`epitaxy: pre-switch from master`，含未跟踪文件），07:41:57 又执行了 `reset: moving to HEAD`，主线工作区的 5,033 个未跟踪文件（实跑任务 `jobs/cg-67a180fb5bc8`、第五轮实测任务、`logs/supervisor` 验收证据、`cache/danbooru`、`EXPERIMENT.md`、未提交的 e2e 报告等）都不见了。不是监工执行的。用户随后说明：当时他用 Claude Desktop 加载了这个会话，epitaxy 应该是 Claude Desktop 切换前收起工作区的动作。`/home` 没有 btrfs 快照，这个 stash 是唯一副本。`.v2` 工作树不受影响。
   - 用户同意后，监工 07:52 执行 `git stash apply 7309f0c`（apply，不是 pop）：5,033 个文件全部恢复，逐个比对哈希都和 stash 一致，没有覆盖任何现有文件。stash 记录 `stash@{0}` 先保留；用户随后同意删除，监工按 SHA 7309f0c 找到这一条后 `git stash drop`（07:5x），stash 列表已空，恢复的文件不受影响。
@@ -765,6 +769,7 @@
   - 执行者写测试前手动跑过一次不带 shim 的 `compile`，向 Danbooru 发了一次只读请求（返回 500），留下的 compile 目录已删；之后测试都离线。查角色资料不是工单禁止的服务调用，记录在案。
   - 监工独立验证：全量 699 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-40.log`），合入后主线也是 699 passed；`tools/v2_43_capture.py` 两组逐字节相同；`beats-guide` 打印新规则。监工另扫两棵树全部 `storyboard.json`、beats、`verify/` 和 e2e 资产（222 个文件、902 镜，比执行者的范围大），拦下 4 条，都是真违规：测试 C 和它的副本 `c-miku-only-dual.json`，v1 旧任务 `p9_05_ownership` 第 2 镜（两棵树各一份："looks down at the red umbrella in hand, then glances toward the blue umbrella"，该任务是修图时代的，本来就不能续跑）。没有误拦。
   - 实跑等用户的那份 `beats-2.json` 不含顺序词，不受影响。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-40.md`，3dd1daf |
+| V2-47 换装新衣服必须写颜色；确认摘要第 1 镜换装文字；status 中断判断补阶段（D82） | 已派（2026-10-12） | — | — | `orders/V2-47.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
