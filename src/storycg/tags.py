@@ -95,14 +95,18 @@ class TagRegistry:
         self.source = _CachedDanbooru(Path(cache_dir), client)
         self.records = []
 
-    def exists(self, value):
+    def lookup(self, value):
+        """The live Danbooru tag record for value (with its category), or None when it does not exist."""
         tag = canonical_tag(value)
         payload, url = self.source.get('/tags.json', {'search[name]': tag, 'limit': 10})
         found = next((item for item in payload if item.get('name') == tag and
                       not item.get('is_deprecated', False)), None)
         self.records.append({'input': value, 'tag': tag, 'exists': found is not None,
                              'source': url, 'category': found.get('category') if found else None})
-        return found is not None
+        return found
+
+    def exists(self, value):
+        return self.lookup(value) is not None
 
 
 def validate_tag_lists(board, registry, config=None, *, drop_unknown=False):

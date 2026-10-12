@@ -3,13 +3,21 @@
 Version 1 is read-only compatibility for archived boards. New planning uses v2.
 No action vocabulary or story/character-specific branches are used.
 """
+import json
 import re
+from pathlib import Path
 from storycg.story_rules import StoryRuleViolation
 
 EXPRESSION_TAGS=('expressionless','smile','frown','blush','surprised','confused','embarrassed','angry','sad','tears','pout','grin','serious',
  'worried','crying','light_smile','smug','sleeping','closed_eyes')
 
 ATOMIC_TAG = {'type':'string','pattern':r'^[a-z0-9]+(?:_[a-z0-9]+)*$','minLength':1}
+
+
+def load_action_tags():
+    """Action tags measured on the base model (V2-49, D87): tag -> {drawn, total, note?}."""
+    path = Path(__file__).resolve().parents[2] / 'config' / 'action_tags.json'
+    return json.loads(path.read_text(encoding='utf-8'))['actions']
 
 
 def extend_schema(schema, *, required=False):
@@ -19,13 +27,15 @@ def extend_schema(schema, *, required=False):
     shot['properties']['unchanged_person_reason']={'type':'string'}
     shot['properties'].update(pose=ATOMIC_TAG, protagonist_instances={'type':'integer','minimum':1,'maximum':2},
                               pose_tag_omitted={'type':'boolean'})
+    # V2-49 (D87): one optional Danbooru action tag, drawn between pose and expression; absent or null means none.
+    shot['properties']['action_tag']={'anyOf':[ATOMIC_TAG,{'type':'null'}]}
     if required:
         schema['required'].append('schema_version')
         shot['required']+=['pose','reflection','protagonist_instances']
         # There is just one conditioning moment; prose cannot hide a second pose.
         for key in ('action','description','expression'):shot['properties'][key]=ATOMIC_TAG
         shot['properties']['expression']={'enum':list(EXPRESSION_TAGS)}
-        shot['properties']['tags']['maxItems']=2
+        shot['properties']['tags']['maxItems']=3
     return schema
 
 
@@ -41,9 +51,10 @@ def moment(shot, path):
                 'must name the same single instant', 'copy pose exactly; place the next instant in another shot')
     omitted=shot.get('pose_tag_omitted',False)
     allowed={shot['expression']} if omitted else {shot['pose'],shot['expression']}
+    if shot.get('action_tag'):allowed.add(shot['action_tag'])
     if not shot.get('tags') or any(t not in allowed for t in shot['tags']) or (not omitted and shot['pose'] not in shot['tags']):
         raise StoryRuleViolation('single_moment',[path+'.tags',path+'.pose',path+'.expression'],
-            'conditioning may contain only the one pose and expression', 'use pose and expression; background objects belong in prop_tags')
+            'conditioning may contain only the one pose, the optional action_tag and the expression', 'use pose and expression; background objects belong in prop_tags')
     count=shot.get('protagonist_instances')
     if type(shot.get('reflection')) is not bool or type(count) is not int or count!=1+int(shot.get('reflection',False)):
         raise StoryRuleViolation('single_protagonist',[path+'.protagonist_instances',path+'.reflection'],
@@ -112,8 +123,10 @@ def materialize(board):
         if 'pose_tag_omitted' in shot:raise ValueError('planner supplied derived field: shot.pose_tag_omitted')
         for field in ('action','description','tags'):
             if field in shot:raise ValueError('planner supplied derived field: shot.'+field)
+        # V2-49: the action tag, when written, sits between pose and expression (the order the prompt uses).
+        tags=[shot['pose'],shot.get('action_tag'),shot['expression']]
         shot.update(action=shot['pose'],description=shot['pose'],
-                    tags=list(dict.fromkeys([shot['pose'],shot['expression']])))
+                    tags=list(dict.fromkeys(t for t in tags if t)))
         shot['key_props']=[]
         entry['scene']['tags']=list(dict.fromkeys([*entry['scene']['tags'], *shot['prop_tags']]))
     from storycg.planning import derive_outfit_changes
