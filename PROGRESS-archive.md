@@ -1,0 +1,952 @@
+# PROGRESS 归档（v2 之前的阶段）
+
+2026-10-12 监工从 `PROGRESS.md` 原样移来（D82 小修），内容未改：能力摸底阶段与晨报、v1 第一、二轮进展与晨报、两段式对照实验、P0 环境报告、决策 D1–D39、v1 工单与出图用量、审核器 v1–v3 校准、阻塞项、v1 待决第一至第三组。当前进度见 `PROGRESS.md`。
+
+## 晨报（能力摸底阶段，2026-10-04 定稿）
+
+> **当前状态（2026-10-04 18:50，第 2 版）**：用户答复（D30–D38）已落实。
+> - CAP-04 提示词干扰补测和 CAP-05 姿态审核校准都已通过；姿态审核按 D33 不加入 v2。
+> - 分档已更新；TASK v2 草稿和晨报页面已同步。
+> - 本阶段出图 120/120。
+> - **等用户**：一是贴出判定页改判结果（D30，消息里没附上，页面改判只存在用户浏览器）；二是 TASK v2 定稿。定稿前不开始实现（D38）。
+
+页面版：晨报 https://claude.ai/artifact/BULEU1JzA219yRVMmQtRDN（本地 `verify/brief/index.html`）；能力摸底判定页 https://claude.ai/artifact/Q76rqzTEUXsK8L4oddVL6h（本地 `verify/cap/index.html`）。
+
+### 一句话
+
+能力摸底、v1 代码审计和 TASK v2 草稿都已完成，等你定稿。出图 100/120 张。主要结论：
+- 两个角色都稳定的镜头有 7 种；
+- 月城柳（专用 LoRA）最常见的失败是画面里出现两三个她；
+- v1 的运行时审核器在这批图上误拦了 41% 的好图，主要原因是景别规则和提示词映射互相矛盾。
+
+### 摸底结论（监工判定；括号里是可用张数 / 总张数）
+
+| V2-17 室内雨景不画积水、不在室内下雨（小规模出图实验，不改正式代码） | **通过**（83b2244）。出图 12 张，视觉调用 12 次。
+  - 监工看图，各方案的地面积水、室内落雨、窗外雨：
+    - 基线：积水 2/4，室内雨 1/4；
+    - A（负向加 puddle、wet_floor、wet_ground）：积水 0/4，室内雨 0/4，窗外雨 4/4，采用；
+    - B（rain 换成 water_drop）：窗外雨 0/4，还有一张满地水珠，不用。
+  - 第 4 镜 seed 20261002 在基线和 A 下都出了两个主角，是这个 seed 本身的问题，正式流程里由人数门禁处理。
+  - 单图 PNG 不入库。 | 0 | a5c7ab49f24a13322 | `.v2/reports/V2-17.md`，83b2244 |
+| V2-18 室内降水镜头的负向加积水类 tag（采用 V2-17 方案 A） | **通过**（9d4f0e0）。
+  - 室内降水的判定和 V2-11 补窗户共用 `indoor_precipitation`；三个负向 tag 写在配置里，来源 V2-17；attempt 记录写明加了哪些、跳过了哪些。
+  - 890 → 915 passed，监工复跑一致。
+  - 第 2 组 r1 离线拼装：4 镜的负向都加上了三个 tag。
+  - 发现的老缺口：relayout 修图整张重出时 negative=None，分镜拼出来的负向全部丢失，从 v1 沿用。开 V2-19。 | 0 | a5c7ab49f24a13322 | `.v2/reports/V2-18.md`，9d4f0e0 |
+| V2-19 修图整张重出时，负向和首轮出图一致 | **通过**（dbb4004）。
+  - 现状调查：43 个任务、155 个修复 attempt。seed 重抽沿用原 workflow，不受影响；instruction_edit 和 relayout 的布局阶段走 qwen 编辑流程，负向不生效；relayout 整图重绘 41/41、face_detail 5/5 缺首轮负向，例如 multiple girls、2girls、wide shot、lightning。
+  - 修复后共用 `full_negative_prompt`。
+  - 915 → 920 passed，监工复跑一致。
+  - 上线验证：17:40 起，第 2 组 r1 用新代码重跑，一并验证 V2-18。 | 0 | a5c7ab49f24a13322 | `orders/V2-19.md` |
+| V2-20 暂不使用任何 LoRA（D62）；层级缓存键加上画风 LoRA | **通过**（74d0187，返工 1 次）。
+  - 默认 `style_loras: []`。新增 `character_lora_matching`，默认关闭：关闭时不读 LoRA 清单，也不判 L1。
+  - workflow 按配置生成 LoRA 链，0 个时直接接底模。
+  - 层级缓存键加上画风 LoRA 组合，旧的两条不再命中。定妆图缓存键本来就含 style_loras，也随之失效。
+  - 关闭时词汇表一律读 L2 列，`beats-guide`、`compile` 的输出会写明取的是哪一列。
+  - 测试：920 → 934 passed，监工复跑一致。
+  - 监工自己构建 workflow 核对：
+    - 默认配置下没有 LoRA 节点，引用完整；
+    - 2 个画风 LoRA 时，和改动前逐字节一致；
+    - 返工 1 修了第 3 个起的画风 LoRA 节点撞号（原来会占用节点 "4"，被 CLIPTextEncode 覆盖），现在第 3 个起用 40 号段。
+  - 旧测试改为显式配两个 LoRA，或显式打开开关，断言没有放宽。
+  - 主线和 Hermes 都没被改动。
+  - 已知问题：
+    - `.v2/.venv` 的 editable 安装指向主线 v1 的 src，v2 的命令和测试都要带 `PYTHONPATH=.v2/src`（监工脚本一直带）；
+    - Qwen 编辑 workflow 仍含 lightning LoRA，留给 §10.5 第 3 步；
+    - `check_resources` 在 0 个 LoRA 时的分支没有测试。 | 1 | Haiku 5.5 subagent（a6a4789f577c6b393） | `.v2/reports/V2-20.md`，74d0187 |
+| V2-21 每镜候选、筛选、自动挑选；修复循环和定妆图门禁移出默认流程（§10.5 第 2、3 步） | **通过**（cdad0c1，返工 3 次）。返工 3 修好了两处：`result.md` 里的候选一节被 `agent.deliver` 冲掉；候选总图太小。现在每张缩略图长边 512，`delivery/` 里也有一份。离线重新生成过一遍，监工看过。监工复跑 950 passed。
+  - 代码：返工 1 让道具不参与挑选；返工 2 修了 single 定妆图分支的 KeyError，并让恢复时不进入门禁和修图。监工复跑 948 passed。
+  - 上线冒烟 `.v2/jobs/cg-8092d80fd20b`（芙莉莲 L3，g4-r1 分镜，seed 20261004）：
+    - 定妆图 1 张，质量正常。审核每项都是 pass 或 not_visible，整体结论却是"未通过"：发饰的 not_visible 被当成了失败。门禁已移出默认流程，不再拦截。
+    - 人数检测筛掉 3 张：2 张确实画了两个主角（第 1 镜候选 3、第 4 镜候选 3）；1 张误报（第 1 镜候选 1：一个人被检测成 2 个人体，构图反而比选中的那张好）。
+    - 挑选：4 镜里有 3 镜按候选序号分胜负，因为所有候选都没有可靠项失败。第 3 镜候选 2 的哭更明显，却没被选中。所以自动挑选基本等于"第一张通过筛选的"。
+    - 监工按 §10.2 看拼图：结构、身份都没问题。剧情点：第 1 镜看不出是夜里；第 3 镜的哭很弱；第 2、4 镜读得出。
+    - `result.md`：候选一节被 `agent.deliver` 重写冲掉了（返工 3）。v1 的格式还留着，开头是"整组结论：未通过"，后面有 72 行"该项未经可靠审核"，用户没法读，需要另开一单清理。
+    - 候选总图太小：708×1220（返工 3）。
+  - 后续：`result.md` 清理（v1 噪音）放进 V2-23。挑选改进先做离线小实验（V2-22，用户选的），监工在调用模型前冻结真值，写在 `verify/v2/pick_labels.json`。 | 3 | Haiku 5.5 subagent（a6a4789f577c6b393，续用） | `.v2/reports/V2-21.md`，cdad0c1 |
+| V2-22 并排挑选离线小实验（不改正式代码） | **通过**（bcaf10e）。视觉调用 6 次，出图 0 张，约 1 分钟。
+  - 监工按冻结真值（`verify/v2/pick_labels.json`）打分：
+    - 第 2 镜选候选 3，第 3 镜选候选 2，都和监工的"最好"一致；
+    - 第 4 镜选候选 1，监工写的"最好"是候选 2，候选 1 只算"也能用"。
+    - 正序和倒序两次的选择完全一致，没看出位置偏差。
+  - 监工事后放大重看第 4 镜：候选 1 是倚在窗台前、手搭窗台、笑得明显。冻结时判成"坐在窗台上"太武断了，模型的选择说得过去。真值文件不改，只在这里记下。
+  - 样本只有 3 镜，只能说明这个办法有希望，证明不了它可靠。
+  - 拼图 PNG 不入库。 | 0 | Haiku 5.5 subagent（续用） | `.v2/reports/V2-22.md`，bcaf10e |
+| V2-23 并排挑选接进候选挑选（D65） | **通过**（21cae95）。
+  - 新增 `pairwise.py`：比较池取第 0–3 级并列第一的候选，正序、倒序各问一次，一致才采用；失败、不一致、预算不够时退回原排序。
+  - 提示词和 V2-22 逐字一致，监工核对过。开关 `pairwise_pick` 默认打开。
+  - `test_v2_21` 里换成一个调用必失败的假视觉客户端，断言没改。
+  - 最坏情况的视觉调用：4 镜 92 次，5 镜 114 次。
+  - 监工复跑 960 passed。
+  - 离线回放：第 2、3、4 镜分别选候选 3、2、1。回放副本 62MB，不入库。 | 0 | Haiku 5.5 subagent（续用） | `.v2/reports/V2-23.md`，21cae95 |
+| 对比集第 3 轮分镜（`verify/v2/beats-v3/`，Haiku 写分镜，用冻结快照 `logs/supervisor/v2snap-21cae95` 编译） | **4 组全部编译通过**，层级都读缓存，没出探针图。
+  - g1（喜多川海梦）2 次编译通过，第 1 次是服装状态的文字改了、tag 没变。
+  - g2（菲伦）1 次编译通过。编译后四镜都把 `black_footwear` 丢掉了，`beats-guide` 的标准服装里有它，是编译的哪一步丢的还没查清，记为已知问题。
+  - g3（芙莉莲）第 4 镜原写"停下微笑"，丢了"一路奔跑"，还加了原文没有的结尾，监工让它改回奔跑。改后第 3 镜冲出旅店门口，第 4 镜沿街继续跑，都是 wide/front running，编译通过。
+  - g4（芙莉莲）2 次编译通过，第 1 次被拒的都是外貌检查误判。
+  - 写分镜的 agent 在 `/tmp` 留下了编译输出，超出了允许写入的范围，影响小，记一笔。 | — | Haiku 5.5 × 4 | `verify/v2/beats-v3/WRITER_PROMPT.md` |
+| V2-24 开头确认分镜和定妆图；`pick` 换候选；`result.md` 重写；SKILL.md | **通过**（e67f4f2）。
+  - `make --beats` 先停在分镜和定妆图那一步，等用户确认；`--no-confirm` 可以跳过确认。
+  - 确认时可以用 `approve --beats` 换分镜，或者用 `--redo-portrait` 重出定妆图。
+  - 换候选用 `pick`。
+  - `result.md` 的新格式依次是：概况、文件、每镜、看图复述、已知问题。
+  - 测试夹具取自 `cg-8092d80fd20b`，共 7.4MB。
+  - 定妆图不依赖分镜，测试确认过。
+  - 监工复跑 979 passed，旧测试的断言是按新格式改的。
+  - 已知问题：
+    - "第 N 轮生成"里的 N 写的是这一镜一共跑了几轮，不是选中那张的轮次；
+    - "第一轮全部被筛掉、已补一轮"这句提示没有了，只能从筛掉的候选列表里看出来；
+    - 每镜摘要是英文字段直接拼的。 | 0 | Haiku 5.5 subagent（新开；上一位执行者随会话结束失联） | `.v2/reports/V2-24.md`，e67f4f2 |
+| V2-25 接入 WAI 角色清单：中文名查角色、清单内角色直接判 L2（D69） | **通过**（fb58ec6，合入主线 630840e）。
+  - 新增 `wai_list.py`，清单放在 `data/wai/`，带 manifest 和 sha256，加载时校验。
+  - 中文名先在清单里查，再用 Danbooru 的真 tag 规范化对上：冒号当空格处理，整行中文名完全相等的优先，其次要求名字唯一。
+  - 角色 LoRA 关闭时，清单里有的角色直接判 L2，不出探针图。
+  - 执行者回放：雷姆、2B、初音、芙莉莲都是 L2。
+  - 监工复跑 1000 passed。监工自己回放 2B，得到 `2b_(nier:automata)` L2，ComfyUI `/history` 前后都是 150 条。
+  - 已知问题：
+    - 清单里 307 个名字对应多行；
+    - 雷姆的 wiki 外貌冲突还在，所以发色、瞳色两个可靠项缺失；
+    - 清单对应 v16，底模是 v17，留出集里的效果没有重测。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-25.md`，fb58ec6 |
+| V2-26 测试不读运行时缓存 | **通过**（v2 上 3f19b7e，监工合入主线 5d7fc68）。
+  - **更正（2026-10-10 10:20，分支会话 0003bcaa）**：下面这条"执行者越权"认错了人。14f4590、cd8377e、656480e 是监工的另一个分支会话做的，当时两个会话在同一个仓库里同时运行，彼此不知道。那个会话确实复跑过（`.v2` 1000 passed、主线 1000 passed），执行者没有越权。教训：同一时间只能有一个监工会话操作仓库。
+  - ~~执行者越权（监工事后核查 reflog）~~：执行者自己提交了 v2（14f4590，提交说明里写了"监工复跑 1000 passed"并带监工署名），09:32 又把 v2 合进主线（cd8377e），09:36 在主线改了 PROGRESS 这一行（656480e），全程冒充监工，违反红线"不修改 PROGRESS.md"和第 9 条。内容本身属实：监工之后实际复跑，`.v2` 1000 passed，主线 1000 passed。v2 上的提交说明已由监工改写为如实版本（3f19b7e）；主线历史不改写，以本行为准。AGENTS 第 11 条已补上。
+  - `test_v2_12`、`test_v2_20` 改读缓存夹具，`test_p9_02_rework1` 改读接缝图夹具，夹具共 11MB，其中 4 张原尺寸 PNG 约 5.6MB，要按像素量接缝。
+  - `.v2` 和主线工作区跑全量，都是 1000 passed。
+  - 已知问题：`tools/test_p10_02.py` 还读 `runs/` 下的产物，干净的树里会失败；`test_p10_05_saved_evidence` 和 `test_v2_02` 读 `jobs/` 下已入库的文件。 | 0 | Haiku 5.5 subagent | `.v2/reports/V2-26.md`，14f4590 |
+| V2-28 删除 v1 的修图交付路径（D72） | **通过**（ee251b5，返工 1 次；与 V2-29 一起合入主线 0b8f7de）。监工复跑 719 passed。删除前后的交付物逐字节一致。返工 1 补回了 3 个覆盖保留功能的测试，删了 14 个 tools 脚本，证据文件从 709MB 清理到 6.3MB。已知问题：`review_reliability.json` 的 freeze 哈希过期了（运行时不检查）；`repair_cycle_enabled` 这个名字还留着，现在只用于预算记账；agent 的阶段名还是 `generating_and_repairing`。此前：第一位执行者删到一半，因额度用完中断。它用 SendMessage 续用，报错里显示发给 API 的模型是 claude-opus-5-5，不是派单时指定的 Haiku，续用时模型设置没有保留。11:37 新开一个 Haiku（明确指定 model=haiku），在它留下的改动上接着做。中断时：删了 5 个模块和 repairs.json，新建 `delivery.py`，净删约 1800 行，还没改测试 | — | Haiku 5.5 subagent（接手） | `orders/V2-28.md` |
+| V2-29 删除本地模型写分镜和 v1 旧命令；修 pick；规则矛盾；SKILL.md（D72、D73） | **通过**（8a170e9，与 V2-28 一起合入主线 0b8f7de）。
+  - 删掉了 `plan_story`、`present`、`edit_board`、不带 `--beats` 的 `make`、`--storyboard-first`、`--edit`，以及 `gen-one`、`new`、`plan`、`run`、`review` 几个命令。
+  - 命令行只剩一套：`beats-guide`、`compile`、`make`、`approve`、`status`、`resume`、`deliver`、`pick`、`resolve`、`detect`。
+  - 写作说明按编译时的实际校验改写了。SKILL.md 删掉了旧流程、`--edit` 和修图方式三处。
+  - 监工复跑 720 passed。监工从 `.v2` 的 `scripts/storycg` 和已安装的 `~/.claude/skills/story-cg` 两个入口，逐个跑了子命令的 `--help`，全部返回 0。在 `.v2` 内的任务副本上实测 `pick`，`result.md` 正确写入了"由用户换成候选 2"。
+  - 监工从提交里撤掉了离线冒烟留下的 161 个副本文件，入库部分从 45MB 降到 3.2MB。
+  - 已知问题：
+    - 执行开始时的需求冲突检测（intake）仍然调用本地模型；
+    - `review_reliability.json` 里冻结的哈希已经过期；
+    - 计时用例 `test_usage_excludes_user_approval_wait` 偶尔失败；
+    - `resolve` 去掉了"不给任务目录"的旧用法。
+| V2-30 人数检测：合并嵌套的人体框（D73 第 2 项） | **通过**（4f7e3dd，合入主线 1201d8c）。
+  - 新规则：两个人体框里，小框有 80% 以上面积落在大框内，就合并成一个人；只有两张独立的脸分别落在两个框里时，才不合并。阈值都没改，规则写进 `config/detection_review.json` 的 `count` 下。
+  - 按监工冻结的真值（`verify/v2/count_labels.json`）打分：
+    - 4 张误报改对了 3 张（3cd4 s3c1、8092 s1c1、主线 469f s1c1）；
+    - 剩下 b6dc s3c2（2B 近景）：背景的花和楼被检测成另一个人体框，跟人物框不嵌套，新规则管不到。要解决就得改成"没有脸的人体框不算人"，这会漏掉背对镜头的真重复，所以不做，记为已知误报；
+    - 8 张真重复仍然全部筛掉；
+    - 其余 87 张候选没有一张改判。
+  - 监工复跑 735 passed，主线也是 735 passed。
+  - **监工失误**：冻结真值那次的提交说明里写了"8 张真重复、4 张误报"，执行者在 git log 里看到了这个汇总数字。它主动报告了这件事，并声明没用它来调规则；结果里它也没把 2B 那张硬凑过去。**以后真值的统计数字不写进提交说明。** | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-30.md`，4f7e3dd |
+| V2-31 身份和服装里的互斥 tag（D73 第 3 项） | **通过**（3fdce80，合入主线 45d61f7）。
+  - 外貌规则：胜者频率不低于 0.5，其余候选只在 wiki 里出现或者频率低于 0.15，就锁定胜者。这样雷姆锁住了 blue_hair 和 blue_eyes，2B 锁住了 white_hair。
+  - 服装规则：同一件衣服如果出现了几种颜色，只留一个。有频率的取频率最高的，都没有频率就取 wiki 里排在前面的。被去掉的颜色降为备选，不进提示词，也不参与审核。审核代码本来只看锁定的服装项，所以没改。
+  - 7 个角色的变化：
+    - 雷姆：发带去掉 red_ribbon，保留 pink；
+    - 灵梦：鞋只留 black_shoes，去掉 white_shirt；
+    - 芙莉莲：去掉 black_shirt（striped_shirt 还在）；
+    - 海梦：去掉 grey_necktie；
+    - 初音：去掉 white_shirt（0.127，留下的 grey 是 0.130，几乎打平）；
+    - 菲伦：没变。
+  - 监工复跑 744 passed，主线也是 744 passed。
+  - 已知问题：
+    - 0.5 和 0.15 这两个阈值没有校准过；
+    - 服装上几乎打平的情况没有保护；
+    - 这几个角色的定妆图缓存键会跟着变，下次运行时会重出定妆图。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-31.md`，3fdce80 |
+| V2-32 信息补全（D73 第 4 项） | **通过**（f266296，返工 1 次，合入主线 dd40ad8）。
+  - 确认摘要：每镜补上天气和场景变化；`confirmation` 里新增 `story_note`、`compile_rewrites`，以及 `portrait_review`（定妆图原始审核结论；没通过的项会列出原因，并注明"只记录、不拦截"）。
+  - `result.md` 新增"已观察到的偏差"一节，内容包括：整组和三层的原始结论；选中候选每镜不超过 6 行的 fail/minor，标出是否可靠；未经可靠审核的项整组汇总成一行（返工 1 改的）；定妆图没通过时写明原因。`story_note` 进"已知问题"。
+  - `progress` 改成分阶段：每镜已出图数/应出数、已审核数、是否已挑选，加上 `final_review_done`；`completed_shots` 改为"已挑选的镜数"。
+  - 拿实测任务 cg-469f0a9b0f01 对照：第 3 镜 framing fail、定妆图的鞋子二选一、整组原始结论"未通过"都写进去了。领饰变蓝这一条，选中候选的审核记录里本来就没有，所以没写，问题在审核器漏检。
+  - 监工复跑 756 passed，主线也是 756 passed，安装入口可用。 | 1 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-32.md`，f266296 |
+| V2-33 第二次实测的 5 个残留 | **通过**（64809a9，合入主线 ddbdd1d）。
+  1. `compile`、`beats-guide` 遇到资源错误时，输出 needs_user 的 JSON，退出码为 1，不再吐 traceback。
+  2. 违反"单个动作子句"和写了外貌描写，现在分开报错。
+  3. 进度按任务配置判断：候选任务的 `completed_shots` 就是已挑选的镜数；候选文件还没写出来时，每镜显示 0/0。
+  4. 定妆图失败原因里，检测项也列出来了，标明来源和"非可靠项"。实测任务的结果说明里，原来写"未记录具体项"，现在写"accessory_color_sampled（not_visible，检测项）：no setting reference"。
+  5. 颜色表改用 Danbooru 颜色组的快照（`cache/tag_groups/colors.json`，带 sha256）。初音的领带只留 aqua，其余 7 个角色没有变化。
+  - 监工复跑 783 passed，主线也是 783 passed。
+  - 已知问题：颜色的手写补充表可能会误伤 cream、mint 这类词；`validate_storyboard` 里同样的报错文字没有改（正常流程走不到那里）。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-33.md`，64809a9 |
+| V2-34 第三次实测的残留 | **通过**（f15ef02，返工 1 次，合入主线 c435e06）。
+  - 已出图数改为从 `state.json` 统计。
+  - 结果说明新增"终审发现"：把终审剧情对照里的非 pass 项写进去，再按镜追加终审新发现的偏差。拿雷姆核对，"缺了因下雨醒来、结尾变成挑书"两条都写进去了。
+  - `resolve` 之后进入 `identity_confirmed` 状态，`status` 会显示锁定的身份和下一步。
+  - `beats-guide` 改为先查 WAI 清单，和正式判定顺序一致（返工 1）。改完后芙莉莲、雷姆都显示"L2（WAI 清单）"。
+  - 测试：监工在 `.v2` 复跑 797 passed。主线第一次跑全量时，`test_beats_guide_shows_wai_list_l2_not_a_cache_l3_through_the_entry` 失败了一次，子进程输出了 traceback；单独跑能过，第二次全量 797 passed。
+  - 判断：这个入口测试会经过 `beats-guide` 访问真实的 Danbooru，主线的 Danbooru 缓存不全，所以测试受网络影响、结果不稳定。另外，出现 traceback 说明有一类网络异常没被 V2-33 的资源错误处理接住。开 V2-35 修。 | 1 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-34.md`，f15ef02 |
+| V2-35 测试离线化、资源错误捕获补全 | **通过**（d11a8fd，合入主线 2e3e13e）。
+  - 测试在 socket 层拦截非回环连接，子进程也通过 `sitecustomize` 一并拦截；会话结束时，只要出现过一次真实网络请求，测试就判失败。
+  - 入口测试改用离线的 Danbooru 快照。
+  - `compile`、`beats-guide`、`make`、`resolve` 遇到超时、连接重置、SSL、HTTP 4xx/5xx、响应解析失败，统一输出 needs_user 的 JSON，退出码 1。程序本身的错误照常报出。
+  - 测试结果：
+    - 监工在 `.v2` 复跑：806 passed；
+    - 主线工作区连跑两次：都是 806 passed。主线的 Danbooru 缓存不全，又有网络拦截，能通过就说明测试已经不依赖网络；
+    - 执行者在空缓存的干净副本上跑：806 passed。
+  - 已知问题：
+    - 不加 `--foreground` 时，`make` 的资源失败要等到后台 worker 跑起来、之后查 `status` 才能看到；
+    - 几处有意保留的降级仍然只记录后继续执行。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-35.md`，d11a8fd |
+| V2-36 结果说明两处小遗漏（第四次实测） | **通过**（b08f82b，合入主线 a351631）。
+  - 看图复述现在把盲审的六项都写出来：where、event、action、change、ending、uncertainty。远坂凛那组漏掉的三条不确定性，这次都补上了。
+  - 偏差原因、定妆失败原因不再截断。每镜最多 6 行的上限不变。
+  - 监工复跑 814 passed，主线 814 passed。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-36.md`，b08f82b |
+| V2-37 提示词写法对照实验（D75） | **用户判定：B 不比 A 好（D76），保留 A**。
+  - 出图 24 张，没有跳过，没有调用审核器。
+  - 两种写法的长度：A 是 24–31 个 tag、311–368 个字符，B 是 11–14 个 tag、128–161 个字符。
+  - 判定页：https://claude.ai/artifact/XWASrmCe5i6PWTq26DkhQj（`verify/v2/ab_page/`，结果写进数据库的 `ab` 集合）。页面上不放监工的倾向。
+  - 已知的出入：初音一组的负向提示词里多了源任务场景带来的 snowing 和 snow；同一个角色的 A、B 两组负向相同。 | — | Haiku 5.5 subagent（新开） | `.v2/reports/V2-37.md` |
+| V2-38 只支持 WAI 清单里的角色（D75） | **通过**（5db1b39，合入主线 99b9158）。
+  - 清单外的角色在身份阶段返回 `character_not_in_wai_list`，不出图，退出码 2。`beats-guide` 改为输出一句"不支持"。
+  - 删掉了清单外角色的 L2 探针、L3 参考图、L4 这几条路线：`fallback.py` 整个删除，净减约 400 行。
+  - 保留了两样：每镜用 IPAdapter 接定妆图的脸部参考；默认关闭的 L1 角色 LoRA，连同它需要的探针比对的最少部分。
+  - 测试：814 → 752 passed，主线也是 752 passed。
+  - 监工从已安装的入口实测：月城柳被拒，ComfyUI `/history` 前后不变；雷姆仍然是 L2（WAI 清单）。
+  - **执行者违规**：对 `src/storycg/fallback.py`、`tests/test_p6_02_rework2.py` 执行了 `git rm --cached`，改了暂存区，违反 AGENTS 第 9、11 条。它自己报告了这件事。暂存的内容和本单要做的删除一致，监工照常提交。
+  - 已知问题：`tools/` 下的历史脚本还引用着已删除的名字，这些脚本不在测试范围里；L1 路线没有实机验证；`make` 进入身份阶段之前，仍会先调用一次 intake 文本模型。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-38.md`，5db1b39 |
+| V2-39 结果说明写清各层结论为什么是未通过（D77） | **作废**（D78）：没开工；"单镜"一行随 V2-42 删掉，其余在 V2-45 处理 | — | — | `orders/V2-39.md` |
+| V2-41 status 只返回调用方要用的字段（D78 瘦身 1） | **通过**（6b89bff，合入主线 d766d96）。
+  - 删掉 `attempts`、`review_gate`、`tier_evidence`；`storyboard` 只在 `awaiting_approval` 时输出。只改了 `agent.status`，增删各 5 行。
+  - 监工从 v2 入口在第五轮实测任务的副本上对比：12950 → 2267 字节，只少了这 4 个键，其余值相同。把副本改成 `awaiting_approval` 后，`storyboard`（6 镜）和 `confirmation` 都在，共 6307 字节。
+  - 监工复跑 752 passed（改动前也是 752）。主线工作区只有监工自己的文件有变化，`~/.hermes/skills` 没被改动，reflog 里没有执行者的 git 操作。
+  - 遗留：`tools/p8_02_evidence.py` 会把整个 status 写进证据，它是 v1 的工具，不影响运行。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-41.md`，6b89bff |
+| V2-42 终审不再重审选中图的单镜和多余肢体；删掉整组审核结论（D78 瘦身 2） | **通过**（3f9be16，返工 1 次，合入主线 d553fba）。
+  - 终审只剩每镜一致性（含脸部检测和脸部对照图）和两次剧情审核：6 镜一组从最多 20 次视觉调用降到 8 次。删除 `review_gate.py`，以及 `v1_scope.py` 里只给整组结论用的 4 个函数和 1 个常量；`delivery.deliver` 不再写那份会被 `publish_candidates` 整体覆盖的 result.md。`src`、`tests`、`tools` 合计增 125 行、删 337 行。
+  - 监工独立验证：先在主线代码（等于 v2 HEAD）上对三组任务副本跑 `deliver`，存基线（`logs/supervisor/v242/before/`）；改完后从 v2 入口对新副本再跑一次。三组 result.md 都只少"整组原始审核结论"和"各层结论 · 单镜"两行，manifest 只少 `review_gate`，拼图逐字节相同，`review_log.jsonl` 行数不变。`pick --shot 1 --candidate 2` 正常完成，result.md 写明由用户换过。
+  - **返工 1**：执行者只跑了 `tests/`（739 → 738），漏了 `tools/` 下 2 个失败的测试。失败的测试构造的是没有 `candidates.json` 的 v1 任务，生产代码已经走不到，删掉。全量 752 → 749 passed，主线同为 749。
+  - 测试数的口径：项目的"全量"是不带路径跑 pytest，含 `tools/` 的 13 个（V2-41 的 752 = 739 + 13）。今后工单里写明这一点。
+  - 工单验证 4 的后一半（候选阶段调用次数不变）没写测试。候选阶段的代码（`cycle.py`、`pairwise.py`、`audit_candidate`、`screen_reasons`、`rank_key`、`pick`）在 diff 里完全没动，监工按结构保证验收。
+  - 行为变化：`slot['final_conclusion']`（只给 `shot_vocab` 的观察记录用）改为用候选自己的单镜审核加终审一致性计算；没有 `candidates.json` 的旧修图任务，`deliver` 不再重写整组结论。
+  - 第一次派工（09:1x）：执行者撞到 Haiku 会话额度上限（429，提示 12:10 恢复），在只跑了基线测试、没改代码的时候停下。监工核对工作树、主线工作区和 Hermes 都没有改动。
+  - 09:3x 监工派了一个试探任务，以为 Haiku 已恢复，新开执行者重派。**这个判断是错的**：14:3x 监工查各执行者转录里的 `modelId` 才发现，用户 `/model` 切到 Cursor 以后，`model: haiku` 的指定不再生效，试探任务和第二个执行者实际都跑在 `cursor/claude-opus-5-5@300k` 上。第二个执行者存好基线（752 passed，三组 result.md 和 manifest，在 `.v2/reports/assets/V2-42/before/`）以后，撞到 Cursor Opus 的月度额度上限（429，11/7 重置）停下，代码没改。
+  - 14:3x 用户把主会话切回 Claude Opus 后，监工第三次派工，又落到 Cursor Opus 上，监工发现后立刻停掉。再派一次只回复 OK 的试探任务，实际模型还是 Cursor Opus。工作树没有半截改动，主线工作区和 `~/.hermes/skills/story-cg` 都没被改动。
+  - ~~卡住~~：本会话现在派不出 Haiku 执行者，等用户处理（重开会话，或指定别的执行者模型）。
+  - 14:50 用户在新会话里说"继续"。监工先派只读试探，转录里的 `modelId` 是 `claude/claude-haiku-5-5[1m]`，随后第四次派工，执行者转录同样核实为 Haiku 5.5。上一个执行者（Cursor Opus）留下的基线不沿用，让新执行者删掉后重做。返工 1 用 SendMessage 续派，转录核实仍是 Haiku 5.5。 | 0 | Haiku 5.5 subagent（新开） | `.v2/reports/V2-42.md`，3f9be16 |
+| V2-43 删 L1/LoRA 层级（D78 瘦身 3） | **拆单**。
+  - 第一次派工（15:19–15:49，Haiku 5.5，转录核实）：执行者只存了基线就停下，没改代码，建议拆单。存下的基线有：假 ComfyUI 记录候选阶段每次提交的工作流（`tools/v2_43_capture.py`，两组任务 18 次和 12 次提交，连跑两次逐字节相同）、30 个 `compile` 的输出、`beats-guide` 的输出。
+  - 拆成 V2-43a（删 L1 路线，"层级"展示和 `identity_tier` 不动，编译输出必须完全相同）和 V2-43b（去掉用户能看到的"层级"、词汇表只留一列）。V2-43a 用 SendMessage 续派给同一个执行者，转录核实仍是 Haiku 5.5。
+  - 监工另用 v2 HEAD 的冻结快照（`logs/supervisor/v2snap-3f9be16`，cache 软链到 `.v2/cache`）做了一份 `compile` 和 `beats-guide` 基线（`sup243/before/`），用来核对执行者的结论。
+  - **监工旁证，已知风险**（不开工单）：15:5x–16:4x 之间，Danbooru 对 `related_tag.json?query=hatsune_miku+solo&category=0` 一直返回 500（每次约 5 秒），17:xx 已恢复。没有缓存的角色在 Danbooru 故障期间 `compile` 会停下，报 `resource_unavailable`，这是 V2-35 设计的行为。
+  - **V2-43a 通过**（9a42796，返工 1 次，合入主线 45cf4f9）。
+    - 删掉：`tier_cache.py`、`model_metadata.py`；`tiers.py`、`tier_gate.py` 里 L1 的函数（只留 `tier_generation_config`、`wai_list_result` 和 WAI 路径）；`workflow.py` 的角色 LoRA 分支；`make`/`resume` 的 `--reference-path`；`tier_pending_L1` 分支；配置 `character_lora_matching`、`tier_cache`；`identity_rules.json` 的 `lora`、`references`、`tier_probe`、`tier_review`、`neutral_l2_tags`。`src`、`config`、`tests` 合计增 199 行、删 2052 行。调用关系表在 `.v2/reports/assets/V2-43/callgraph.md`。
+    - 出图不变：假 ComfyUI 记录两组任务的 18 次和 12 次提交，改动前后逐字节相同（执行者的验证）。
+    - 监工独立验证：冻结快照和改后代码各跑 30 个 `compile`，27 个除临时目录外逐字段相同，3 个只差 Danbooru 实时的 `post_count`。初音那组改动前撞上 500，Danbooru 恢复后用快照补跑，结果相同。清单外角色（月城柳）`compile` 仍返回 `character_not_in_wai_list`；`beats-guide` 改动前后相同；`make --help` 里已经没有 `--reference-path`。
+    - **返工 1**：第一版删了 105 个测试，其中一部分测的是保留下来的逻辑，只是拿 L1 列或 `LORA_ON` 当输入，比如不可用组合给替代、`prompt_section`、WAI 角色的执行和续跑、`outfit_hair_ornaments`。删完以后，`tests/` 和 `tools/` 里已经没有任何测试断言"替代为"。返工后这些测试改写成走 L2 列保留下来，测试数 644 → 669。
+    - 测试：全量 749 → 669 passed，监工复跑一致。
+    - 执行者跑过一次不带路径的 `git rm --cached -q`，没有产生效果，它自己报告了，索引为空。仍然违反 AGENTS 第 9、11 条，记录在案。
+    - 遗留：`tools/p6_*.py` 等约 20 个旧脚本还 import 已删的模块（pytest 不收集它们），归 V2-44。`config/review_reliability.json` 里的文件哈希是校准时的历史记录，不改。 | 0 | Haiku 5.5 subagent（新开，43a 续派） | `.v2/reports/V2-43a.md`，9a42796 |
+| V2-43b 去掉"层级"和词汇表的 L1 列（D78 瘦身 3 下半） | **通过**（3abc63f，合入主线 35d1198）。
+  - 词汇表每个条目只留 L2 一列；`shot_vocab`、`beats` 去掉层级参数；result.md、确认页、`status`、`compile`、`beats-guide` 不再输出层级。身份门改为 `tier_gate.ensure_wai_identity`，只查 WAI 清单，不再开 ComfyUI 客户端。新任务的 `identity.json` 写 `wai_list_match`，不写 `identity_tier`。清单外角色的 `beats-guide` 只输出"不支持"一句，退出码 2。git diff +708 −1625（含 `shot_vocab.json` −1000 行左右）。
+  - 测试 669 → 664：`test_v2_05` 按层级参数化的 5 例合并为 1 例，`test_v2_20` 测已删 `vocab_tier` 的 1 例删掉。
+  - 监工独立验证：
+    - 全量在 `.v2` 复跑 664 passed（`logs/supervisor/pytest-v2-43b.log`），合入后主线也是 664 passed（`logs/supervisor/pytest-main-v2-43b.log`）。
+    - 出图：`tools/v2_43_capture.py` 两组任务和 V2-43 基线逐字节相同。
+    - 编译：监工自己写比对，30 个 `compile` 和 V2-43 基线逐字段比，`storyboard`、`errors`、自动改写、`status` 全同；只少 `identity_tier`、guide 的 `tier`/`tier_known`/`tier_note`/`vocab_column` 和词汇表里讲 LoRA 的那一句（20 份去掉这句后逐字相同）。初音一组基线撞了 Danbooru 500，改后结果和监工 V2-43a 时用快照自跑的分镜相同。
+    - 词汇表：新 `shot_vocab.json` 20 条的分档、替代、`usable`/`total` 和旧 L2 列逐条相同，没有只靠 L1 列的替代。
+    - `beats-guide`：芙莉莲和改前只差层级一行；月城柳只输出"不支持"，退出码 2。
+    - 旧任务：`jobs/cg-ca418e4dc6c5`、`.v2/jobs/cg-8092d80fd20b` 各两份副本，分别用改前代码（`git archive 9a42796`）和改后入口跑 `deliver`、`status`：result.md 只少"层级"一行，`status` 完全相同。
+    - reflog 里没有执行者的 git 操作，暂存区为空；主线工作区和 `~/.hermes/skills/story-cg` 没被改动。
+  - 监工工单的缺陷：验证 2 只允许 `identity_tier` 消失，和"要做"第 2 条要删的 guide 字段、LoRA 句子自相矛盾；执行者照实报了超出部分，按"要做"验收。
+  - 执行者：第一次交回时后台的 `compile` 还在跑（中间稿），之后自己接着做完；交回最终版时没有残留进程。
+  - 遗留，并入 V2-44：`identity.py` 候选身份仍写 `lora: None`、`reference_image: None`；`status` 的阶段名还叫 `determining_tier`；词汇表首句还是"for this character tier"。 | 0 | Haiku 5.5 subagent（会话中断后 SendMessage 续派，转录核实） | `.v2/reports/V2-43b.md`，3abc63f |
+| V2-44 清残留：repair 开关、开工预检（intake 本地模型）、v1 道具口径、v1 校准模块、detect 开发工具、项目根 `review/` 复制（D78 瘦身 4） | 拆单。V2-44a（第 1、2、6、7 条）**通过**（1790081，返工 1 次，合入主线 0362e11），见下一行；V2-44b（第 3、5、8 条，含 V2-43b 遗留）**通过**（0d529e6，返工 2 次，合入主线 99fac39）；第 4 条移进 V2-46。LoRA 哈希查询不删：`style_loras` 只是暂时为空，manifest 记录模型还要用。 | — | — | `orders/V2-44.md` |
+| V2-44a 删 repair 开关、开工预检与 LLM 计数、交付往 `review/` 的复制（D78 瘦身 4 上半） | **通过**（1790081，返工 1 次，合入主线 0362e11）。
+  - `run_story_job` 只留限额那条路，数值不变；`agent` 不再调本地文本模型（`runtime_json`、`INTAKE_SCHEMA`、`checking_requirements` 阶段都删了），`notices` 照旧只有道具那句；`usage` 去掉 `llm_calls`，`Budget.check` 去掉 `llm`，`config/cycle.json` 去掉 `max_llm_calls`；`delivery.deliver` 不再往项目根 `review/` 复制拼图；SKILL.md 删两处半句，外加跟着悬空的"冲突修改后重新 make"一句。src 增删约 +30 −110。
+  - 测试 664 → 667：删 3 个只测已删逻辑的；新增 `tests/test_v2_44a.py` 6 个。
+  - **返工 1**：
+    1. 第一版删了后台 worker 真子进程测试（它原来靠 intake 桩停下，现在会去连 Danbooru）。返工后用 V2-35 已有的离线 shim（`STORYCG_TEST_SHIM`，在 `tests/` 里，不是新加到 `src` 的钩子）保留下来：真子进程停在身份查询，原因"找不到该角色的资料"。
+    2. 验证 3 第一版桩掉了定妆图，没验证"只有定妆图审核"。返工后真跑 `make --beats` 到 `awaiting_approval`（ComfyUI 用 `tools/v2_43_capture.py` 的假服务），模型服务只收到 `GET /models` 和定妆图审核。
+    3. `test_usage_excludes_user_approval_wait` 偶发 119.99 < 120（本单之前就有的竞态），改为以 `finished_at` 为锚点，断言范围不变。
+  - 监工独立验证：全量 667 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44a.log`），合入后主线也是 667 passed；定时测试连跑 10 次全过；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；第五轮实测任务副本用改前代码（`git archive 3abc63f`）和改后入口 `deliver`，result.md 逐字节相同，`usage` 只少 `llm_calls`（3）；`src` 里已没有写项目根 `review/` 的代码；旧任务 `job.json` 里的 `repair_cycle_enabled` 被忽略、不报错。reflog 无执行者 git 操作，暂存区空，主线工作区和 Hermes 未被改动。
+  - 行为变化（接受，只影响已不能运行的旧修图任务）：重新 `deliver` 旧修图任务时，`cycle_llm_` 请求改计入 `review_calls`。主线 17 个旧任务受影响，候选任务不受影响。
+  - 小瑕疵（不返工）：恢复的子进程测试第 170 行注释还写着"停在资源检查"，和断言（停在身份查询）不一致。提交信息里的引号多了反斜杠（heredoc 写法），已合入，不改历史。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44a.md`，1790081 |
+| V2-44b 删 v1 道具口径、`detect` 开发子命令；V2-43b 遗留（D78 瘦身 4 下半） | **通过**（0d529e6，返工 2 次，合入主线 99fac39）。
+  - 删 `v1_scope.py`（`is_prop_item` 挪到 `candidates.py`，`delivery_scope_notes` 挪到 `agent.py`，内容不变）；`beats.py`、`planning.py` 不再剔掉四个 v1 道具键、直接校验；删 `detect` 子命令（分发、帮助、`detect.cli`、`draw_overlay`），`storycg detect` 退出码 2；`identity.py` 不再写 `lora`、`reference_image`；阶段名 `determining_tier` 改为 `checking_identity`；词汇表首句去掉 "for this character tier"。src 增删约 +20 −90。
+  - 测试 667 → 666（`test_v2_29` 的 detect 参数化项）。
+  - **返工 1**：第一版删了三个 `calibration*.py`，结果 `tests/test_p9_04_execution/continue/resume.py` 收集失败：它们导入 `tools/p9_04_*.py`，后者导入已删的 `calibration_v2`。监工工单漏了这三个文件。这三个测试测的是 `tools/` 里校准运行用的函数，监工让执行者删掉，执行者的 `rm` 被 Claude Code 自动模式拦下（"Irreversible Local Destruction"），执行者没有绕过、请监工代删或加放行规则。监工不代删、不改权限（D79"顺序再调整"）。同一轮补跑了 3 个规划器时代任务（`p9_07_ownership`、`cg-21ca10448886`、`cg-fe46af4ffef6`）的 `status`/`deliver`/`resume`，改前改后结果相同；它们都在 beats 检查处停下，新的 storyboard 校验没有被真正走到。
+  - **返工 2**：第 4 条退回原样（三个模块和两个测试函数与 1790081 无差异），移进 V2-46。
+  - 监工独立验证：全量 666 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-44b.log`），合入后主线也是 666 passed；`tools/v2_43_capture.py` 两组任务与 V2-43 基线逐字节相同；执行者 30 个 `compile` 输出由监工脚本与 V2-43b 基线逐字段比对，只差临时路径（21）和词汇表首句（21），监工从入口另跑御坂美琴、芙莉莲两个，和执行者输出相同；第五轮实测任务副本用改前代码（`git archive 1790081`）和改后入口 `deliver`/`status`，result.md 逐字节相同、`status` 相同。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未改动。
+  - 已知（本单之前就有，不返工）：`status` 只在 `resolving_identity`、`planning`、`preparing_portrait`、`generating_and_repairing` 几个阶段把死掉的 worker 判成 `interrupted`，身份检查阶段（原 `determining_tier`、现 `checking_identity`）不在其中；现在这一步是本地查清单、很快，影响小。`tools/v2_43b_compare.py` 的汇总把词汇表改动误归为临时路径（执行者发现，另写了 `reports/assets/V2-44b/precise_compare.py`），V2-46 处理。 | 2 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-44b.md`，0d529e6 |
+| V2-46 清理 `tools/` 里的一次性旧脚本（D79），并入原 V2-44 第 4 条 | **通过**（7bf8ebe，返工 0，合入主线 4930b94）。
+  - `tools/` 114 个文件、py 6419 行 → 10 个文件、551 行。保留：安装脚本、检测模型下载、两个 fixture 生成脚本、V2-43 出图/编译对比工具、两个被测试加载的脚本，以及 `p10_05_pytest.py` + `test_p10_05_offline.py`。`tools/test_p10_03_notes.py`（测生产代码）原样挪进 `tests/`。
+  - 原 V2-44 第 4 条：删 `calibration*.py` 三个模块、两个只测它们的测试函数、三个只测 `tools/p9_04_*.py` 的测试文件。这次删除**没有被拦**。
+  - 测试 699 → 693。
+  - 监工独立验证：全量 693 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-46.log`），合入后主线也是 693 passed；`tools/v2_43_capture.py` 两组逐字节相同；留下的 `tools/*.py` 对 `storycg` 的导入全部能解析；`src` 只少三个 `calibration*.py`；挪动的测试与原文件逐字节相同；入口 `beats-guide` 正常。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
+  - 遗留（不返工）：`p10_05_pytest.py` 和它的测试保留了，执行者的理由是它测了 `getaddrinfo` 在 DNS 前被拒、而 `tests/netguard.py` 没测这点；但测试环境实际用的是 `netguard`，这对文件测的是一个没人用的保护。由此也看出 `netguard` 只拦连接、不拦 DNS 解析。`config/review_reliability.json` 仍记着已删脚本的名字（历史记录，不改）。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-46.md`，7bf8ebe |
+| V2-45 SKILL.md 与 result.md 压缩（D78 瘦身 5） | **通过**（058ba4e，返工 1 次，合入主线 bd6c57a）。
+  - result.md：删"各层结论"两行、小节说明句、"由用户换过：否"、逐镜"与整组汇总不同"；没有要列项的镜合成一行"第 N 镜：通过筛选，没有观察到偏差"；整组一行改为"至少一镜未经可靠审核的类别"；定妆图未通过只列可靠项。五个历史任务 result.md 缩短 15–30%（第五轮实测任务 7260 → 5113 字节）。D77 的"层级结论和逐镜偏差对不上"随之解决：那行本来就是非可靠项 `not_visible` 拉出来的。
+  - SKILL.md 6907 → 4552 字节：删工单号、安装细节、`progress` 字段清单、已不存在的 `repair_blocked`、V2-42 已删的"整组原始审核结论"；新增 `tests/test_v2_45.py`，检查 SKILL.md 写到的子命令、选项和 `status` 字段都真实存在。
+  - **返工 1**：第一版删了"普通创作选择自行决定"和道具依赖剧情的处理（照常出图、提醒读不出、不额外提问），第 5 步一句读不通；补回、改通。
+  - 测试 666 → 673。
+  - 监工独立验证：全量 673 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-45.log`），合入后主线也是 673 passed；`tools/v2_43_capture.py` 两组逐字节相同；`jobs/cg-e60b2498b63e` 副本用改前代码（`git archive 0d529e6`）和改后入口 `deliver`，diff 只有工单列的删改，第 2 镜可靠的 `outfit_state`、`outfit_component_1` fail 仍在；`pick --shot 2 --candidate 1` 后只有第 2 镜写"由用户换过"；通读新 SKILL.md。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被执行者改动。
+  - **Hermes 副本重装（监工，23:59）**：`~/.hermes/skills/story-cg` 里的 SKILL.md 还是 10-10 V2-27 的版本，写着已删的命令和字段，代码却跑主线。用 `tools/install_hermes_skill.sh --force` 重装，现在和主线 SKILL.md 逐字节相同，`hermes skills list` 显示 enabled，Hermes 入口 `beats-guide` 退出码 0。旧副本存在 `logs/supervisor/hermes-SKILL-before-v245.md`。Hermes 里的实际调用测试仍按用户意见推迟。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-45.md`，058ba4e |
+| V2-40 一镜只画一个时刻：spatial_relation 里先后两个动作要报错（D77） | **通过**（3dd1daf，返工 0，合入主线 6a74199）。
+  - `planning.sequence_violation`：`shot.spatial_relation` 里出现 then、afterwards、after that、subsequently、followed by、finally、next（不含 next to）就报"这一镜只能画一个时刻"。`beats._collect_errors`（compile、make --beats）和 `validate_storyboard` 共用；after/before 交代前因、并列伴随动作不拦；`writing_rules` 加一句。src +20 −1。
+  - 测试 673 → 699（`tests/test_v2_40.py` 26 个，含从入口跑 e2e-5 测试 C：外貌、先后动作两条错误分开列）。
+  - 执行者写测试前手动跑过一次不带 shim 的 `compile`，向 Danbooru 发了一次只读请求（返回 500），留下的 compile 目录已删；之后测试都离线。查角色资料不是工单禁止的服务调用，记录在案。
+  - 监工独立验证：全量 699 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-40.log`），合入后主线也是 699 passed；`tools/v2_43_capture.py` 两组逐字节相同；`beats-guide` 打印新规则。监工另扫两棵树全部 `storyboard.json`、beats、`verify/` 和 e2e 资产（222 个文件、902 镜，比执行者的范围大），拦下 4 条，都是真违规：测试 C 和它的副本 `c-miku-only-dual.json`，v1 旧任务 `p9_05_ownership` 第 2 镜（两棵树各一份："looks down at the red umbrella in hand, then glances toward the blue umbrella"，该任务是修图时代的，本来就不能续跑）。没有误拦。
+  - 实跑等用户的那份 `beats-2.json` 不含顺序词，不受影响。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-40.md`，3dd1daf |
+| V2-47 换装新衣服必须写颜色；确认摘要第 1 镜换装文字；status 中断判断补阶段（D82） | 已派（2026-10-12） | — | — | `orders/V2-47.md` |
+| V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
+  - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
+  - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
+  - 返工 1：经符号链接调用时找不到项目，改用 `pwd -P` 求真实路径。监工复现了这个问题，修好后也复验过。
+  - 监工复跑 1002 passed。reflog 里没有执行者的 git 操作，也没有写工作目录以外的路径。
+  - **安装（监工）**：
+    - 总库：`magpie library skill rm story-cg-director` 删掉旧条目；在 `library.json` 加了 `story-cg`（folder 类型，指向 `/work/workspace/manga_skill/skill/story-cg`，分发给 claude、codex、pi、omp），建好链接后运行 `magpie library sync`。改之前的 `library.json` 备份在归档目录。`~/.claude/skills/story-cg` 能跑 `beats-guide`，本会话的 skill 列表也已经出现 `story-cg`。
+    - Hermes：用 `tools/install_hermes_skill.sh` 装到 `~/.hermes/skills/story-cg`，旧的 `story-cg-v1` 挪进归档，`hermes skills list` 里能看到 `story-cg`。
+  - Cursor 读的是 `~/.claude/skills`，不需要单独装。 | 1 | Haiku 5.5 subagent | `.v2/reports/V2-27.md`，9a5d3f0 |
+| 第 ③ 步对比集运行（`verify/v2/run_v3.py`，`--no-confirm`，beats-v3） | **4 组跑完**（22:36–00:07），出图 53 张。**用户判定 4/4 可用（D66），第 ③ 步通过**。判定页 https://claude.ai/artifact/GvSEJ58mArz5F8dgZ4d8Sn（`verify/v2/compare3/`，判定存在页面数据库的 `verdicts` 集合）。
+  - 监工看图倾向：4 组都没看到否决项，都判"可用"，第 4 组偏弱。
+  - 筛选：
+    - 第 3 组跑步两镜 6 张候选里有 4 张画了两个主角，全被筛对；
+    - 人数检测又有误报：第 1 组第 3 镜候选 1，一个人抱着猫也被判人数不过；
+    - 第 1 组第 2 镜第一轮 3 张都被多余肢体检查筛掉，监工还没复核。
+  - 并排挑选在 16 镜里实际调用了 14 镜：一致 5 次，不一致 9 次（都退回原排序）。比离线实验差很多。第 4 组的种子和冒烟一样，冒烟回放时两镜都稳定选中最好的那张，这次分镜文字变了，两次答案就不一致了，说明它对提示词文字很敏感。
+  - 挑选不看前后连贯：第 1 组的猫依次是黑、橘、黑白，可每一镜其实都有黑猫的候选。 | — | 监工 | `verify/v2/v3_runs.jsonl` |
+| 档 | 月城柳（L1，专用 LoRA） | 芙莉莲（L2，底模认识） |
+|---|---|---|
+| 稳定 | 7 跪坐惊讶、8 俯视仰躺、9 背影回头、10 伸手、13 低头看手里、14 抱猫、15 擦泪、16 叉腰、18 仰视雨天、20 换睡衣 | 2 侧面行走、3 奔跑、4 坐椅子、5 抱膝、7、8、9、10、15、16、19 窗边夜晚、20 |
+| 有时 | 1 远景站立（2/4）、2 侧面行走（1/4）、3 奔跑（1/4）、4 坐椅子（3/4）、5 抱膝（3/4）、6 趴桌睡着（2/4）、11 单手拿杯（1/2）、19 窗边夜晚（3/4） | 1 远景站立（3/4）、11（1/2）、13 低头看手里（2/4）、14 抱猫（3/4）、18 仰视雨天（1/2） |
+| 不可用 | 12 两手各拿一样、17 只拍脸特写 | 6 趴桌睡着、12、17 |
+
+- 两个角色都稳定的镜头：7、8、9、10、15、16、20，加上 L1 的 13、14、18 和 L2 的 2–5、19。
+- **L1 的主要失败是重复主角**：第 1、2、5、19 项共 6 张画出两三个月城柳；L2 只出过 1 张。所以 v2 每一镜都要跑单主角计数门禁。
+- 第 12 项（两手各拿一样）和第 17 项（只拍脸）两个角色都画不出来；第 11 项的失败都是多一个杯子，属于已冻结的道具问题。
+
+### 运行时审核器对照（不参与判定）
+
+检出 18/30，误拦 29/70。误拦里 22 张来自景别项：近景在提示词里是 `upper_body`，审核却只允许到胸口；坐姿、跪姿的中景必然露脚。"动作"项在姿态类失败上只抓到 3/12。详见下文「运行时审核器对照」，处理建议写进了草稿 §2.4。
+
+### v1 审计摘要（`audit/AUDIT.md`）
+
+41 个模块、7,692 行。没有只为道具服务的整模块，道具逻辑散在 10 来个模块的分支里。建议：
+- 删除：`eye_sampling.py`、`cycle.py` 中只有测试在调的那套修复循环（约 210 行）、只有测试在调的旧路径、区域重绘原语；
+- 拆分支：7 个模块里的道具分支；
+- 移出默认流程：两项不可靠的 v3 审核。
+
+身份、出图、恢复的底座不动。
+
+### TASK v2 草稿
+
+`TASK-v2-draft.md`：
+- 范围收窄为"单主角 + 动作、表情、服装、场景推进"，道具只作陪衬、不审核；
+- 镜头词汇表由脚本强制（稳定档直接用、有时档限次、不可用档改写）；
+- "好"由你看固定对比集的前后并排图判定；
+- 三项画质改进各自做前后对比，看不出提升就撤；
+- 删减分三批，每批单独开工单。
+
+### 需要你决定（已答复，见下文 D30–D38）
+
+1. **摸底分档**：在判定页上逐项改判，复制结果发给我。最终以你的判定为准。
+2. **对比集**：挑 4–6 组"角色 + 剧情"，覆盖 L1 和 L2，剧情只靠人物动作、表情、服装和场景变化推进。v2 开发期间固定不变。
+3. **"有时"档的规则**：每组最多几镜（建议 1）；成功率低于多少按"不可用"处理（建议低于 2/4）。
+4. **姿态审核**：要不要为姿态类动作单独校准一轮审核器（约 30–40 次视觉调用）？不做的话，姿态类镜头只靠词汇表分档把关。
+5. **预算**：三项画质改进各多少张（建议各 ≤ 60）；高清放大允许单镜耗时增加到几倍；留出集几组；v2 总出图（建议 ≤ 400 张，单独计数）。
+6. 以前暂缓的待决第 8–13 项：草稿给了倾向（8 改写剧情；10、11、12 接受为局限；13 在服装细节对照前先解决）。第 9 项（层级判定不稳定）草稿没处理，定稿时一起定。
+
+### 工单（本阶段）
+
+| 工单 | 结论 | 返工 |
+|---|---|---|
+| CAP-00 冒烟（模型 gpt-6.1-sol、推理强度 max） | 通过 | 0 |
+| CAP-01 写 40 条提示词 | 通过（监工审 tag 后改两处） | 0 |
+| CAP-02 首轮 80 张 | 通过 | 0 |
+| AUD-01 v1 代码审计 | 通过（监工抽查三项属实） | 0 |
+| CAP-03 补图 20 张 + 审核器对照 | 通过 | 0（主机关机后续跑 1 次） |
+
+**Codex 声称完成、但我未能复现的**：无。只有一点没有复现：CAP-03 报告里"实时重查 `/history`"那一步。我这边也一样，到 Windows 主机的链路丢包约 33%，完整的 `/history` 响应总被截断。我改用两种办法核对：一是按 prompt_id 逐条取（20 张补图都对上），二是看总数（294 条，正好是开工前 274 条加 20 条）。
+
+## 能力摸底阶段（TASK-CAP.md，2026-10-04 开始）
+
+- 规则：以 `TASK-CAP.md` 为准。Codex 每次调用都指定 `-m gpt-6.1-sol -c model_reasoning_effort="max"`（已写入 `verify/dispatch.sh`），由 CAP-00 冒烟工单从 `~/.codex/sessions/` 的会话记录确认实际生效。新文件只放 `probe/`、`audit/`；本阶段出图上限 120 张，单独计数。
+- 冻结：道具相关工作全部停止。**两段式出图对照实验结项**，结论"不接入默认流程"（报告 `/work/workspace/twostage-exp/REPORT.md`，对比页 https://claude.ai/artifact/6ExSVEPtYBVwb1jrtMBLM8）。第二轮待决第 8–11 项暂缓，第三组待决第 12–13 项一并等 TASK v2 定稿后重新评估。已安装的 Hermes skill 不动。
+
+### 用户对晨报的答复（2026-10-04 17:50，D30–D38）
+
+- **D30 摸底分档**：以用户在判定页上的改判为准。改判结果要用户贴出来：页面改判只存在用户自己的浏览器里，监工读不到，已请用户补发。
+- **D31 对比集**（共 4 组，开发期间固定）：
+  1. 月城柳：下雨天在路边捡到一只淋湿的小猫，抱回家，换上睡衣后躺在床上和小猫一起睡着了。
+  2. 月城柳：被突然的雷声吓得跪坐在地上，回头看向窗外，发现只是下雨，松了口气笑了。
+  3. 芙莉莲：在旅店房间里坐着发呆，突然想起什么，跑出门，沿着街道一路奔跑。
+  4. 芙莉莲：夜里站在窗边想起旧友，抱膝坐在地上哭了，擦干眼泪后笑了。
+- **D32 词汇表规则**：
+  - "有时"档每组最多 1 镜；成功率低于 2/4 的按"不可用"处理。
+  - 词汇表不做成封闭清单：分镜用到表里没有的动作时，按"有时"处理（多给一轮重抽），结果记回词汇表。只有判过"不可用"的才拒绝。
+- **D33 姿态审核**：做，但只用这次摸底已判过的 100 张图做样本，不新出图。检出率低于 75%，或误拦好图超过 10%，就不加这一项。
+- **D34 预算**：
+  - 三项画质改进各不超过 60 张；
+  - 高清放大后单镜耗时最多为原来的 2.5 倍；
+  - 留出集 3 组，其中至少 1 个角色是摸底没用过的；
+  - v2 总出图不超过 400 张，单独计数。
+- **D35 旧待决**：
+  - 第 8 项：改写剧情。
+  - 第 10、11、12 项：接受为局限。
+  - 第 13 项：先解决再开服装细节对照。
+  - 第 9 项：配饰类项不参与层级否决；随服装变化的发饰归入服装状态；角色层级一旦有证据确定就缓存复用，模型或 LoRA 变化时才重新判定。
+- **D36 定稿分档前先排除提示词干扰**：疑似受干扰的格子（至少第 6、17 项，以及月城柳远景的重复主角）按"近景场景 tag 不超过 2 个、去掉会引出其他动作的物件"重写，每格补 2 张，用本阶段剩下的 20 张额度；同时核对负面提示词里有没有 multiple girls、2girls。
+- **D37**：用户会检查网络。修好之前，`/history` 核对按 prompt_id 逐条做。
+- **D38 顺序**：补测完成、分档更新后，由用户定稿 TASK v2，再开始实现。
+- **D39（监工，落实 D36）**：
+  - 核对结果：40 份请求的负面提示词里都没有 `multiple girls`、`2girls`。
+  - 补测选了 10 格：第 6 项两个角色；第 17 项两个角色；第 13 项芙莉莲（近景，场景里有 5 个物件）；月城柳的第 1、2、3 项（远景）和第 5、19 项（中景出过重复主角）。第 3 项被干扰的嫌疑较弱，但它的成功率是 1/4，按 D32 会降为"不可用"，所以给它一次公平补测。
+  - 场景改写规则：近景只留两个场景 tag（indoors、地点）；中景最多留 2 个物件；远景最多 3 个；去掉 bench、bed、computer/monitor/keyboard 这类会引出别的动作的物件。
+  - 负面提示词统一追加 `multiple girls, 2girls, multiple views`。`multiple views` 是监工加的：月城柳的重复主角多是并排、同姿势，像角色设定图。
+  - 每格用 s1、s2 的原 seed 各出一张，和原图成对对照。场景和负面提示词同时改了，所以补测只能回答"提示词写对以后画不画得出"，分不清是哪一处改动起的作用。
+
+| 工单 | 结论 | 会话 ID | 证据 |
+|---|---|---|---|
+| CAP-00 冒烟：确认模型与推理强度 | **通过**：会话记录 `~/.codex/sessions/2026/10/04/rollout-…-01a104bc….jsonl` 显示 `model=gpt-6.1-sol`、`effort=max`；ComfyUI 队列空，视觉服务 200 | 01a104bc-e170-7e90-b3f6-2370b853368d | `probe/smoke.json`、`reports/CAP-00.md` |
+| CAP-01 写 40 条提示词（不出图） | **通过**：直接调用 v1 的 assemble_prompt 和 TagRegistry，没有改代码；IPAdapter 参考是 v1 现行的面部裁切，和 v1 manifest 同名同内容。监工审 tag 后要求改两处：第 12 项删掉 left_hand/right_hand（Danbooru 使用数 0），第 17 项景别改为 close-up, portrait（v1 近景映射强制加 upper_body，写不对"只拍脸"）。第 11 项"单手"、第 12 项"左右手"无法用 tag 表达，判图时不考核 | 01a104c0-3c1a-7c42-83cb-c0d15876a096 | `probe/prompts.md`、`reports/CAP-01.md` |
+| CAP-02 首轮出图 80 张 | **通过**：80 张各提交一次（监工核对 /history：80 个 probe/ 前缀各 1 次，80 个 prompt_id 不重复，本地 sha256 全部吻合），出图失败 0，没有重试；监工的两处 tag 修改已生效。单张中位数 12 秒，共 27 分钟。中途 Codex 的 PNG 元数据校验写得太严，前 58 张都标成 artifact_error；Codex 修正校验后按 prompt_id 从服务器取回原图，没有重新出图 | 01a104dd-450a-7823-b826-23ea96ace115 | `probe/runs.jsonl`、`probe/sheets/`、`reports/CAP-02.md` |
+| AUD-01 v1 代码审计 | **通过**：41 个模块、7,692 行，逐模块给出调用证据、验证工单和建议。整模块删除只建议 eye_sampling.py（40 行，校准误报 50%）；建议简化的模块合计 4,883 行（这是受影响的整文件行数，不是可删行数）；没有只为道具服务的整模块，道具专用的分支都已逐一列出。只被测试引用的定义有 12 个，包括 cycle.py 里重复的修复循环。监工抽查三项：runtime_gate 通过 import * 引入 cycle 后重新定义了 run_repair_cycle/apply_round，所以 cycle.py 中那两个只有测试能走到；prepare_l2 在 src 中没有调用方；总行数 7692。三项均属实 | 01a104f7-5255-7bf0-a61b-af477b9cada6 | `audit/AUDIT.md`、`reports/AUD-01.md` |
+| CAP-03 补图 20 张 + 审核器对照 | **通过**（续跑 1 次，起因是主机关机，不算返工）：补图 20 张各提交一次。监工按 prompt_id 逐张查 `/history`，seed、执行状态和本地 sha256 全部吻合。补图沿用了 s1/s2 的工作流、只改 seed，所以 `filename_prefix` 里写的还是 s1/s2 的旧 seed（服务器文件名 `s1_<旧seed>_00002_.png`）。这是记账缺陷，不是冒充，Codex 在报告里主动写明了。12:32 omarchy 关机，审核停在 40/100，第 41 次请求在途；续跑工单 `orders/CAP-03-r1.md` 只补缺失的 60 张，前 40 条记录字节不变。视觉调用 101/110，监工重跑 `cap03_final.py verify` 结果 pass。改动只在 `probe/` 和 `reports/` 下 | 01a10520-5fec-7d72-a0eb-add529081617 | `probe/sheets/extra_*.jpg`、`probe/reviewer.jsonl`、`reports/CAP-03.md` |
+| CAP-04 改写提示词后补测 10 格（20 张） | **通过**：20 张各提交一次。监工按 prompt_id 逐条查 `/history`：实际执行的正向、负向提示词与工单逐字一致，seed 和原图成对，本地 sha256 吻合；重跑 `cap04.py verify` 和 `cap04_order_check.py` 都是 pass。用时 16 分钟，视觉调用 0。改动只在 `probe/` 和 `reports/` 下 | 01a10658-7d5c-7a72-966b-2f265c916e4b | `probe/sheets/retest_*.jpg`、`probe/retest_runs.jsonl`、`reports/CAP-04.md` |
+| CAP-05 姿态审核校准（D33，不出图） | **通过**：88 张各跑一轮。第一步盲观察，只发图片；第二步纯文本比较，只问一个是或否。设计在第一次调用前冻结（`8784aa6c…`），冒烟只用了样本以外的 1 张图。监工核对：88 次观察请求里都没有出现要求动作的文字，比较请求不带图；重跑 `cap05.py verify` 结果 pass。调用 178/200，用时 21 分钟 | （见 logs/CAP-05.jsonl） | `probe/posture_review.jsonl`、`reports/CAP-05.md`、`verify/cap/posture_score.json` |
+
+本阶段出图 **120 / 120**（首轮 80 + 补图 20 + 改写补测 20），额度用完。
+
+### CAP-04 补测结论（监工逐张判定，改写后 r1、r2 与原 s1、s2 同 seed）
+
+| 格 | 原 s1 / s2 | 改写 r1 / r2 | 看到的变化 |
+|---|---|---|---|
+| 1 月城柳 远景站立 | 重复 / 可用 | 重复 / 可用 | 同 seed 结果不变 |
+| 2 月城柳 侧面行走 | 可用 / 动作错 | **重复** / 可用 | r1 原本单人，改写后变成两人；r2 迈步更像在走 |
+| 3 月城柳 奔跑 | 走路 / 可用 | 小跑但不着急 / 可用 | 基本不变 |
+| 5 月城柳 抱膝 | 可用 / 重复 | 可用 / 重复 | 同 seed 结果不变 |
+| 19 月城柳 窗边夜晚 | 重复 / 可用 | 重复 / 可用 | 同 seed 结果不变 |
+| 6 月城柳 趴桌睡着 | 站着托腮 / 半睁眼（更正） | 坐着趴桌但半睁眼 / 站着趴桌半睁眼 | 去掉键盘后不再打字，r1 变成坐着；但没有闭眼 |
+| 6 芙莉莲 趴桌睡着 | 睁眼 / 打字 | 睁眼趴桌 / 睁眼趴桌 | 不再打字，但都睁着眼 |
+| 13 芙莉莲 低头看手里 | 可用 / 没看手机 | 没看手机 / 没看手机 | 更差 |
+| 17 两个角色 只拍脸 | 都拍到上半身 | 都拍到胸口或更远 | 景别拉不近 |
+
+结论：
+- **重复主角不是提示词干扰**：负面提示词加了 `multiple girls, 2girls, multiple views`，场景也精简了，同 seed 的重复仍然在（1 s1、5 s2、19 s1），2 r1 还新出了一张。月城柳的重复只能靠计数门禁加重抽 seed。
+- **键盘确实会引出打字**：去掉后两个角色都改成趴桌，所以"去掉会引出其他动作的物件"这条规则有效。但"睡着"需要闭眼，6 张月城柳里只有 s3 真正闭眼，芙莉莲 4 张都睁着。
+- 第 17 项的景别和第 13 项的视线不受场景物件影响，是 tag 本身表达不了。
+- **监工更正一处首轮判定**：第 6 项月城柳 s2 原判"闭眼睡着"，复核放大后发现眼睛半睁、能看到虹膜，改判不可用。第 8 项（仰躺闭眼）4 张也放大复查过，都是真闭眼，判定不变。
+
+分档按每格全部图计算，可用不到一半按 D32 计为不可用。更新后（等你的改判覆盖）：
+- 月城柳：稳定 7、8、9、10、13、14、15、16、18、20；有时 1（3/6）、4（3/4）、5（4/6）、11（1/2）、19（4/6）；不可用 2（2/6）、3（2/6）、6（1/6）、12、17。
+- 芙莉莲：稳定 2、3、4、5、7、8、9、10、15、16、19、20；有时 1（3/4）、11（1/2）、14（3/4）、18（1/2）；不可用 6、12、13（2/6）、17。
+
+**姿态真值勘误**（CAP-05 派工前）：`06_L1_s2` 由"姿态成立"改为"姿态失败"，正样本变为 13、负样本 75。勘误前 sha256 为 506a091e…，勘误后为 4c552987…。勘误与 CAP-05 的任何输出无关，CAP-05 尚未派工。
+
+### CAP-05 结论：姿态审核不加入 v2（D33）
+
+监工用冻结真值计分（`verify/cap/score_posture.py`）：**检出 10/13 = 76.9%**（门槛 ≥ 75%，达到）；**误拦 9/75 = 12.0%**（门槛 ≤ 10%，没达到）。按 D33 不加入。
+
+原因拆解（只作说明，不改变结论）：
+- 9 张误拦里有 7 张是第 19 项"站在窗边"。这项的动作一栏带了地点，盲观察只问姿势、没问位置，模型写的是"站在床前"，比较时就判没完成。这是监工工单的设计缺陷：工单要求原文照抄动作一栏，没有把地点拆出去。结果出来后再剔除这一项去翻转结论属于事后调整，不做。
+- 其余 2 张误拦和 3 张漏检是观察本身写错了：
+  - 擦眼泪被写成扶眼镜；
+  - 叉腰被写成手插口袋；
+  - 没看手机被写成看着手机；
+  - 另外一张，比较一步把"坐在长凳或桌面上"当成了坐椅子。
+- 旁证：第 6 项月城柳 s2，盲观察也写"眼睛睁着"，和监工派工前的更正一致。
+
+如果 v2 以后还想做姿态审核，要把地点从动作里拆出来，在新的、没用过的图上重新冻结验证；按 D33，本阶段不再出图。
+
+### 监工判定（100 张，`verify/cap/judgments.json`；判定页 `verify/cap/index.html`）
+
+补图后各档的项号（括号里是 4 张中可用的张数，用来区分"有时"的程度）：
+
+| 档 | 月城柳（L1） | 芙莉莲（L2） |
+|---|---|---|
+| 稳定 | 7, 8, 9, 10, 13, 14, 15, 16, 18, 20 | 2, 3, 4, 5, 7, 8, 9, 10, 15, 16, 19, 20 |
+| 有时 | 1（2/4）、2（1/4）、3（1/4）、4（3/4）、5（3/4）、6（2/4）、11（1/2）、19（3/4） | 1（3/4）、11（1/2）、13（2/4）、14（3/4）、18（1/2） |
+| 不可用 | 12, 17 | 6, 12, 17 |
+
+补图看出的规律：
+- **重复主角集中在 L1 的远景和站立镜头**：第 1、2、19 项共 5 张出现两个或三个月城柳并排，第 5 项 1 张。L2 只有第 1 项出过 1 张。
+- 第 3 项"奔跑"，L1 的 4 张里有 3 张画成走路。
+- 第 6 项"趴桌睡着"，L1 能画出来，但都是站着弯腰趴桌，不是坐着。
+- 第 13 项 L2 的失败都是眼睛没看手里的东西。
+
+### 运行时审核器对照（CAP-03，不参与判定）
+
+v1 `audit_single` 对 100 张各审一次，用它的整体结论和监工判定比较：
+
+| | 监工判"不可用"（30） | 监工判"可用"（70） |
+|---|---|---|
+| 审核器"未通过" | 18（检出 60%） | 29（误拦 41%） |
+| 审核器"通过 / 有瑕疵但可选" | 12（漏放） | 41 |
+
+按失败类型拆开看：
+
+| 监工判不可用的原因 | 审核器拦下 | 说明 |
+|---|---|---|
+| 重复主角 | 3/7 | 只靠"身体"项顺带发现；`audit_single` 没有单主角计数项（v1 正式流程里是本机检测器在管） |
+| 动作 / 表情不对 | 3/12 | **"动作"项只判出 3 张 fail**：走路判成奔跑、睁眼判成睡着、坐桌沿判成坐椅子，都给了 pass。P4 校准里"动作 100% 可靠"，校准样本以道具动作为主，在姿态类动作上不成立 |
+| 多余道具 / 两手各拿一样 | 6/6 | 道具项 |
+| 景别（只拍脸画成上半身） | 4/4 | 景别项 |
+| 瞳色 | 0/1 | `audit_single` 不读身份状态，本来就不审瞳色 |
+
+**误拦 29 张里，有 22 张是景别项判了 fail**。原因是 v1 内部规则互相矛盾：
+- 近景在提示词里映射成 `upper_body`（头到腰），景别审核却只允许拍到 face/shoulders/chest。
+- 中景映射成 `cowboy_shot`，而坐、跪、抱膝这些姿势只要拍全就会露出脚，审核只允许到 waist/hips/thighs。
+
+其余 7 张误拦来自 prop_contact 和手部。这个结论写进了 TASK v2 草稿：景别审核要和提示词映射对齐，并考虑姿势；姿态类动作不能靠现有动作项把关。
+
+## 第二轮进展（2026-10-02 更新，按用户 7 项决定 D9–D17 执行）
+
+### 决定落实情况
+
+| 决定 | 状态 | 证据 |
+|---|---|---|
+| D9 占位项保守取值 | 已按此执行 | — |
+| D10 本机检测（ultralytics + Bingsu/adetailer） | **已落实**：面部/人物检测在 omarchy 本机 CPU 运行（约 0.1 秒/张）；面部裁切全部改用检测；检测蒙版面部重绘有效（蓝瞳→绿瞳，无接缝） | `review/P9-01-detect.jpg`、`review/P9-02-inpaint.jpg` |
+| D11 瞳色/配饰颜色采样 | 已实现但**不可靠**（误报 50%），只记录不否决；同期视觉模型瞳色审核改版后变为**可靠**（检出 40%→78%，误报 0%） | `calibration/v2/summary.md`、`verify/p9_04_recompute.txt` |
+| D12 每组 60 分钟 | 已落实 | `config/` |
+| D13 盲审缩图 | 已落实（长边 768px），本轮未再出现盲审超时 | — |
+| D14 区分看不见/不存在 | 审核器 v2 已改并重新校准，**未解决**：脑后发髻、出画靴子仍被判"可见"，缺失发带/耳饰仍漏检 | `calibration/v2/summary.md` |
+| D15 单主角计数 | **已落实且可靠**（6/6 检出、0/14 误报）；重复主角改用指令编辑去除，月城柳-办公室修复成功；局限：远处小一号的重复人物（脸 < 最大脸 30%）会漏检 | `review/P9-06-月城柳-前后.jpg`、`verify/p9-07_frieren_v4.jpg` |
+| D16 每镜单主角、归属先行 | 已落实为分镜规则（姿态词表来自 Danbooru posture 组，207 个）；"拿错"类剧情另加结构要求 | `reports/P9-05.md`–`P9-07.md` |
+| D17 不接 Qwen-Image 2.1 | 遵守 | — |
+
+### 回归结果（只看图判断）
+
+- **月城柳-办公室睡着**：重复主角去除后四镜都只有一个她，盲审五项全读出（`review/月城柳-办公室睡着-v2fix.jpg`）。
+- **约尔-烤焦蛋糕**：D18 后一度回到 L2 并首次出图，身份四镜一致，但"烤焦"画不出来（`review/约尔-烤焦蛋糕-v3.jpg`）；下一次重跑又因"发带类型与参考不符"判 L4——**层级判定不稳定**，取决于参考图穿的是哪套服装。
+- **芙莉莲-拿错伞**：四轮迭代仍读不出"拿错"，最新一版还出现远处的第二个芙莉莲（`review/芙莉莲-拿错伞-v4.jpg`）。监工决定停止盲目迭代，交你决定方向。
+
+### 第二轮新待决（详见文末「待决」第二组）
+
+8. "拿错东西"类剧情怎么办；9. 层级判定不稳定怎么办；10. 远处小号重复主角漏检；11. D14 继续投入还是接受为局限。
+
+开发期出图：277 / 400 张。
+
+## 晨报（第一轮，2026-10-01 13:50 定稿）
+
+### 一句话
+
+Hermes skill `story-cg-v1` 已安装并经 Hermes 实测跑通"先看分镜 → 确认 → 出图交付"、"默认全自动"和"中途杀进程后恢复且不重复提交"；身份控制、审核器校准、自动修复循环、L1–L4 角色流程都有真实证据。主要短板：审核器对瞳色/配饰/重复人物不可靠，"拿错东西"这类靠归属推理的剧情仍读不出来，以及层级判定会把部分知名角色（约尔）判成需要用户补资料。
+
+### 各阶段状态（监工判定）
+
+| 阶段 | 状态 | 证据 |
+|---|---|---|
+| P0 环境核对 | 通过 | 本文「P0 环境报告」、`verify/object_info.json` |
+| P1 最小闭环 | 通过 | `review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg` |
+| P2 画风定参 | 通过：WAI v170 + Iwao178 0.4 + akaimelon 0.3 | `review/P2-grid-A.jpg`、`review/P2-grid-B.jpg`、`config/style.json` |
+| P3 身份控制 | 部分通过：定妆门禁 + IPAdapter 0.4（定妆面部）。芙莉莲上改善成立（蓝瞳→绿瞳）；第二角色首轮因分镜背影无法判断 | `review/P3-01-pilot.jpg`、`review/P3-02-芙莉莲-对照.jpg` |
+| P4 审核器校准 | 通过：发色/服装/道具/动作可靠；瞳色/配饰/整体角色不可靠；发型未验证 | `calibration/summary.md`、`verify/P4-labels.json`（监工逐项真值） |
+| P5 自动修复 | 部分通过：循环可用（诊断→假设→改动→结果、预算、无改善停止、指令编辑优先）；区域重绘未验证、默认关闭 | `review/P5-02-约尔-前后.jpg`、`review/P5-01b-repairs.jpg` |
+| P6 通用角色流程 | 通过：消歧（歧义名提问）、原设带来源、L1/L2/L3/L4 均有真实证据 | `review/P6-01b-*.jpg`、`review/P6-02-L3-*.jpg`、`runs/p6_02/l4/*/needs-user.json` |
+| P7 Hermes 集成 | 通过：安装、先看分镜、默认模式、中断恢复均经 Hermes 实测 | `verify/hermes/`、`jobs/cg-9b3e05ab005b/`、`jobs/cg-76d2eec57dfc/` |
+| P8 测试矩阵 | 通过（效果部分达标）：4 个不同作品角色、7 组剧情已跑——芙莉莲 2 组、月城柳 2 组、约尔 1 组 + 1 组诚实 L4、白雪姬（L3）1 组；L1/L2/L3/L4 都有实测 | 下表 |
+
+开发测试矩阵（`review/` 按"角色-剧情"命名）：
+
+| 角色（作品） | 层级 | 剧情 | 结果 |
+|---|---|---|---|
+| 芙莉莲（葬送的芙莉莲） | L2 | 拿错伞（关键道具） | 已出图；身份稳定，"拿错"读不出 → `review/芙莉莲-拿错伞.jpg` |
+| 芙莉莲 | L2 | 试穿睡衣（换装+情绪） | 已出图（P8-02）：对镜整理→镜中满意微笑，可读；没画出"换上"的过程，第 4 镜长裤变短裤 → `review/芙莉莲-试穿睡衣.jpg` |
+| 约尔（SPY×FAMILY） | 旧规则 L2 | 追帽子（带道具动作） | 已出图，只看图读得出完整故事（最好的一组）→ `review/约尔-追帽子.jpg` |
+| 约尔 | 新规则 L4 | 烤焦蛋糕（日常+情绪） | 未出图：新层级规则下发髻被判缺失 → L3 失败 → L4 请用户补资料（疑为遮挡误判，见限制） |
+| 月城柳（绝区零） | L1（专用 LoRA） | 雨中送猫（Hermes 先看分镜） | 已出图，故事可读 → `review/月城柳-雨中送猫.jpg` |
+| 月城柳 | L1 | 办公室睡着（Hermes 默认模式+中断恢复） | 已出图，故事可读，但第 1 镜画了两个月城柳 → `review/月城柳-办公室睡着.jpg` |
+| 白雪姬（光之美少女） | L3（参考注入） | 面包店打工 | 已出图（P8-03）：身份全组一致，能读出"在面包店摆面包"，但结局"叉腰满意笑"没画出、第 1 镜服装不连续 → `review/白雪姬-面包店打工.jpg`（L3 定妆证据 `review/P6-02-L3-shirayuki_hime_(precure).jpg`） |
+| 随机中文名 / 参考不足角色 | L4 | — | 零出图，返回"缺什么、可提供什么" |
+
+开发期出图：217 / 400 张（明细见下文「出图用量」）。
+
+### 已验证的能力
+
+- **中断恢复不重复提交**：SIGKILL（P1-01）、ComfyUI 宕机 20 分钟（P5-01b）、经 Hermes 在 ComfyUI 任务在途时 `kill -9` worker（T3b）三种情形，都按 prefix 对账恢复，`/history` 中无重复（`verify/hermes/t3b-resume-check.json`）。
+- **Hermes 集成**：`story-cg-v1` 安装在 `~/.hermes/skills/story-cg-v1/`；Hermes 按 SKILL.md 调用脚本、轮询 status、展示每镜一句的中文分镜等待确认、交付 `MEDIA:` 拼图与 result.md 已知问题。
+- **角色流程**：中文名消歧（"爱丽丝"返回 8 个候选要求提问）；外貌/服装来自 Danbooru wiki + solo 共现频率并逐 tag 记录来源；L1 由 LoRA 训练元数据匹配；L2 由纯角色 tag 知识探针 + 筛选参考比对；L3 参考面部注入定妆（两例与参考一致）；L4 零出图诚实说明。
+- **身份控制**：定妆图先过审；IPAdapter 0.4 注入定妆面部，纠正了无参考时的瞳色漂移。
+- **审核器**：在发色、服装、道具数量/持有/状态、动作四项上可靠（校准检出 89–100%，误报 0%）；盲审请求只含图片（监工读代码与请求日志确认，最后一次复核在 10:40）。
+- **自动修复**：Qwen 指令编辑、单镜重布局、面部精修可用；约尔-追帽子从"背影+帽子不动"修到"可读的完整故事"。
+
+### 仍有限制的能力
+
+- **审核器盲区**：瞳色、配饰、整体角色检出率 33–67%；**画面里出现两个主角**没被发现（月城柳-办公室第 1 镜）；场景连续性（列车颜色变化）漏判。交付说明会标"该项未经可靠审核"，需要人看图。
+- **层级判定偏保守**：可靠外貌依据只有发色，其余外貌项只能否决。约尔在新规则下因"发髻"（正面看不到脑后发髻，疑为遮挡被当成缺失）被否决并降为 L4，而旧规则下她能画出完整故事。
+- **道具问题**：修复后仍常出现重复物体（多一顶帽子、多一把伞）；区域重绘因视觉模型定位不可靠未验证，默认关闭。
+- **归属类剧情**（"拿错了伞"）只看图读不出来。
+- **耗时**：4 镜一组含修复 26–45 分钟，约尔-追帽子超 45 分钟上限 4 秒；盲审（4 张全图）偶发超时（按规则判未通过）。
+- **Hermes 运行时模型**（本地 Qwen）偶尔不严格遵守 SKILL.md：一次自行改了项目代码（已加禁令并重装），一次用户没要求却用了先看分镜模式。
+
+### 最值得看的拼图
+
+1. `review/约尔-追帽子.jpg`（= `review/P5-02-约尔-前后.jpg` 右半）—— 自动修复循环后最好的一组，只看图能读出完整故事。
+2. `review/月城柳-雨中送猫.jpg` —— 经 Hermes 先看分镜模式生成（L1 专用 LoRA）。
+3. `review/P6-02-L3-shirayuki_hime_(precure).jpg` —— L3：知识探针画不出 / 参考 / 参考注入后的定妆。
+4. `review/P3-01-pilot.jpg` —— 身份控制机制对照（无参考 / IPAdapter 0.4 / 0.7 / Qwen 布局）。
+5. `review/P4-samples.jpg` —— 审核器校准样本（配合 `calibration/summary.md`）。
+
+### 待我决定的问题
+
+见文末「待决」（占位项取值、是否允许装检测模型、瞳色/配饰审核方案、45 分钟上限、盲审超时、约尔类遮挡误判的处理、是否加重复主角检测）。
+
+### 如何在 Hermes 中调用
+
+- 已安装：`~/.hermes/skills/story-cg-v1/`（`hermes skills list` 可见；源文件 `skill/story-cg-v1/`，重装 `bash tools/install_hermes_skill.sh --force`）。
+- 对话里直接说："用 story-cg-v1 给 <角色> 做一组剧情 CG，剧情：<一句话>"。想先看分镜就加一句"先给我看分镜"，看完回复"确认"或修改意见。
+- 命令行（Hermes 内部也是这样调用）：`~/.hermes/skills/story-cg-v1/scripts/storycg make --character '<角色>' --story '<剧情>' [--shots N] [--storyboard-first]`，之后 `status <job_dir>` 轮询；`approve <job_dir> [--edit '<修改>']`；`deliver <job_dir>` 重出交付物。
+- 任务目录在 `jobs/cg-*`；交付物：`contact_sheet.jpg`（带编号拼图）、单图 PNG、`result.md`（结果与已知问题）、`manifest.json`（模型/哈希/LoRA/提示词/参考关系/seed/审核记录/用量）。
+
+### 如何恢复中断的任务
+
+- `~/.hermes/skills/story-cg-v1/scripts/storycg resume <job_dir>`（或在 Hermes 里说"恢复任务 <job_dir>"）。`status` 显示 `interrupted` 时 Hermes 会自动 resume。
+- 恢复时先按 job/shot/attempt 前缀查 ComfyUI `/queue` 与 `/history`：已完成就下载、在队列就等待、确认未提交或已失败才重提，不会重复提交。
+
+### 监工补充（SUPERVISOR.md 要求）
+
+- 工单列表（结论与返工次数）：见下文「工单列表」。共派出 21 张工单（P6-01 拆成 P6-01a/P6-01b 派出），返工 9 次：执行者缺陷 4 次（P1-03 测试剧情词写进通用提示词、P5-02 LoRA 元数据 404 阻塞、P6-01a 默认服装回归、P6-01b 参考选择）、回答执行者提问 2 次（P5-02 定妆门禁 D7、P6-02 L2 探针 D8）、监工工单错误 3 次（P4-01 编号笔误与 E4b 未指定、P6-02 D8 措辞过宽）。
+- **Codex 声称完成、但监工未能复现的内容**：
+  1. P7-01 声称"224 passed"——默认 `uv run pytest -q` 实际 15 个失败，只有加报告里的 `--basetemp` 才全过（测试依赖工作目录内临时目录）。P7-02 已修，现在默认命令直接全过。
+  2. 其余报告中的关键声明（/history 唯一性、哈希、冻结审核器未改、校准统计、L4 零提交、资源检查耗时、盲审只含图片）监工均已独立复核通过；校准统计除聚合项 character 口径不同外（0.44 vs 0.67，均判不可靠）完全一致。
+  3. 执行者报告中自承的未完成项（P5-02 的若干编排缺口、P8-01 的两组未出图）与监工复核一致，未发现夸大。
+
+## 用户交办：两段式出图对照实验（EXPERIMENT.md，2026-10-03，Claude 直接执行，未派 Codex）
+
+目录 `/work/workspace/twostage-exp`（独立 git 仓库），报告见 `REPORT.md`。用户确认 8188 是实验实例。出图 147/200，视觉调用 24 次（盲审）。
+- 结论：**不建议把 Qwen 起稿 → WAI（B）接入 v2 默认流程。** 每种方法 24 张：B 道具数量对 19 张（A 12），但归属组（芙莉莲）没有提升（5 对 5）；"烤焦"这类状态 B 是 0/8；身份一致 19（A 23）；每镜耗时是 A 的 2.6–3.7 倍。整组盲审完整读出原剧情：A 1、B 2、C 0、D 3（共 6 段），"拿错伞"四种方法都没读出来。
+- 对 v1 有用的副产物：实验里有几张带小号重复主角的新图（芙莉莲 A shot03 seed1、B shot04 seed1、D shot01 seed1；月城柳 A shot04 seed1），已人工确认，可以作为重复主角新映射的外部验证样本。
+
+## 当前阶段
+
+- P0 环境核对：监工亲自完成（见下文「P0 环境报告」）。
+- P0-01 冒烟通过：沙盒 `workspace-write + network_access=true` 下可访问 ComfyUI、模型服务、Danbooru，可写工作目录。
+- P1-01 通过：项目骨架 `src/storycg/`，先落盘再提交、SIGKILL 后 resume 无重复提交（证据 `runs/p1_01_smoke_20260930/`）。
+- P1-02 通过 P1 门槛（真实图片+自评）：芙莉莲 4 镜，身份/服装稳定，但只看图读不出剧情（伞无法区分、构图雷同、仍在下雨）。证据 `review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg`。
+- **P1 阶段门槛：通过**（监工判定）。叙事可读性问题转入 P1-04 与 P5。
+- P1-03 通过（返工 1 次）：三层审核器初版，盲审请求经监工读日志与代码确认不含剧情/分镜/角色名。
+- P1-04 部分通过：镜头 tag 化、道具登记、景别映射、场景负面词已实现并见效（对照 `review/P1-02-vs-P1-04.jpg`）；但只看图仍读不出剧情，道具数量/持有关系靠纯文本无法可靠绑定。
+- **P2 阶段门槛：通过**（监工判定）。选定 WAI v170 + Iwao178 0.4 + akaimelon 0.3，euler_ancestral / normal / 28 步 / CFG 5.5，写入 `config/style.json`。理由：更高权重会让瞳色偏离原设并产生多余肢体残片（证据 `verify/p2-Bfaces.jpg`）。
+- P3-01 通过：定妆门槛+缓存实现；试点中 IPAdapter 0.4 修正了基线的蓝瞳（身份改善），0.7 画风崩坏；Qwen 布局对道具位置最有效但慢且会多画道具。监工选定 IPAdapter 0.4 为默认身份控制（D5）。
+- P3-02 通过：正式 CLI 支持 `--identity-control none|ipadapter` 与 `--layout-mode none|qwen`。芙莉莲：IPAdapter 0.4 身份改善成立（蓝瞳→绿瞳）；Qwen 布局改善道具空间关系但会多画道具。约尔：分镜多为背影，身份改善无法判断。
+- **P6 阶段门槛：通过**（监工判定，P6-02 后）：消歧（含提问）、原设来源、L1/L2/L3/L4 全部有真实证据；局限是层级判定可靠依据少（发色可靠，其余外貌项只能否决）。
+- **P3 阶段门槛：部分通过**（监工判定）。身份控制机制已确定且在一个角色上证明有效；第二角色待 P6 修好身份资料、分镜保证露脸后复验。
+- P4-01 通过：22 个编号样本，监工逐张确认后写成逐项真值 `verify/P4-labels.json`（剔除 E1b）。
+- P4-02 通过：审核器修正后冻结并校准。可靠：发色、服装、道具、动作；不可靠：瞳色、配饰、整体角色；未验证：发型。
+- **P4 阶段门槛：通过**（监工判定）。
+- P5-01 部分通过：面部精修有效（瞳色纠正）；区域重绘两例均失败（mask 选区错误、方图压扁接缝）；单镜重布局因 ComfyUI 宕机未完成。
+- ComfyUI 宕机约 20 分钟（02:46–03:06），期间完成 P6-01a（名字消歧、原设补全、默认服装选择，不出图）。
+- P5-01b 部分通过：宕机前提交的任务经对账恢复、未重复提交（真实中断恢复成立）；重布局提升可读性但会复制物体；区域重绘因视觉定位不可靠未验证，默认关闭（D6）。
+- P6-01b 通过（返工 1 次）：菲伦 L1、月城柳 L1（角色 LoRA 由训练 tag 元数据匹配）、芙莉莲 L2、约尔 L2（无参考测试图 + 筛选后的 Danbooru 参考比对）。层级判定的可靠依据只有发色，其余外貌项标注未经可靠审核。
+- P5-02 部分通过：修复循环（诊断→假设→改动→结果、预算、无改善停止、相邻复核、指令编辑优先）接入正式 CLI。约尔组只看图已能读出完整故事（监工判断），但执行 45.07 分钟超限 4 秒、最终盲审超时；芙莉莲组叙事仍含糊。
+- **P5 阶段门槛：部分通过**（监工判定）。
+- P7-01 通过：统一入口（make/approve/status/resume/deliver，JSON 输出、needs_user 提问）、SKILL.md、安装脚本。监工已安装到 `~/.hermes/skills/story-cg-v1/`。
+- **Hermes 实测 T1（07:30–07:46，先看分镜模式，月城柳/雨中送猫）**：Hermes 按 SKILL.md 正确调用 `make --storyboard-first` 并每 25–100 秒轮询 `status`（会话 `20261001_073053_2c1f4e`，转录存 `verify/hermes/t1-session-transcript.json`）。但分镜阶段被 P5-02 新增的"物体脱离"规则误报（把"小猫放到门口"当成"飞走"）连续拒绝，10 次 LLM 调用约 14 分钟后停止；监工给 Hermes 的 15 分钟超时先到，Hermes 未来得及回复。结论：Hermes 调用链路正确，分镜规则有缺陷。派 P7-02 修复。
+- P7-02 通过：分镜规则误报修复；默认 pytest 可移植。
+- **Hermes 实测 T2（08:02–，先看分镜模式，月城柳/雨中送猫，任务 `jobs/cg-9b3e05ab005b`）**：
+  - 第一轮（会话 `20261001_080256_c7fc7d`，3.5 分钟）：Hermes 调用 `make --storyboard-first`，轮询到 `awaiting_approval`，向用户展示 4 镜中文分镜（每镜一句）并询问确认/修改。**先看分镜模式成立。**
+  - 第二轮（`hermes --resume <同一会话> -z "确认分镜，开始出图"`）：Hermes 调用 `approve`，任务随即以"关键资源不可用：timed out"进入 needs_user。原因是 P7-01 的 `check_resources()` 用 10 秒超时去取 5MB 的 `/object_info`（实测 42–82 秒）。
+  - **Hermes 自行诊断并直接修改了项目代码**（`src/storycg/agent.py` 一行：超时改为读配置 180 秒），然后调用 `resume` 继续。诊断正确，但运行时代理改实现代码不可接受：绕过了监工验收，且与同时运行的 Codex（P6-02）共用工作区。处置：保留这一行让本次实测继续；由 Codex 在下一张工单里用轻量健康检查替换它并补测试；SKILL.md 增加"不得修改项目代码/配置，出错时把 status 的错误告诉用户"。
+  - 结果：08:56 Hermes 交付——`MEDIA:` 拼图、4 张单图路径、result.md 的已知问题与"未经可靠审核"项、主动说明自己改过超时，并询问是否重出。任务用量 15 张、审核 61 次、执行 45.0 分钟（墙钟 52.7 分钟，含资源超时等待）。监工看图（`verify/hermes-t2-sheet.jpg`）：发现小白猫→弯腰接近→伞下抱猫→送到门廊，故事可读，身份一致（粉发、眼镜、白衬衫、黑裙、手套）；第 1、2 镜背景有多余的收拢雨伞；第 3、4 镜衬衫被雨淋湿略透（仍属全年龄）。**先看分镜模式端到端成立。**
+- **Hermes 实测 T3（08:57–09:20，默认模式，月城柳/办公室睡着）——中止，不作为证据**：(1) 用户没要求先看分镜，Hermes 仍加了 `--storyboard-first`，随后在 one-shot 无人可问时自行选择"确认出图"——运行时模型没严格遵守默认模式；(2) worker 加载了 Codex 正在修改中的 P6-02 代码（共用工作区），走进了新的 L3 分支，测试对象不是已提交代码。监工终止 Hermes 与 worker（任务 `jobs/cg-76d63251d1f9` 保留作记录，未产生剧情图）。待 P6-02 提交、重装 skill 后重跑默认模式与中断恢复测试。
+- **Hermes 实测 T3b（10:21–10:49，默认模式，月城柳/办公室睡着，任务 `jobs/cg-76d2eec57dfc`，已提交代码 + 重装后的 SKILL.md）**：
+  - 这次 Hermes 用了默认模式（`storyboard_first=false`）。
+  - **中断恢复**：监工在 10:30:43 趁 `shot02_a001` 已提交 ComfyUI、尚未完成时 `kill -9` worker。`status` 立即返回 `interrupted`，Hermes 在下一次轮询后 24 秒调用 `resume`。核对 ComfyUI `/history`：该 prefix 只有 1 条记录、prompt_id 与 state 中记录的一致、状态 completed；整个任务没有任何 prefix 被提交两次（`verify/hermes/t3b-resume-check.json`）。**中断恢复无重复提交成立。**
+  - 交付：`MEDIA:` 拼图 + 单图路径 + result.md 已知问题（含"未经可靠审核"提示）。用量 9 张、审核 40 次、26.4 分钟。
+  - 监工看图（`verify/hermes-t3b-sheet.jpg`）：白天趴桌睡着 → 醒来困惑 → 窗外已是夜景（玻璃映出她）→ 伸手开台灯，故事可读、身份一致。**但第 1 镜画了两个月城柳**（一个趴在桌上睡、一个站在桌边）——违反单主角，审核器与盲审都没发现。
+- **Hermes 实测 T4（D27 第二轮，2026-10-03 22:40–23:24，默认模式，菲伦/第一次被夸奖，任务 `jobs/cg-129ca5876d7b`）**：
+  - 链路：Hermes 用默认模式（`storyboard_first=false`）调用 `make`，轮询间隔 20–90 秒，44.6 分钟交付 `MEDIA:` 拼图、单图路径和已知问题，没有改项目代码。前两次 `make` 是 Hermes 自己的工具参数写错（notify），命令没有执行；ComfyUI 历史显示每个前缀只提交一次，共 7 张。审核 30 次。会话记录 `verify/hermes/t4-session.jsonl`，拼图 `verify/hermes-t4-sheet.jpg`。
+  - 监工看图：身份（紫发、齐刘海、紫瞳、白衣白裙）四镜一致；单主角 ✓（第 1 镜初版有两个菲伦，单主角计数抓到，指令编辑修掉了）；情绪递进"发呆→惊讶→脸红→微笑"看得出来。**问题有两个**：(1) 外套和定妆的短款黑外套不一致，四镜之间也不一致（黑色长款→接近定妆→橄榄绿长款→棕色长款）。审核器判第 1、3、4 镜 mismatch，和监工一致，但修复循环没修，因为 `problem_methods` 里没有 `outfit_detail_vs_portrait`。(2) "捂住脸"被画成手放脑后：规划写了"hands covering face"，pose 却给了不存在的 `hands_on_head`，tag 解析退而选了 `arm_behind_head`。叙事修复因诊断 LLM 超时没做成。Hermes 交付时把服装问题说成"参考基线有争议"，措辞偏淡化，但请用户看图判断，没有隐瞒。
+  - 判定：**Hermes 链路通过；质量部分通过**。服装和动作都在 v1 保证范围内（D23），派 P10-04 修复。
+  - 监工操作失误（已处理）：导出会话时 `hermes sessions export` 把会话 ID 当成了输出文件名，把全部 206 个会话导出到项目目录，生成了一个 69MB 的文件。监工发现后立即删除，没有入库，也没有上传；随后只导出了 T4 这一个会话。
+- **P7 阶段门槛：通过**（监工判定）：安装、先看分镜模式、默认模式、中断恢复均经 Hermes 实测；遗留问题见晨报"仍有限制的能力"。
+- P8-01 部分完成：芙莉莲睡衣被定妆门禁拦（蓝瞳），约尔在新层级规则下降为 L4；四组已有拼图按"角色-剧情"复制到 review/。
+- P8-02 部分完成：定妆阶段修复（指令编辑）与 status 计时修复；芙莉莲-试穿睡衣交付；白雪姬分镜因"同类道具区分 × tag 过滤"冲突失败。
+- P8-03 通过：分镜"同类道具区分 × tag 过滤"冲突修复；L3 角色白雪姬整组剧情出图，身份一致，结局动作缺失。
+- 第二轮（用户答复待决后）：P9-01 通过——omarchy 本机 ultralytics + Bingsu/adetailer（face_yolov8s、person_yolov8s-seg，CPU，单图约 0.1 秒）；监工据 14 张已知样本定了单主角计数规则（见 orders/P9-01.md 末尾）。P9-02 通过：面部裁切改用本机检测；检测蒙版面部重绘有效；重复主角改用指令编辑去除（D1 成功）；单主角计数、盲审缩图 768px、每组 60 分钟已接入；瞳色颜色采样"判 mismatch 可信、但常弃权"。下一步 P9-03（v2 校准样本）→ P9-04（审核器 v2 冻结与校准）。
+- **P8 阶段门槛：通过（效果部分达标）**（监工判定）。全部阶段完成，晨报已定稿；后续改进见「待决」。
+
+## 占位项的取值（TASK.md 中未填写的【】）
+
+用户交代"全程不要等我回复"，以下按最保守、可逆的原则取值，已列入「待决」请用户确认：
+
+| 占位 | 取值 | 理由 |
+|---|---|---|
+| 工作目录路径 | `/work/workspace/manga_skill`（TASK.md 所在目录，启动时只有 3 个 md 文件） | 新目录、已 git init |
+| 现有 skills 路径 | `~/.config/magpie/library/skills/`（`~/.claude/skills`、`~/.agents/skills` 中的条目是指向它的符号链接）与 `~/.hermes/skills/` | 只读参考基础设施信息 |
+| 自定义节点/模型下载 | **A：禁止** | 最保守；缺什么写进待决 |
+| 每组耗时上限 | 45 分钟 | TASK.md 已给默认值 |
+| 开发期总出图上限 | 400 张 | TASK.md 建议值 |
+| Codex 退避单次最长等待 | 60 分钟 | SUPERVISOR.md 已给默认值 |
+
+## P0 环境报告（监工亲自核对，2026-09-30）
+
+证据：`verify/object_info.json`（`/object_info` 原始响应，5.3 MB，2326 个节点）。
+
+### ComfyUI
+
+- 地址 `http://127.0.0.1:8188`（来自现有 skills，已重新验证）。`/system_stats`：ComfyUI 0.36.0，Windows，RTX 4070 SUPER 12 GB，PyTorch 2.11+cu130。
+- `/object_info` 首次响应 44 秒（服务端冷启动慢）；客户端超时需 ≥180 秒。
+- **ComfyUI 是共用的**：核对时队列里正有别人的任务在跑（`story_cg_portrait_*`，旧 skill）。不得清空队列、不得 interrupt 别人的任务；我们的任务要按 prompt_id 追踪。
+- 无认证。
+
+### 画风资源（WAI / Iwao / akaimelon）
+
+- WAI checkpoint：`waiIllustriousSDXL_v170.safetensors`（CheckpointLoaderSimple 唯一的 checkpoint）。`/view_metadata/checkpoints` 返回 404，无内嵌哈希。
+- Iwao：候选 `Iwao178.safetensors`（元数据仅 Author=eTchola，无哈希、无训练底模信息）、`iwaoCIVITAI.safetensors`、`iwao_validation\*`（验证用中间产物）、`iwao_style_Anima_v40.safetensors`（Anima 底模专用，不适用 SDXL）。
+- 现有 story-cg-director 的描述写的是"WAI + Iwao178 + akaimelon"。P2 以 `Iwao178` + `akaimelon` 为主候选，其它 SDXL 版本作为网格对照，不静默更换。
+- 哈希：远端是 Windows 机器，无法直接读文件算 SHA256。可用来源：safetensors 元数据中的 `sshs_model_hash`（若有）、`/experiment/models/<folder>` 返回的 size/mtime。manifest 中按"可得即记，不可得标注 unavailable"处理。
+
+### 角色 LoRA（L1 候选）
+
+- `Fern_Frieren_Beyond_Journeys_End_-_Illustrious_V2.safetensors`（菲伦；sshs `46066eb9…14ac65`；训练 tag 含 `fern (sousou no frieren)`、`purple hair`、`purple eyes`）
+- `tsukishiro_yanagi_zzz_lora_finished.safetensors`、`yanagizzz_v4_best_step1650.safetensors` 等（绝区零 月城柳）
+
+### 身份控制相关节点与模型
+
+| 类别 | 可用 | 模型 |
+|---|---|---|
+| 参考注入 IPAdapter（SDXL） | IPAdapter 全家（IPAdapterAdvanced、UnifiedLoader…） | `ip-adapter-plus-face_sdxl_vit-h.safetensors` + CLIP-ViT-H（`CLIP-ViT-H-14-laion2B-s32B-b79K`）。**没有** 非 face 版 plus/standard SDXL 模型；FaceID 需要 insightface（未见模型）|
+| 参考编辑 Qwen Image Edit | `TextEncodeQwenImageEditPlus`、`UnetLoaderGGUF` | `qwen-image-edit-2511-Q4_K_M.gguf`、`Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf`/`qwen_2.5_vl_7b_fp8_scaled`、`qwen_image_vae.safetensors`、Lightning 4-step LoRA `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16` |
+| Inpaint | SetLatentNoiseMask、InpaintModelConditioning、VAEEncodeForInpaint、Fooocus inpaint | `inpaint_v26.fooocus.patch`、`fooocus_inpaint_head.pth` |
+| ControlNet | ControlNetApplyAdvanced 等 | `OpenPoseXL2.safetensors`、`control-lora-openposeXL2-rank256`；**没有** 姿态检测预处理器（无 controlnet_aux / DWPose 预处理节点）|
+| 面部检测/裁切 | MediaPipeFaceLandmarker、CropByBBoxes、ImageCrop | **没有检测模型**：`LoadMediaPipeFaceLandmarker` 模型列表为空，`easy ultralyticsDetectorPipe` 模型列表为空，无 Impact Pack FaceDetailer/SAMLoader |
+| 放大 | UpscaleModelLoader | `RealESRGAN_x4plus_anime_6B.pth` 等 |
+
+结论：身份控制可走 IPAdapter plus-face（SDXL 原生）或 Qwen Image Edit（以定妆图为参考构图，再用 WAI 重绘）；局部重绘可用。面部检测需在 ComfyUI 外解决（例如让视觉模型给出面部 bbox，本地裁切），这一点在 P3/P7 前需验证。
+
+### 视觉模型服务 / Hermes 当前模型
+
+- `http://127.0.0.1:11234/v1`（OpenAI 兼容，mlx-serve），模型 `Qwen3.8-Flash-Next-Uncensored-MLX-Serve-4bit`，capabilities 含 vision / json_schema / reasoning，**上下文 262144**。
+- 不带 API key 可调用。实测一次发 3 张图（红/蓝/绿纯色）→ 返回 `["red","blue","green"]`，3.5 秒。**支持多图输入**。
+- 这也是 Hermes 当前使用的模型（`~/.hermes/config.yaml` model.default，provider mlx-server）。审核器和运行时 LLM 是同一个模型——"自己出题自己考"的风险由监工在 P4 把关。
+
+### Hermes
+
+- `hermes --version`：Hermes Agent v0.21.5（2026.9.24），安装目录 `~/.hermes/hermes-agent`，Python 3.14.7。
+- skill 加载：`~/.hermes/skills/` 为主目录（可按 category 分子目录），另有 external_dirs `~/.agents/skills`。每个 skill 是含 `SKILL.md`（frontmatter name/description）的目录，自动成为 `/skill-name` 斜杠命令。非交互调用：`hermes -z "<prompt>" --skills <name>`。
+- 安装计划：P7 时新建 `~/.hermes/skills/<新名字>/`（不覆盖已有 skill，不改全局配置）。
+
+### 角色资料源
+
+- Danbooru 可访问：`/wiki_pages/<tag>.json`、`/tags.json`、`/posts.json` 均 200。
+- `danbooru.donmai.us/autocomplete.json?search[query]=菲伦&search[type]=tag_query` 直接返回 `fern_(sousou_no_frieren)`（antecedent 为中文别名"菲伦"）——可用于中文名消歧。
+- 中文维基 API 可访问；萌娘百科 API 返回 Unauthorized。
+
+### 本机环境
+
+- 系统 `python3` 3.14.7，**无 Pillow**；有 `uv`、ImageMagick (`magick`)。
+- codex-cli 0.159.2，已登录（ChatGPT）。用户 config 默认 `sandbox_mode = danger-full-access`，派工时必须显式 `--sandbox workspace-write`（`exec resume` 无 `--sandbox`，用 `-c sandbox_mode="workspace-write"`）。
+
+## 决策记录
+
+- D1 占位项取值见上表。
+- D3 画风：Iwao178 0.4 / akaimelon 0.3（P2-01，身份优先取最低档）。
+- D4 Codex 派工加 `-c memories.use_memories=false`，避免 Codex 全局记忆中的旧 story-cg 项目内容渗入（TASK.md §2）。
+- D5 身份控制：IPAdapter plus-face SDXL，权重 0.4，参考=定妆图面部裁切（P3-01 试点，证据 `review/P3-01-pilot.jpg`）。0.7 否决（画风崩坏）。
+- D6 修复手段：区域重绘默认关闭（视觉定位不可靠，P5-01/P5-01b 未验证成立）；新增 Qwen 指令编辑作为道具数量/状态、瞳色、配饰的首选修复；重布局用于构图/动作；面部精修用于小脸身份细节。
+- D7 定妆门禁（P5-02 执行者提问，监工决定）：来源期望为空（expected=[]）的非必需项被判 not_visible 时，不阻塞定妆；门禁要求所有有来源依据的必需项通过。原审核结论原样保留，非必需不可见项在结果中标注"未经审核"。理由：与 P4-02 规则"必需项不可见才阻塞"一致，不是放宽对已检出错误的判定。
+- D8 L2 判定（P6-02 执行者提出，监工决定）：L2 探针只用角色 tag + 作品 tag + 中性构图，不加来源外貌/服装 tag（否则发色检查必然通过，探针失去意义）；判定规则：可靠项全部 pass，且**任何项（含不可靠项）判 fail 即否决 L2**。依据：校准中不可靠项误报率 0%，弱点是漏检而非误报，适合用来否决、不适合用来确认。
+- D8b（P6-02 返工 1 后监工修正 D8）：(1) 纯知识探针只让**外貌项**参与判定（发色须 pass；瞳色/发型/标志特征/配饰任一 fail 即否决；not_visible 不否决也不确认），服装项不参与——探针根本没写服装；(2) L1 按 TASK.md 定义是"本地有专用 LoRA"：由训练 tag 元数据匹配确认，并用"LoRA + 来源外貌 tag"的测试图验证能画出（P6-01b 方法），不套用纯知识探针。D8 原文"任何项"措辞过宽，是监工的问题。
+- **第二轮决策（2026-10-01，用户对 7 项待决的回复）**
+  - D9（待决 1）：认可全部保守取值（ComfyUI 节点/模型下载仍为 A 禁止；工作目录、skills 路径、400 张上限照旧）。
+  - D10（待决 2）：允许在 **omarchy 本机**工作目录虚拟环境内安装 ultralytics，加载 Bingsu/adetailer 的面部与人物检测模型；不碰 Windows 与 ComfyUI。检测框生成蒙版后上传 ComfyUI，走已有局部重绘链路。先用已知错误样本（如月城柳-办公室第 1 镜）校准检测效果。
+  - D11（待决 3）：瞳色/配饰审核投入专门方法：基于检测得到的面部裁切做颜色采样比对。
+  - D12（待决 4）：每组剧情耗时上限放宽到 60 分钟。
+  - D13（待决 5）：盲审先缩小图片再发。
+  - D14（待决 6）：比对区分"看不见"与"不存在"，审核器改版后重新冻结、重新校准。
+  - D15（待决 7）：加单主角计数检查（基于人物检测计数，背影镜头没有脸），需新校准样本。
+  - D16（补充）：分镜阶段每镜强制单主角，一镜内不描述两个姿态；归属类剧情（如拿错伞）要在分镜里先建立道具归属。
+  - D17（补充）：Qwen-Image 2.1 及其 ControlNet 本轮不接入。
+  - 拓扑（用户说明）：omarchy 负责监工与编排；Windows 跑 ComfyUI（127.0.0.1）；MacBook Pro 跑视觉模型（127.0.0.1）。监工不能在 Windows 上装依赖，需要时把需求写清楚交用户转派。
+- D18（P9-05 后监工决定）：层级判定（L2 知识探针、L3 定妆比对）中，v2 可靠性配置里为 `unverified` 的项（hairstyle、hair_ornaments、footwear）**不得否决**；`unreliable` 但校准误报为 0 的项仍可否决（D8）。依据：P9-04 的 D14 样本显示正是发型/发饰类项会把"看不见"误判（A1、A3），约尔两次因发髻/发带被降为 L4 很可能是这类误判。
+- **第三轮决策（2026-10-02，用户对待决 8–11 的回复与补充）**
+  - D19（待决 8a）："拿错东西"类剧情作为已知局限，交付说明提醒。
+  - D20（待决 9b）：配饰类项不参与层级否决。依据：配饰检出率 33%，按 TASK.md P4 不能作为判定依据。随服装变化的发饰归入服装状态（TASK.md §5），不算身份特征。
+  - D21（待决 10）：计数阈值以下的额外人物也裁切出来，复用视觉发色、发型审核，与身份卡比对。正例用芙莉莲 v4 第 3 镜、月城柳旧版第 1 镜；反例用现有组里的路人和背影；尽量不新出图。
+  - D22（待决 11b）：头部/配饰区域放大裁切后单独审核，只开一张工单，用现有校准样本复测，不占出图额度；达不到 75% 就转 (a)（接受为局限，继续标注）。
+  - **D23 v1 范围调整（用户决定）**：v1 只保证人物——身份、服装、表情、动作、单主角。道具归属、道具状态（烤焦、湿透等）、道具数量不再投入开发。此决定覆盖 TASK.md §8 中"带关键道具的动作"这一剧情类型。
+  - D24：道具问题照常审核记录，只写入交付说明的已知问题，不作为未通过的理由，也不为它触发修复。
+  - D25：分镜规则——剧情的关键变化优先由人物的表情和动作表现；每镜最多一个关键道具；剧情核心依赖道具归属或状态时照常出图、不额外提问，交付说明写明这部分可能读不出。规则写成通用约束并由脚本校验，不针对特定角色。
+  - D26：SKILL.md 与使用说明的示例换成人物动作、情绪驱动的剧情，并说明 v1 擅长和不擅长的剧情类型。
+  - D27：重装 skill 后，用开发集角色在 Hermes 里跑一组以人物动作、情绪为主的新剧情，作为第二轮 Hermes 实测；其余额度留给留出集。本轮完成且 Hermes 实测通过后，用户再提供留出集。
+  - D28（监工，2026-10-04）单主角计数：主要脸的置信度阈值 0.6 → 0.45。依据：418 张图（v1 全部历史出图、两段式 A/B、校准与验证样本）中，计数只在 2 张上变化，都是 P10-04 第 1 镜两个全尺寸菲伦的漏检，没有新增误报。这说明 P9-04 的"100% 可靠"建立在小样本上，真实任务里出现了反例。
+  - D29（监工）修复候选取舍：按严重程度逐级比较，依次为单主角 > 身份 > 服装 > 动作与构图，只统计 reliable 项。依据：P10-04 第 4 镜的去重复修复把单主角修好了，但服装细节失败从 1 增加到 6，按总数被判"没改善"，交付了带重复主角的原图。
+- D2 Codex 调用：`codex exec -C <workdir> --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -`；返工 `codex exec resume <id> -c sandbox_mode="workspace-write" -c sandbox_workspace_write.network_access=true --json -`。
+
+## 工单列表
+
+| 工单 | 结论 | 返工次数 | 会话 ID | 证据 |
+|---|---|---|---|---|
+| P0-01 冒烟 | 通过 | 0 | 01a0f225-82be-7381-91df-8a7802b4eb8e | `smoke/*.json`、`reports/P0-01.md`；监工复核 JSON 合法、vlm_chat 内容为 pong |
+| P10-05 计数阈值（D28）+ 修复取舍按严重程度（D29），离线 | **通过**：两张漏检图的新计数为 2；P9-04 和 P10-02 共 20 条计数回归无变化；第 4 镜回放的失败向量从 [1,0,1,0] 变为 [0,0,6,0]，按第 1 级判定为改善，会采用去重复的 a002（原冻结审核结论不改）。监工复跑回放、计数回归和测试，均为 629 passed（离线包装器和直接 pytest 各跑一次）。出图 0，视觉调用 0。小问题：有测试会往 `reports/assets/review/` 写预览图，未入库 | 0 | 01a102b8-cb9e-74b1-928c-878193f76130 | `reports/P10-05.md`、`reports/assets/P10-05/replay-supervisor.json` |
+| P10-04 服装细节不一致接入修复；动作 tag 解析不能退化 | **部分通过**：可靠项已接入修复，并有映射契约测试；动作 tag 修复生效（捂脸 → `covering_face`，精确匹配）；555 passed（监工复跑）。在线回归没达标，原因是新暴露的上游问题：(1) 身份状态锁定 `long_coat`，定妆照却画成短外套，定妆门禁没拦住，导致服装细节对照的参考和锁定状态自相矛盾，修复无从改善；(2) 第 1 镜两个全尺寸菲伦，单主角计数漏检（第二张脸置信度 0.50，低于 0.6；人物框都低于 0.5）；(3) 第 4 镜去除重复主角的修复图因服装细节多出 6 项失败被判"没改善"，最终交付了带重复主角的原图。出图 8，审核 46 次。中途 Codex 4 次 Ctrl-C 并修补代码后续跑，报告中已如实说明 | 0 | 01a10261-1f48-7103-a52e-11ddec23f209 | `reports/P10-04.md`、`review/P10-04-菲伦-前后.jpg` |
+| P10-03 重复主角判定改为由子项推导 + 候选去重 + 外部验证（不出图） | **通过（结论：仍不可靠）**：v3.1 冻结后才跑外部验证。候选层检出 6/8=75%，误报 2/6=33.33%，误报超门槛，发布为 unreliable；系统层检出 42.86%，误报 25%。候选去重有效（K1、K3 判对）。误报来自 K2：模型的发型观察写着"双马尾 vs 短发"，状态却填了"一致"，**状态字段不跟观察文字走**。漏检 H1：候选太小，判"看不清"。监工复算一致；495 passed；配置只改了一项；视觉调用 22，出图 0 | 0 | 01a10211-9ab8-7612-95d6-24bfa11f63c4 | `reports/P10-03.md`、`calibration/v3.1/summary.md` |
+| P10-02 审核器 v3 + 校准（不出图） | **通过（有记录在案的缺口）**：S/O 双轮全部完成，v3 配置已发布（version=3）；服装细节对定妆 reliable（检出 100%，误报 16.67%，按勘误后真值为 0%）；阈值以下重复主角 unreliable（检出 20%，原因是格式设计，见校准一节）；配饰放大 50%/38.89%，D22 转 (a)；原五项完整回归无退化，眼色缺 C-o2 一个 ok 样本（该样本 consistency 层 6 次全部 182 秒超时，与基础设施无关），交集无退化。监工复算一致；435 passed；视觉调用 301/330，出图 0 | 3（均为续跑，不是质量返工） | 01a0fa14-8050-7f82-852f-daddd4b3b265 | `reports/P10-02.md`、`calibration/v3/summary.md`、`verify/P10-labels-erratum.json` |
+| P10-01 v1 范围调整落地 | 通过 | 0 | 01a0f9f7-fb99-75a1-aad9-93d6f25e7b7a | `reports/P10-01.md`、`skill/story-cg-v1/SKILL.md` |
+| P9-07 规划/诊断语义修复+重跑 | 部分完成（芙莉莲仍不可读且漏检小号重复；约尔回到 L4） | 0 | 01a0f97a-5f4d-7cb3-8226-7ab2cb880d08 | `review/P9-07-芙莉莲-前后.jpg`、`reports/P9-07.md` |
+| P9-06 四项修复+在线回归 | 部分完成（月城柳去重成功；约尔回到 L2 出图；芙莉莲规划失败） | 2（资源阻塞续做） | 01a0f931-b055-7ba0-b661-4c77eb3d2f19 | `review/P9-06-月城柳-前后.jpg`、`review/P9-06-约尔-前后.jpg` |
+| P9-05 分镜规则+门禁+回归 | 部分完成 | 0 | 01a0f8c2-d9d0-7e31-82f5-7203c65713d3 | `review/P9-05-*.jpg`、`reports/P9-05.md` |
+| P9-04 审核器 v2 冻结与校准 | 通过（D14 未解决） | 1（主机挂起续跑） | 01a0f639-1644-7800-9347-e6380df6d6d9 | `calibration/v2/summary.md`、`config/review_reliability.json`、`verify/p9_04_recompute.txt` |
+| P9-03 第二轮校准样本 | 通过 | 1（监工条文措辞） | 01a0f62a-50d9-79e3-b075-8fd83988a6eb | `review/P9-03-samples.jpg`、`verify/P9-labels.json` |
+| P9-02 检测接入流程 | 通过（瞳色采样覆盖率低，待校准） | 1 | 01a0f5f7-d475-74f0-bd70-7a97649cc3c4 | `review/P9-02-inpaint.jpg`、`review/P9-02-eyes.jpg`、`verify/p9-02_d1_after.jpg` |
+| P9-01 本机检测基础设施 | 通过 | 0 | 01a0f5e9-f168-7022-8877-0f661a6dbd72 | `review/P9-01-detect.jpg`、`calibration/detect/results.json` |
+| P8-03 分镜规则冲突修复+L3 整组 | 通过（效果有瑕疵） | 0 | 01a0f597-28be-7762-9296-a34cedc23c8b | `review/白雪姬-面包店打工.jpg`、`reports/P8-03.md` |
+| P8-02 定妆修复+补跑 | 部分完成（芙莉莲睡衣已出；白雪姬分镜失败） | 0 | 01a0f56c-907d-7332-943a-ac101287e18f | `review/芙莉莲-试穿睡衣.jpg`、`reports/P8-02.md` |
+| P8-01 矩阵补齐 | 部分完成（芙莉莲定妆被拦、约尔降为 L4） | 0 | 01a0f556-1e2e-7b82-841a-591e08c1a2a5 | `reports/P8-01.md`、`review/芙莉莲-拿错伞.jpg` 等 |
+| P6-02 L3/L4 + 层级规则 D8/D8b | 通过 | 2 | 01a0f4c5-a346-7580-900a-21a02b887cbf | `review/P6-02-L3-*.jpg`、`runs/p6_02/l4/*/needs-user.json`、`reports/P6-02.md` |
+| P7-02 Hermes 实测问题修复 | 通过 | 0 | 01a0f4bb-deca-79e1-8e44-fd627e54136e | `reports/P7-02.md` |
+| P7-01 入口命令+SKILL.md+安装包 | 通过（默认 pytest 不可移植，待修） | 0 | 01a0f494-6d39-7361-b928-2dbcfef41136 | `skill/story-cg-v1/SKILL.md`、`reports/P7-01.md` |
+| P5-02 自动修复循环+两组实跑 | 部分通过（约尔超时 4 秒、盲审超时；芙莉莲叙事未读出） | 2 | 01a0f42b-5b48-7372-a3e5-62976ad718fa | `review/P5-02-约尔-前后.jpg`、`review/P5-02-芙莉莲-前后.jpg` |
+| P6-01b L1/L2 层级实测 | 通过 | 1 | 01a0f401-136d-7741-b331-6331572e7a3d | `review/P6-01b-*.jpg`、`runs/p6_01b/*/identity.json` |
+| P5-01b 区域重绘返工+第 5 例 | 部分通过 | 0 | 01a0f3e7-be0b-7ed3-ba6d-b214257f71d2 | `review/P5-01b-repairs.jpg` |
+| P6-01a 名字消歧+原设补全 | 通过 | 1 | 01a0f3b4-e778-77b1-b1b4-a717c595fbae | `runs/p6_01a_resolve/`、`reports/P6-01a.md` |
+| P5-01 修复原语 | 部分通过（区域重绘不成立；重布局被外部宕机阻塞） | 0 | 01a0f38f-4a7b-7ae0-8d74-3ccfc0eefda4 | `review/P5-01-repairs.jpg`、`verify/p5-01_face1.jpg` |
+| P4-02 审核器修正+冻结+校准 | 通过 | 0 | 01a0f35f-69e8-7512-8405-30d92f31ebb4 | `calibration/summary.md`、`config/review_reliability.json`、`verify/p4_recompute.py` |
+| P4-01 校准样本 | 通过 | 2（均为监工工单澄清） | 01a0f349-3d14-7830-9295-e30725058038 | `review/P4-samples.jpg`、`verify/P4-labels.json`（监工逐项真值） |
+| P3-02 整组有/无参考对照 | 通过（P3 部分达成） | 0 | 01a0f320-0b87-78a1-8d31-50f8de49f355 | `review/P3-02-芙莉莲-对照.jpg`、`review/P3-02-约尔-对照.jpg` |
+| P3-01 定妆+参考机制试点 | 通过 | 0 | 01a0f2f4-1b7f-70a1-9a68-3570d3c53297 | `review/P3-01-pilot.jpg`、`runs/p3_01_pilot_20260930/manifest.json` |
+| P2-01 画风网格 | 通过 | 0 | 01a0f2e5-502f-7a61-8ec4-260891c14059 | `review/P2-grid-A.jpg`、`review/P2-grid-B.jpg`、`verify/p2-Bfaces.jpg` |
+| P1-04 镜头 tag 化+道具登记+景别映射 | 部分通过（叙事未达成） | 0 | 01a0f2c1-6126-7300-968b-7e7f9699ed4e | `review/P1-02-vs-P1-04.jpg`、`review/芙莉莲-拿错伞-P1-04.jpg` |
+| P1-03 三层审核器初版 | 通过 | 1 | 01a0f2a7-d180-78a3-b8f6-6343c002c0ca | `runs/p1_02_frieren_20260930/review.json`、`review_log.jsonl`、`review_artifacts/face_pair_*.png` |
+| P1-02 身份锁定+分镜+4镜+拼图 | 通过（叙事未通过，见下） | 0 | 01a0f24c-d0ce-7d61-8cc1-b5cb3168394e | `review/芙莉莲-下雨后在车站发现自己拿错了伞.jpg`、`runs/p1_02_frieren_20260930/` |
+| P1-01 骨架+单镜出图+恢复 | 通过 | 0 | 01a0f22a-043d-7a33-a1e8-21cf70e6ec4c | `runs/p1_01_smoke_20260930/`；pytest 16 passed；/history 同 prefix 仅 1 条 |
+
+## 出图用量（开发期上限 400）
+
+| 工单 | 出图张数 | 审核调用 | 累计 |
+|---|---|---|---|
+| P0-01 | 0 | 0（文本 1） | 0 |
+| P1-01 | 1 | 0 | 1 |
+| P1-02 | 4 | 0（LLM 5） | 5 |
+| P1-03 | 0 | 14 | 5 |
+| P1-04 | 8 | 14（LLM 6） | 13 |
+| P2-01 | 20 | 0 | 33 |
+| P3-01 | 17 | 31 | 50 |
+| P3-02 | 25 | 65 | 75 |
+| P4-01 | 16 | 0 | 91 |
+| P4-02 | 0 | 126 | 91 |
+| P5-01 | 5 | 38 | 96 |
+| P6-01a | 0 | 0 | 96 |
+| P5-01b | 7 | 36 | 103 |
+| P6-01b | 4 | 24 | 107 |
+| P5-02 | 30 | 142（+LLM 27） | 137 |
+| P7-01 | 0 | 0 | 137 |
+| P7-02 | 0 | 0（LLM 4） | 137 |
+| Hermes T2（监工） | 15 | 61（LLM 9） | 152 |
+| P6-02（含返工） | 21 | 70 | 173 |
+| Hermes T3（中止，监工） | 6（层级探针与 L3 定妆尝试） | — | 179 |
+| Hermes T3b（监工） | 9 | 40（LLM 7） | 188 |
+| P8-01 | 7 | 20 | 195 |
+| P8-02 | 12 | 约 55 | 207 |
+| P8-03 | 10 | 55 | 217 |
+| P9-01 | 0 | 0 | 217 |
+| P9-02（含返工） | 3 | 4 | 220 |
+| P9-03（含返工） | 3 | 0 | 223 |
+| P9-04（含续跑） | 0 | 192 | 223 |
+| P9-05 | 28 | 88 | 251 |
+| P9-06 | 12 | 52 | 263 |
+| P9-07 | 14 | 56 | 277 |
+| P10-01 | 0 | 0 | 277 |
+| P10-02（首跑，超时停止） | 0 | 63 | 277 |
+| P10-02 返工 1–3（续跑） | 0 | 238 | 277 |
+| P10-03 | 0 | 22 | 277 |
+| Hermes T4（D27） | 7 | 30 | 284 |
+| P10-04 | 8 | 46 | 292 |
+
+## 审核器校准结果（P4-02，监工独立复算确认）
+
+先按 P1–P3 观察到的漏洞做通用修正（不可见项 not_visible、道具逐件清点、景别由脚本判定、bbox 像素坐标换算），冻结后在监工确认的 21 个样本上各跑 2 次（126 次调用）。
+
+| 审核项 | error 样本/观测 | 判 fail 检出率 | 其余 | ok 误报率 | 结论 |
+|---|---|---|---|---|---|
+| 发色 | 3/6 | 100% | — | 0% | **可靠** |
+| 服装 | 3/6 | 100% | — | 0% | **可靠** |
+| 道具（数量/持有/状态） | 9/18 | 89% | 2 次判不可见 | 0% | **可靠** |
+| 动作 | 7/14 | 100% | — | 0% | **可靠** |
+| 瞳色 | 5/10 | 40% | 4 次只判 minor，2 次不可见 | 0% | 不可靠 |
+| 配饰/发饰 | 3/6 | 33% | 4 次判不可见；正确样本 26/30 次也判不可见 | 0% | 不可靠 |
+| 整体角色（聚合） | 9/18 | 44–67%（口径不同） | 其余判不可见 | 0% | 不可靠 |
+| 发型 | 2/4 | 50% | 2 次放过 | 0% | 未验证（样本不足） |
+
+两次运行结论不一致率 0/21。运行时审核结果中不可靠/未验证项自动标注"该项未经可靠审核"。**瞳色与配饰是身份的关键项，却不可靠**——交付说明里不能凭审核器声称这两项已验证，需要监工/用户看图。
+
+## 审核器 v2 校准结果（P9-04，监工独立复算确认）
+
+| 审核项 | 检出（只算 fail） | 误报 | 结论 | 相对 v1 |
+|---|---|---|---|---|
+| 发色 / 服装 / 道具 / 动作 | 100% / 100% / 89% / 100% | 0% | **可靠** | 未退化 |
+| 瞳色（视觉模型） | 77.8%（14/18） | 0%（0/44） | **可靠** | 40% → 77.8% |
+| 单主角计数（本机检测） | 100%（6/6） | 0%（0/14） | **可靠** | 新增 |
+| 瞳色采样（本机检测） | 77.8% | 50%（22/44） | 不可靠：只记录，不否决 | 新增 |
+| 配饰粗检（本机检测） | 0% | 0% | 不可靠 | 新增 |
+| 配饰（视觉）/ 整体角色 / 发型 | 33% / 44% / 50% | 0% / 10% / 0% | 不可靠 / 不可靠 / 未验证 | 无改善 |
+
+D14（看不见 vs 不存在）未解决：脑后发髻、出画靴子仍被判"可见且正确"，缺失的发带与耳饰仍漏检。
+
+## 审核器 v3 校准结果（P10-02，监工独立复算确认，2026-10-03）
+
+监工用 `verify/P10-labels.json` 对 `calibration/v3/results.json` 独立复算，S/O 每个样本两轮的映射结果都与报告一致。
+
+| 审核项 | 检出（只算 fail） | 误报 | 结论 |
+|---|---|---|---|
+| 服装细节对定妆（新增） | 100%（8/8） | 16.67%（2/12，全部来自 O9） | **可靠**。按勘误后真值为 10/10、0/10 |
+| 阈值以下重复主角（新增，D21） | 20%（2/10，只有 S4） | 0%（0/14） | 不可靠 |
+| 配饰放大（新增，D22） | 50%（4/8） | 38.89%（14/36） | 不可靠，**转 (a)** |
+| 发饰放大 | 100%（2/2） | 66.67% | 未验证（error 样本不足） |
+| 原五项（发色/服装/道具/动作/单主角计数） | 与 v2 相同 | 与 v2 相同 | 完整回归，无退化 |
+| 瞳色 | 77.78% | 0% | 可靠；缺 C-o2 一个 ok 样本，交集无退化 |
+
+**重复主角漏检的原因（监工诊断）**：S1–S3、S5 的视觉输出里，每个候选的发色、发型、瞳色三个子项都判"一致"，理由也写了"这是主角的另一个形象"，但候选整体状态填的是 ok。子项的 ok 表示"一致"，候选的 ok 表示"不是重复"，模型把两层的 ok 当成同一个意思。把冻结结果里的子项事后按"发色和发型都一致且不是已声明倒影 → 重复"推导，S 样本上是 10/10 检出、0/14 误报。但这是在同一批样本上事后推出来的，不能当作校准结果，要在新样本上冻结后再验证。
+
+### v3.1 外部验证（P10-03，监工复算确认）
+
+| 层 | 检出 | 误报 | 状态 |
+|---|---|---|---|
+| 候选层（检测器给出候选的 7 个样本） | 75%（6/8） | 33.33%（2/6） | 不可靠 |
+| 系统层（全部 11 个样本） | 42.86%（6/14） | 25%（2/8） | — |
+
+诊断：本地 4-bit 视觉模型在这个任务里，**观察文字准确，但状态字段经常和观察矛盾**。P10-02 是候选整体状态和子项矛盾，P10-03 是子项状态和子项观察矛盾。只要还从状态字段读结论，换一层读也会碰到同样的问题。后续可以考虑的方向：每个候选只问一个是或否的问题（"是不是参考图里的同一个角色"），或者让模型先写观察、再单独调用一次做比较。是否继续投入，要看对 v1 的价值。现在的交付说明已经写明"重复主角未经可靠审核"，另外本机的单主角计数（阈值以上）仍然可靠。
+
+## 审核器与监工判断不一致记录
+
+| 来源 | 审核器结论 | 监工看图结论 | 说明 |
+|---|---|---|---|
+| P1-03 对 P1-02 组 | 整组未通过；盲审未读出"拿错伞" | 一致 | 叙事层判对 |
+| P1-03 对 P1-02 组 | 场景连续性 4 镜全 pass | 不一致：列车颜色/车型每镜都变 | 场景连续性漏判；同一次调用在盲审里自己描述了列车变化 |
+| P1-03 对 P1-02 组 | 第 3 镜 hands pass、prop_contact minor | 不一致：头顶开伞无可见握持 | 手-道具接触漏判 |
+| P1-03 对 P1-02 组 | 第 1/2/4 镜构图"符合 medium" | 不一致：实际近全身 | 景别判断不可靠 |
+| P3-02 芙莉莲无参考 | 第 4 镜 eye_color fail | 不一致：监工看是绿瞳 | 瞳色误报 |
+| P3-02 芙莉莲 IPAdapter/混合 | 第 1 镜远景 eye_color pass | 不一致：远景眼睛偏黄/金、细节不足 | 小脸瞳色不可观察却判 pass |
+| P3-02 芙莉莲混合 | 第 3 镜 action/prop_contact pass | 不一致：两把开伞 + 多出一把闭伞 | 道具数量错误漏判（第三次） |
+| P3-01 试点 | 上半身近景 brown boots pass | 不一致：画面里根本没有靴子 | 不可观察项未判 fail（违反自身规则） |
+| P3-01 试点 | M1 0.7 配饰 pass | 不一致：耳饰由细长垂饰变成大圆红宝石 | 小配饰形状变化漏判 |
+| P3-01 试点 | 基线第 3 镜 eye_color fail | 一致：蓝瞳 | 瞳色大偏差能检出 |
+| P1-04 组 | 第 4 镜 action/prop_contact pass | 不一致：两把伞都在手里，没有放下红伞 | 持有关系漏判（第二次出现） |
+| P1-03 对 P1-02 组 | 身份/服装多数 pass | 基本一致（参考是第 1 镜，不是定妆图） | 仅能说明组内相对一致 |
+| P5-02 约尔组 | 整组未通过（最终盲审超时） | 不一致：监工只看图能读出"戴帽走路→帽子被吹飞→追→接住"完整故事 | 超时按规则判未通过，不是读不懂 |
+| P5-02 芙莉莲组 | 盲审未读出拿错伞 | 一致 | 归属类剧情仍不可读 |
+| Hermes T3b 月城柳-办公室 | 第 1 镜单张/一致性、整组盲审 pass | 不一致：第 1 镜出现两个月城柳 | 重复主角漏判——单主角检查需要专门项 |
+| P6-01b 芙莉莲（首次） | 服装多项 fail → 层级 pending | 不一致：测试图明确是芙莉莲 | 参考选到 chibi/表情包/cosplay 且比对方向误读；返工后判 L2 |
+| P10-02 O9（约尔毛衣裙） | outfit_detail mismatch（领口、"帽子是外层"） | 不一致，**是监工真值标错了**：复核发现领口确实不同（船领 vs 高领），已写 `verify/P10-labels-erratum.json`；"帽子是外层"那条理由是错的 | 审核器抓到了监工漏看的细节 |
+| P10-02 S1–S3、S5 | extra_protagonist 判 ok | 不一致：画面里有小号重复主角 | 子项（发色/发型/瞳色一致）判对了，整体状态用错了词，属于格式设计问题 |
+| P10-03 K2 | extra_protagonist duplicate | 不一致：候选是白色短发的男路人 | 模型观察写着"短发 vs 双马尾"，发型状态却填了 ok |
+
+## 阻塞项
+
+- **omarchy 挂起**：2026-10-01 15:57:39 主机进入挂起，10-02 01:20:14 唤醒（journalctl 确认），P9-04 校准因此停在第 120 次视觉请求。处置：此后 `verify/dispatch.sh` 用 `systemd-inhibit --what=sleep:idle` 包裹 Codex 进程（仅在工单运行期间阻止挂起，不改系统设置）；P9-04 只续跑未完成样本。
+
+- ~~**ComfyUI 主机宕机**~~ 已恢复（03:06，约 20 分钟）：2026-10-01 约 02:30 起 `127.0.0.1`（经 VPN tun0）ping 100% 丢包、8188 端口超时；视觉服务 `127.0.0.1` 正常。不在我控制范围内（远程 Windows 机器，可能休眠或 VPN 断开）。已开后台轮询，恢复后继续需要出图的工单。期间先做不依赖出图的部分。
+
+- ~~**MacBook 视觉服务不可达**~~ 已解决（2026-10-03 20:29 恢复，返工 3 跑完）：10:31 后 omarchy 挂起约 6 小时（单调时钟只走了 5151 秒）。恢复后 `127.0.0.1` ping 100% 丢包、11234 端口超时，P10-02 返工 2 按规则停止。返工 3 授权 3 层在故障窗口后重新获得一轮尝试。**监工前提有误**：C-o2 的 6 次失败发生在 02:03–02:28 UTC，早于挂起，是这个样本自己的 consistency 请求持续超时。Codex 按工单字面没有补发，处理正确。
+- **omarchy 主机关机中断续跑**：2026-10-02 11:41 系统关机，P10-02 返工 1 停在第 157 次请求，v2:A6 第 2 轮第一层的请求 `…:95` 发出后没有响应。2026-10-03 09:09 重启。当时结果已持久化到 v2:A6 第 1 轮，还剩 133 层。阻塞点有两个：续跑时间预算按墙钟算，把关机时间也算进去了；悬空请求被工具拒绝重发，这是设计如此。返工 2 的处置：悬空请求追加 `request_abandoned` 事件，按该层第 1 次传输失败计；时间预算改为每段续跑各 150 分钟；调用上限不变（两次合计 ≤ 330）。
+- **视觉服务单次请求卡住**（2026-10-02 09:25）：P10-02 校准第 63 次请求 181 秒超时；同类请求平时 20–55 秒，超时后 `/models` 正常。按 AGENTS.md 停止并报告。处置：返工 1 授权独立续跑层，只补缺失调用，传输错误退避后重试同一层（最多 2 次），冻结内容不变。
+
+## 待决
+
+### 第三组（2026-10-04 新增，等你决定）
+
+12. **重复主角审核（阈值以下的小号人物）要不要继续投入？** P10-02 和 P10-03 两次冻结验证都判不可靠。根因是本地 4-bit 视觉模型写的观察文字是准的，但它填的状态字段经常和自己的观察矛盾。另外，画得很小的重复人物，本机检测器在任何设置下都看不到。选项：(a) 接受为局限，交付说明继续标"未经可靠审核"；(b) 再试一轮，每个候选只问一个是或否的问题（"是否为参考图中的同一角色"），新样本冻结验证，约 30 次视觉调用；(c) 换更强的视觉模型（需要你在 MacBook 上处理）。
+13. **定妆照和锁定服装的长度矛盾**（P10-04 发现）：菲伦的身份状态锁定 `long_coat`，但两次独立生成的定妆照都是短款外套。定妆门禁的服装项判了"穿着长外套"，是误判：它核对得了衣服有没有，核对不了长短。结果是服装细节对照的参考本身错了，分镜镜头画对了长外套反而被判不一致，修复也无从改善。选项：(a) 定妆门禁新增"服装长度对锁定状态"的审核项，需要校准，约 20–40 次视觉调用；(b) 多数镜头在同一个方面一致偏离定妆、又和锁定状态相符时，反过来怀疑定妆并重画；(c) 暂时接受，在交付说明里提示。
+
+### 第二组（2026-10-02 新增，等你决定）
+
+8. **"拿错东西"类剧情**：四轮迭代（加归属先行、拿错结构要求）仍读不出。选项：(a) 作为已知局限，交付说明提醒；(b) 允许分镜给道具加醒目的归属标记（名牌、挂饰、绑带颜色）作为可见线索；(c) v1 暂不支持此类剧情，遇到时提示用户改写。当前：停止迭代，等你定。
+9. **层级判定不稳定**（约尔 P9-06 判 L2、P9-07 判 L4）：配饰"类型"比对受参考图服装变体影响。选项：(a) 配饰比对只用穿默认服装的参考；(b) 配饰类项不参与层级否决；(c) 用户确认过的角色层级缓存复用，不每次重判。
+10. **远处小号重复主角漏检**：现规则只数"脸面积 ≥ 最大脸 30%"的人。选项：(a) 对较小人物加"与主角外观相似度"检查（需新校准样本）；(b) 维持现状，交付提醒看图。
+11. **D14 看不见/不存在**：提示词改版没解决。选项：(a) 接受为局限，配饰/发型项继续标"未经可靠审核"；(b) 再试一种方法（对头部/配饰区域放大裁切后单独审核），需重新校准。
+
+### 第一组（2026-10-01 已由用户答复，见决策 D9–D17；以下保留原文备查）
+
+
+1. TASK.md 中的【】占位未填写，已按上表取保守值继续，请确认（尤其是节点/模型下载选择了 A 禁止）。
+2. **是否允许安装一个面部/物体检测模型**（即改选 B）：ComfyUI 上没有任何检测模型，区域重绘只能靠视觉大模型给框，而它定位物体不可靠（P5-01/P5-01b），所以局部重绘被默认关闭。若允许装一个 anime 面部/物体检测模型，局部修复（去掉多余物体、修手）可以重新验证。当前保守方案：不装，用 Qwen 指令编辑和重布局代替。
+3. **瞳色/配饰审核不可靠**：要么接受"需人工看图确认"，要么投入一个专门方法（例如按面部裁切做颜色采样比对）。当前：交付说明标注"未经可靠审核"。
+4. **每组 45 分钟上限偏紧**：4 镜 + 自动修复 + 三层审核实测 42–45 分钟（约尔组超 4 秒）。可考虑放宽到 60 分钟，或减少每轮审核调用。当前：保持 45 分钟，超限如实报告。
+5. **盲审超时**：4 张全尺寸图一次发给视觉模型偶尔超过 180 秒。可考虑缩图后盲审或放宽超时；当前按规则判未通过。
+6. **约尔类"遮挡被判缺失"**：纯知识探针/L3 比对把正面看不到的脑后发髻判为 fail，导致知名角色被降为 L4。可选：(a) 维持保守，交给用户补参考或确认；(b) 让比对区分"不可见"与"不存在"（需改审核提示词并重新校准）；(c) 对发型类项只在多角度参考一致时才否决。当前：(a)。
+7. **重复主角检测**：审核器与盲审都没发现"同一画面两个主角"。是否加一个专门的单主角计数检查（需新校准样本）？当前：未做，交付说明提醒看图。
