@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -227,13 +228,50 @@ def _new_outfit_colour_errors(shots, identity):
     return errors
 
 
-def _collect_errors(board, shot_count, identity, config):
+def _action_tag_errors(errors, number, entry, tag_registry):
+    """V2-49 (D87): shot.action_tag must add an action the pose, outfit, scene and props do not already carry."""
+    from storycg.planning import appearance_forbidden
+    from storycg.shot_contract import EXPRESSION_TAGS
+    from storycg.tags import canonical_tag
+
+    shot = entry['shot']
+    tag = shot['action_tag']
+    canonical = canonical_tag(tag)
+    if appearance_forbidden(tag):
+        # The appearance rule owns this value: one error here, and the generic appearance pass skips it.
+        _add(errors, number, 'shot.action_tag', f'动作 tag {tag} 带外貌词（比如头发），会改变角色外貌，不允许',
+             '换一个不涉及外貌的动作 tag，或删除 shot.action_tag')
+        return
+    if canonical == canonical_tag(shot['pose']):
+        _add(errors, number, 'shot.action_tag', f'动作 tag {tag} 和 pose 相同，pose 已经表示这个动作',
+             '删除 shot.action_tag；或把 pose 改为只表示体位，动作写进 shot.action_tag')
+        return
+    if canonical in EXPRESSION_TAGS:
+        _add(errors, number, 'shot.action_tag', f'动作 tag {tag} 是表情，表情只放在 shot.expression',
+             '删除 shot.action_tag，表情已由 shot.expression 承担；动作改选 Danbooru 上的动作 tag')
+        return
+    elsewhere = {canonical_tag(t) for t in [*entry['outfit']['tags'], *entry['scene']['tags'],
+                                            *shot.get('prop_tags', [])]}
+    if canonical in elsewhere:
+        _add(errors, number, 'shot.action_tag', f'动作 tag {tag} 已经出现在这一镜的服装、场景或道具 tag 里',
+             '删除 shot.action_tag；该 tag 已经画在别处，动作改选别的动作 tag')
+        return
+    found = tag_registry.lookup(tag)
+    if found is None:
+        _add(errors, number, 'shot.action_tag', f'动作 tag {tag} 在 Danbooru 上不存在',
+             '换成 Danbooru 上存在的动作 tag，比如 drinking、reading；或删除 shot.action_tag')
+    elif found.get('category') != 0:
+        _add(errors, number, 'shot.action_tag', f'动作 tag {tag} 不是 general 类（Danbooru category {found.get("category")}）',
+             '换成 general 类的动作 tag，比如 drinking、reading；或删除 shot.action_tag')
+
+
+def _collect_errors(board, shot_count, identity, config, tag_registry=None):
     """List every failing check on a materialized board. Never mutates the board.
 
     Mirrors validate_storyboard, validate_contract, validate_story_rules and
     validate_shot_vocab. Each check is listed for each shot it applies to; the
     real validators run afterwards on the success path, so this list is for
-    reporting only.
+    reporting only. tag_registry is needed only when a shot has an action_tag (V2-49).
     """
     from storycg.identity_enrichment import category_for, load_rules
     from storycg.planning import appearance_forbidden, body_target_violation, production_schema, sequence_violation
@@ -279,6 +317,10 @@ def _collect_errors(board, shot_count, identity, config):
                  '只保留画面里的那一刻；前一个动作也要画出来的话，拆成两镜')
         if any(canonical_tag(tag) in EXPRESSION_TAGS for tag in shot.get('prop_tags', [])):
             _add(errors, number, 'shot.prop_tags', '背景道具 tag 不能承担表情', '表情只放在 shot.expression')
+        if shot.get('action_tag'):
+            if tag_registry is None:
+                raise ValueError('collecting shot.action_tag errors needs a tag registry')
+            _action_tag_errors(errors, number, entry, tag_registry)
 
     for error in Draft202012Validator(production_schema()).iter_errors(board):
         number, field = _shot_of_path(error.absolute_path)
@@ -330,7 +372,9 @@ def _collect_errors(board, shot_count, identity, config):
         pairs += [(f'shot.{key}', value, key in ACTION_FIELDS) for key, field in shot.items()
                   for value in _strings(field)]
         for field, value, body_action in pairs:
-            if appearance_forbidden(value, body_action=body_action):
+            # V2-49: an action_tag, and its copy in shot.tags, is judged once by _action_tag_errors.
+            covered = field in ('shot.action_tag', 'shot.tags') and value == shot.get('action_tag')
+            if not covered and appearance_forbidden(value, body_action=body_action):
                 if body_action and body_target_violation(value) == 'clause':
                     _add(errors, number, field, f'这个字段只能写一个动作子句："{value}"',
                          '只保留一个动作子句（如 "close eyes"、"hands on face"）；原因、时间、并列的第二个动作'
@@ -459,7 +503,39 @@ def _character_section(info):
              info['vocab'].strip(),
              '撞键说明（同一景别、角度、动作有多个条目时）：']
     lines += ['- ' + note for note in info['collision_notes']] or ['- （无）']
-    return lines + ['']
+    return lines + _action_tag_lines() + ['']
+
+
+def _action_tag_lines():
+    """V2-49: the action tags measured on the base model (config/action_tags.json), printed after the vocabulary."""
+    from storycg.shot_contract import load_action_tags
+    lines = ['### 动作 tag（shot.action_tag）：基础模型上测过的结果',
+             '表外的 tag 也可以用，只要 Danbooru 上存在；没测过，画不画得出不保证。']
+    for tag, item in load_action_tags().items():
+        note = f"（{item['note']}）" if item.get('note') else ''
+        reject = f"【{item['compile']}】" if item.get('compile') else ''
+        lines.append(f"- {tag}：画出 {item['drawn']}/{item['total']}{note}{reject}")
+    return lines
+
+
+@contextmanager
+def _tag_registry(job_dir, tag_registry, record):
+    """The Danbooru tag registry for one compile; record['tag_validation'] keeps only this compile's lookups."""
+    if tag_registry is not None:
+        before = len(tag_registry.records)
+        try:
+            yield tag_registry
+        finally:
+            record['tag_validation'] = tag_registry.records[before:]
+        return
+    import httpx
+    from storycg.tags import TagRegistry
+    with httpx.Client(base_url='https://danbooru.donmai.us', timeout=30, trust_env=False) as tag_client:
+        registry = TagRegistry(job_dir / 'cache' / 'tags', client=tag_client)
+        try:
+            yield registry
+        finally:
+            record['tag_validation'] = registry.records
 
 
 def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=None):
@@ -472,7 +548,7 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
     from storycg.shot_contract import materialize, planner_schema
     from storycg.shot_vocab import validate_shot_vocab
     from storycg.story_rules import validate_story_rules
-    from storycg.tags import TagRegistry, validate_tag_lists
+    from storycg.tags import validate_tag_lists
 
     job_dir = Path(job_dir)
     beats_path = Path(beats)
@@ -506,27 +582,15 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
         board = materialize(parsed)
         board, rewrites = rewrite_board(board, config)
         record['rewrites'] = rewrites
-        errors = _collect_errors(board, shot_count, identity, config)
-        if errors:
-            raise BeatsError(errors)
+        with _tag_registry(job_dir, tag_registry, record) as registry:
+            errors = _collect_errors(board, shot_count, identity, config, tag_registry=registry)
+            if errors:
+                raise BeatsError(errors)
 
-        # The real checks, in plan_story's order. The collector above found nothing,
-        # so a failure here is a gap in the collector and is reported as one error.
-        validate_storyboard(board, shot_count, identity, config)
-        if tag_registry is None:
-            import httpx
-            with httpx.Client(base_url='https://danbooru.donmai.us', timeout=30, trust_env=False) as tag_client:
-                registry = TagRegistry(job_dir / 'cache' / 'tags', client=tag_client)
-                try:
-                    validate_tag_lists(board, registry, config, drop_unknown=True)
-                finally:
-                    record['tag_validation'] = registry.records
-        else:
-            before = len(tag_registry.records)
-            try:
-                validate_tag_lists(board, tag_registry, config, drop_unknown=True)
-            finally:
-                record['tag_validation'] = tag_registry.records[before:]
+            # The real checks, in plan_story's order. The collector above found nothing,
+            # so a failure here is a gap in the collector and is reported as one error.
+            validate_storyboard(board, shot_count, identity, config)
+            validate_tag_lists(board, registry, config, drop_unknown=True)
         derive_outfit_changes(board)
         record['outfit_changes'] = [{'shot': entry['number'], 'derived': entry['outfit'].get('change_at_shot')}
                                     for entry in board['shots']]
