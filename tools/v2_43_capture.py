@@ -107,7 +107,8 @@ def main(argv):
     config['auto_retry_failed'] = False
     control = config['identity_control']
     client = FakeComfy()
-    face_ref = (controls.portrait_reference(root, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'])
+    face_ref = (controls.portrait_reference(root, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'],
+                                            start_at=control.get('ipadapter_start_at', 0.0))
                 if control['mechanism'] == 'ipadapter' else None)
     review.VisionClient.call = fake_vision_call
     state = candidates.run_candidate_delivery(root, config, client, identity, board, face_ref)

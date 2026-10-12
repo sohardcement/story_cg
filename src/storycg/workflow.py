@@ -62,7 +62,7 @@ def build_workflow(config: dict, positive_tags: str, framing: str, seed: int, fi
             workflow["12"] = {"class_type": "IPAdapterAdvanced", "inputs": {
                 "model": model_ref, "ipadapter": ["11", 0], "image": ["10", 0],
                 "clip_vision": ["13", 0], "weight": reference["strength"], "weight_type": "linear",
-                "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"}}
+                "combine_embeds": "concat", "start_at": reference.get("start_at", 0.0), "end_at": 1.0, "embeds_scaling": "V only"}}
             workflow["7"]["inputs"]["model"] = ["12", 0]
         else:
             # V2-28: img2img and qwen_edit served only the removed Qwen layout and repairs.

@@ -257,6 +257,7 @@
   "identity_control": {
     "mechanism": "ipadapter",
     "ipadapter_strength": 0.4,
+    "ipadapter_start_at": 0.3,
     "selection_status": "supervisor selected P3-01: plus-face SDXL 0.4"
   },
   "framing": {
