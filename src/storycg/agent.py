@@ -159,14 +159,15 @@ def _plan_from_beats(root, config):
     return compile_beats(root, root/read(root, 'agent.json')['beats'], identity, job['shot_count'], config)
 
 
-def beat_summaries(board):
+def beat_summaries(board, standard_tags=None):
     """V2-24 (TASK-v2 §10.1): one line per shot, built only from the compiled storyboard fields; no model call.
-    V2-32: each line also names the weather and what changed from the previous shot (scene change, weather, time)."""
+    V2-32: each line also names the weather and what changed from the previous shot (scene change, weather, time).
+    V2-47: standard_tags (canonical set of the standard outfit, None when unknown) decides shot 1's outfit line."""
     rows, previous = [], None
     for entry in board['shots']:
         shot, scene, outfit = entry['shot'], entry['scene'], entry['outfit']
         change = (f"第 {entry['number']} 镜换装：{outfit['clothing_state']}" if outfit.get('change_at_shot') == entry['number']
-                  else '换装：无（沿用上一镜）' if entry['number'] > 1 else '换装：无（默认服装）')
+                  else '换装：无（沿用上一镜）' if entry['number'] > 1 else _first_shot_outfit(entry, standard_tags))
         rows.append({'number': entry['number'], 'summary': (
             f"第{entry['number']}镜：景别 {shot['framing']}，角度 {shot['camera_angle']}；"
             f"动作 {shot['action']}；表情 {shot['expression']}；"
@@ -174,6 +175,22 @@ def beat_summaries(board):
             f"{_scene_change(scene, previous)}；{change}")})
         previous = scene
     return rows
+
+
+def _first_shot_outfit(entry, standard_tags):
+    """V2-47: shot 1 names its outfit only when it is not the standard outfit; unknown standard keeps the old line."""
+    from storycg.tags import canonical_tag
+    if standard_tags is not None and {canonical_tag(tag) for tag in entry['outfit']['tags']} != standard_tags:
+        return f"第 1 镜服装：{entry['outfit']['clothing_state']}（不是标准服装）"
+    return '换装：无（默认服装）'
+
+
+def _standard_outfit(root):
+    """V2-47: canonical standard outfit tags from the job's identity.json (no network); None when there is no identity yet."""
+    from storycg.tags import canonical_tag
+    if not (root/'identity.json').exists():
+        return None
+    return {canonical_tag(item['tag']) for item in read(root, 'identity.json').get('default_outfit_tags', [])}
 
 
 def _scene_change(scene, previous):
@@ -229,7 +246,7 @@ def recompile_beats(root, beats_src, config):
             (root/'beats.json').write_bytes(old_beats)
         raise
     update(root, beats='beats.json', beats_sha256=hashlib.sha256((root/'beats.json').read_bytes()).hexdigest(),
-           storyboard=beat_summaries(board))
+           storyboard=beat_summaries(board, _standard_outfit(root)))
     return board
 
 
@@ -264,7 +281,7 @@ def execute(root):
         record = read(root, 'agent.json')
         # V2-24: the summary is built from the compiled storyboard; confirmation waits for the portrait too.
         board = _plan_from_beats(root, config)
-        update(root, storyboard=beat_summaries(board))
+        update(root, storyboard=beat_summaries(board, _standard_outfit(root)))
         if record.get('storyboard_first') and not record.get('approved'):
             update(root, phase='preparing_portrait')
             make_portrait(root, config)
@@ -406,7 +423,9 @@ def status(root):
         except BlockingIOError:
             active = True
     active = active or worker_alive(root)
-    if not active and phase in ('resolving_identity', 'planning', 'preparing_portrait', 'generating_and_repairing'):
+    # V2-47: checking_identity is the identity check before planning; the two older names are for jobs made before V2-44b.
+    if not active and phase in ('resolving_identity', 'checking_identity', 'determining_tier', 'checking_requirements',
+                                'planning', 'preparing_portrait', 'generating_and_repairing'):
         phase = 'interrupted'
     paths = {'preview': str(root/'contact_sheet.jpg') if (root/'contact_sheet.jpg').exists() else None,
              'images': [str(root/x['path']) for x in manifest.get('images', [])],
@@ -441,7 +460,7 @@ def _summary_for_status(root, record, phase):
     if phase != 'awaiting_approval' or not (root/'storyboard.json').exists():
         return stored
     try:
-        return beat_summaries(read(root, 'storyboard.json'))
+        return beat_summaries(read(root, 'storyboard.json'), _standard_outfit(root))
     except (KeyError, TypeError):
         return stored
 

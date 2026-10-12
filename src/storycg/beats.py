@@ -195,6 +195,38 @@ def rewrite_board(board, config):
     return board, rewrites
 
 
+# V2-47 (supervisor, 2026-10-12): tags that are not a garment and so do not count as a new outfit. Source: the V2-47
+# regression (bath and blanket shots). Danbooru has no usable coloured towel tag (white_towel and pink_towel are
+# deprecated), so these cannot carry a colour. Add nothing else here without a supervisor order.
+NOT_NEW_OUTFIT_TAGS = frozenset({'towel', 'bath_towel', 'naked_towel', 'barefoot', 'blanket'})
+
+
+def _new_outfit_colour_errors(shots, identity):
+    """V2-47: a segment of shots in a new outfit must name a colour in one of its outfit tags.
+
+    Segments split where the canonical outfit tag set changes (the same rule as change_at_shot). A segment's new tags
+    are its tags that are not in the standard outfit and not in NOT_NEW_OUTFIT_TAGS; a segment with no new tag, or a
+    character with no standard outfit, is not checked. Reported once per segment, on its first shot.
+    """
+    from storycg.tags import canonical_tag, color_split
+    standard = {canonical_tag(item['tag']) for item in (identity or {}).get('default_outfit_tags', [])}
+    if not standard:
+        return []
+    segments = []
+    for index, entry in enumerate(shots):
+        tags = [canonical_tag(tag) for tag in entry['outfit']['tags']]
+        if not segments or set(tags) != set(segments[-1][1]):
+            segments.append((index + 1, tags))
+    errors = []
+    for number, tags in segments:
+        new = list(dict.fromkeys(tag for tag in tags if tag not in standard and tag not in NOT_NEW_OUTFIT_TAGS))
+        if new and not any(color_split(tag) for tag in new):
+            _add(errors, number, 'outfit.tags',
+                 f'第 {number} 镜换上的新衣服没有写颜色（{", ".join(new)}）：只写款式时模型容易画回角色自己的衣服，前后镜的颜色也会变',
+                 '给主要的新衣服写一个带颜色、并且 Danbooru 上存在的 tag，比如 brown_coat、pink_pajamas，颜色最好和标准服装不同；同一套衣服的各镜用同一组 tag')
+    return errors
+
+
 def _collect_errors(board, shot_count, identity, config):
     """List every failing check on a materialized board. Never mutates the board.
 
@@ -279,6 +311,7 @@ def _collect_errors(board, shot_count, identity, config):
                  f'第 {index + 1} 镜的服装状态变成了 {state}，但服装 tag 没变，请写出 {state} 对应的服装 tag',
                  f'把 {state} 对应的服装 tag 写进 outfit.tags，或保持服装状态与上一镜相同')
         previous_outfit = (state, outfit_tags)
+    errors += _new_outfit_colour_errors(shots, identity)
 
     identity_terms = []
     if identity:
