@@ -57,12 +57,18 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
                                       config.get('framing_negative_tags', {}).get(shot['framing'], []),
                                       config)
     positive_tags = ', '.join([identity_block, outfit_block, scene_block, shot_block])
+    # V2-50 (D87): the face-refinement pass uses the close-up framing tags and no camera tag; the action tags
+    # are the same list, minus any that equal a close-up framing tag.
+    closeup_composition = [spaces(t) for t in framing_rule(config, 'closeup')['tags']]
+    closeup_shot_block = ', '.join([*closeup_composition,
+                                    *(t for t in action_tags if t not in closeup_composition)])
+    closeup_positive_tags = ', '.join([identity_block, outfit_block, scene_block, closeup_shot_block])
     # V2-18 (D60): indoor precipitation adds ground-water negatives (same trigger as the V2-11 window).
     indoor_negative = indoor_precipitation_negatives(scene['tags'], positive_tags, negative_tags, config)
     negative_tags = [*negative_tags, *indoor_negative['added']]
     return {'identity_block': identity_block, 'outfit_block': outfit_block,
             'scene_block': scene_block, 'shot_block': shot_block,
-            'positive_tags': positive_tags,
+            'positive_tags': positive_tags, 'closeup_positive_tags': closeup_positive_tags,
             'negative_tags': ', '.join(spaces(t) for t in negative_tags),
             'dropped_scene_tags': dropped_scene, 'framing': shot['framing'],
             'indoor_precipitation_negative': indoor_negative}

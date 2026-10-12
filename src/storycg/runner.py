@@ -189,14 +189,19 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
         _finish_history(job_dir, state, attempt, client, record)
 
 
+class JobBudgetExhausted(ValueError):
+    """The job's image or submission count is used up (V2-50: a face refinement then keeps the original)."""
+
+
 def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
                  framing: str, negative_prompt: str | None = None, *, generation_reference: dict | None = None,
                  dropped_scene_tags: list | None = None, indoor_negative: dict | None = None,
-                 seed: int | None = None, candidate: int | None = None) -> dict:
+                 seed: int | None = None, candidate: int | None = None,
+                 workflow_for=None, extra: dict | None = None) -> dict:
     if len(state["attempts"]) >= state["config"]["budget"]["max_images_per_job"]:
-        raise ValueError("job image budget exhausted")
+        raise JobBudgetExhausted("job image budget exhausted")
     if _submission_count(state) >= state["config"]["budget"]["max_images_per_job"]:
-        raise ValueError("job submission budget exhausted")
+        raise JobBudgetExhausted("job submission budget exhausted")
     attempt_number = 1 + max((a["attempt_number"] for a in state["attempts"]
                               if a["shot_id"] == shot_id), default=0)
     prefix = make_prefix(state["config"].get("prefix_namespace", state["job_id"]), shot_id, attempt_number,
@@ -212,12 +217,15 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         workflow_config["negative_prompt"] = negative_prompt
     if generation_reference is not None:
         workflow_config["generation_reference"] = generation_reference
+    # V2-50: a face refinement passes its own workflow, built from the candidate's workflow and the prefix.
+    workflow = (workflow_for(prefix) if workflow_for is not None
+                else build_workflow(workflow_config, positive_tags, framing, seed, prefix))
     attempt = {
         "job_id": state["job_id"], "shot_id": shot_id, "attempt_number": attempt_number,
         "seed": seed, "positive_tags": positive_tags, "framing": framing,
         "filename_prefix": prefix, "client_id": uuid.uuid4().hex,
         "prompt_id": None, "status": "ready", "post_count": 0,
-        "workflow": build_workflow(workflow_config, positive_tags, framing, seed, prefix),
+        "workflow": workflow,
         "created_at": _now(), "reference": workflow_config.get("generation_reference"),
         # Scene tags dropped by the framing object cap travel with the attempt (V2-09).
         "dropped_scene_tags": list(dropped_scene_tags or []),
@@ -226,12 +234,16 @@ def _new_attempt(job_dir: Path, state: dict, shot_id: str, positive_tags: str,
         # V2-21: candidate number within the shot (None for portrait, tier and other single attempts).
         "candidate": candidate,
     }
+    attempt.update(extra or {})
     state["attempts"].append(attempt)
     _save(job_dir, state)
     return attempt
 
 
 def _retry_if_failed(job_dir: Path, state: dict, attempt: dict, client) -> None:
+    # V2-50: a failed face refinement is never retried here; it would be rebuilt as a plain shot. It keeps the original.
+    if attempt.get("kind") == "face_refine":
+        return
     if attempt["status"] == "failed" and state["config"].get("auto_retry_failed", True):
         replacement = _new_attempt(job_dir, state, attempt["shot_id"],
                                    attempt["positive_tags"], attempt["framing"],

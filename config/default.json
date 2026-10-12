@@ -217,6 +217,7 @@
     ]
   },
   "candidates_per_shot": 3,
+  "face_refine": {"max_face_px": 140, "crop_scale": 3.0, "side": 1024, "denoise": 0.5, "mask_scale": 1.8, "feather": 0.15},
   "pairwise_pick": true,
   "style_file": "style.json",
   "portrait": {
