@@ -25,6 +25,7 @@
 
 - **D46（2026-10-08）**：Codex 订阅到期，执行者改为 omp（`ai938729/glm-5.3`，推理强度 max）。`verify/dispatch.sh` 已改；AGENTS.md 追加第 9 条。omp 没有写入沙盒，所以第 9 条写明了写入范围和禁止的 git 操作，监工每张工单都核对主线工作区。冒烟（只读）通过：`logs/OMP-SMOKE.jsonl`。
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
+- **D84（用户，2026-10-12）IPAdapter 改为从采样 30% 处才开始起作用**。用户看了三轮对照后回复："用 ②，开工单吧"。落实为 V2-48：`start_at` 0.0 → 0.3，强度 0.4 和其他参数不变，只影响镜头图（定妆图不用 IPAdapter）。会改变以后所有出图，"出图不变"的比对基线由 V2-48 重做（`reports/assets/V2-48/capture/`）。合入后监工从安装入口实跑一组：后藤一里，用加了颜色的 beats（`pink_pajamas`、`brown_coat`），同时验证 V2-47 和 V2-48，约 16 张。
 - **D83（用户，2026-10-12）IPAdapter 确认对照照跑；出图总额 400 → 500**。用户原话："可以，跑确认对照，额度加到 500"。TASK-v2 §5 同步改。确认对照：3 个角色 × 3 镜，每镜补齐"灰底""从 30% 开始""灰底 + 从 30% 开始"三种，和现状、关掉放在一起由用户看图选（监工比原计划多跑"从 30% 开始"6 张，让三个候选在 9 镜上都齐全，共 21 张）。
 - **D82（用户，2026-10-12）下一步先做 B 和小修**。监工给了三个方向（A 画质、B 跨镜连贯、C 先用起来），建议先做 B 的便宜版加小修，用户回复："可以，先做 B 和小修吧，另外你说"素"我也赞同 是不是 ipadopter导致的？"
   - B 的依据（监工从 ComfyUI `/history` 取实跑任务真实提交的工作流）：第 3–5 镜正向提示词里外套只有 `coat, winter clothes`，没有颜色和款式，角色 tag `gotoh hitori` 自带粉色运动外套，于是画回运动外套、第 5 镜又变成派克。落实为 V2-47：换装后的新衣服必须写带颜色的 tag，`compile` 不写就报错；写作规则加一句；顺带修确认摘要第 1 镜换装文字、`status` 中断判断补 `checking_identity`。
@@ -788,6 +789,7 @@
   - **返工 1**：监工用项目的 User-Agent 查 Danbooru，工单里监工自己写的示例 `beige_coat` 是废弃 tag（0 帖），写作者照着改会被 compile 的 tag 存在性检查再拒；`white_towel`、`pink_towel` 也已废弃，浴室镜头没法补颜色。示例改为 `brown_coat`、`pink_pajamas`，毛巾等五个 tag 不算新衣服。
   - 回归：63 个分镜里拦下 15 个文件 17 段，都是真没写颜色（pajamas、dress、coat 等）；编译对比 35 个，由 valid 变 invalid 的只有 `.v2/jobs/cg-3cd4d7bfd1ae`（喜多川海梦第 3 镜 pajamas），浴室三组和基线相同。执行者首轮编译遇到 Danbooru SSL EOF 11 个，恢复后单独重跑得到真实结果。
   - 监工独立验证：全量 723 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-47r1.log`），合入后主线也是 723 passed；`tools/v2_43_capture.py` 两组逐字节相同；从入口 `compile` 实跑任务的 `beats-2.json`：报第 1 镜 pajamas、第 3 镜 coat/winter_clothes 两条，退出码 2；改成 `pink_pajamas`、`brown_coat` 后 valid，退出码 0（真实 Danbooru 存在性检查通过）；`beats-guide` 打印新句。执行者删的 90 个 compile 临时目录都在 `.v2/compile/`，主线 `compile/` 没动。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-47.md`，deff6e8 |
+| V2-48 IPAdapter 从采样 30% 处才开始（start_at 0.3，D84） | 已派（2026-10-12） | — | — | `orders/V2-48.md` |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
@@ -808,4 +810,4 @@
 
 ## 待决
 
-- **IPAdapter 怎么改**（D82、D83 三轮对照，等用户看图选）：监工建议 ② IPAdapter 从采样 30% 处才开始（`start_at` 0.3，其余不变）：9 镜颜色接近关掉、没有偏色，构图按提示词走，芙莉莲瞳色比关掉更稳。① 灰底有偏色，③ 叠加过饱和、芙莉莲第 3 镜肤色走样，④ 关掉时芙莉莲瞳色偏青蓝。用户选定后开工单改代码（会改变出图，出图对比基线要重做）。
+- ~~IPAdapter 怎么改~~：用户选 ② 从 30% 开始（D84），V2-48 落实。
