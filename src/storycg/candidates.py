@@ -20,6 +20,7 @@ from storycg import cycle as frozen
 from storycg import extra_part
 from storycg.budget import Budget, CycleClient
 from storycg.config import candidates_per_shot, pairwise_enabled
+from storycg.face_refine import REASONS as FACE_REASONS, refine_candidate, summary as face_refine_summary
 from storycg.review import load_reliability, reliability_key
 from storycg.state import load_state, save_json_atomic
 
@@ -144,10 +145,18 @@ def _run_round(root, store, entry, board, identity, config, client, vlm, budget,
                       indoor_negative=parts['indoor_precipitation_negative'])
         state = load_state(root)
         attempt = [a for a in state['attempts'] if a['shot_id'] == shot_id and a.get('candidate') == n][-1]
+        face = None
+        if attempt['status'] == 'completed':
+            # V2-50 (D87): a small face is refined before the audit; the audit and delivery then see the composite.
+            face = refine_candidate(root, shot_id, n, parts=parts, client=client, budget=budget)
+            state = load_state(root)
+            attempt = [a for a in state['attempts'] if a['shot_id'] == shot_id and a.get('candidate') == n][-1]
         label = f'cand_{number:02d}_{n:02d}'
         record = {'candidate': n, 'round': round_no, 'seed': seed, 'attempt_number': attempt['attempt_number'],
                   'status': attempt['status'], 'image': None, 'screen': [], 'rank': None,
                   'audit_label': label, 'conclusion': None, 'prompt_id': attempt.get('prompt_id')}
+        if face is not None:
+            record['face_refine'] = face_refine_summary(face)
         if attempt['status'] == 'completed':
             record['image'] = {'path': attempt['image']['path'], 'sha256': attempt['image']['sha256']}
             audit = audit_candidate(root, number, attempt['image'], entry, board, identity, config, vlm, label)
@@ -424,6 +433,8 @@ def result_text(root, store=None):
     usage = manifest.get('usage', {})
     numbers = [e['number'] for e in board.get('shots', [])] or sorted(int(k) for k in store)
     shot_images = sum(1 for slot in store.values() for r in slot['candidates'] if r['status'] == 'completed')
+    refined = sum(1 for slot in store.values() for r in slot['candidates']
+                  if (r.get('face_refine') or {}).get('status') == 'refined')
     seconds = usage.get('wall_elapsed_seconds', usage.get('elapsed_seconds'))
     delivery_files = sorted(p.name for p in (root / 'delivery').glob('*.jpg') if p.name != 'candidate_sheet.jpg') \
         if (root / 'delivery').is_dir() else []
@@ -431,7 +442,9 @@ def result_text(root, store=None):
              f"- 角色：{job.get('character', '')}（{identity.get('character_tag', '')}）",
              f"- 剧情：{job.get('story', '')}",
              f"- 镜数：{len(numbers)}",
-             f"- 本组出图：{shot_images + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，定妆图 {len(portrait_attempts)} 张）",
+             (f"- 本组出图：{shot_images + refined + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，面部精修 {refined} 张，定妆图 {len(portrait_attempts)} 张）"
+              if refined else
+              f"- 本组出图：{shot_images + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，定妆图 {len(portrait_attempts)} 张）"),
              f"- 用时：{round(seconds / 60, 1)} 分钟" if seconds is not None else '- 用时：未记录',
              '', '## 文件', '']
     lines.append('- 拼图：' + (f"delivery/{delivery_files[0]}" if delivery_files else 'contact_sheet.jpg'))
@@ -448,6 +461,11 @@ def result_text(root, store=None):
         selected = next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
         lines.append(f"- 选中：候选 {slot['selected']}（第 {slot['rounds']} 轮生成）" if selected else '- 选中：无')
         lines.append(f"- 挑选理由：{slot['reason']}")
+        face = (selected or {}).get('face_refine') or {}
+        if face.get('status') == 'refined':
+            lines.append(f"- 面部精修：脸长边 {round(face['face_long_side'])} 像素，已精修；原图 {face['original_image']}")
+        elif face.get('status') in FACE_REASONS:
+            lines.append(f"- 面部精修：脸长边 {round(face['face_long_side'])} 像素，没有精修（{FACE_REASONS[face['status']]}）")
         if selected is not None and selected['screen'] and _passed(slot):
             lines.append(f"- 提示：选中的候选 {slot['selected']} 没有通过筛选（{'；'.join(selected['screen'])}），是用户指定的。")
         screened = [r for r in slot['candidates'] if r['status'] == 'completed' and r['screen']]
@@ -582,7 +600,7 @@ def candidate_records(store):
                             'conclusion': r['conclusion'], 'selected': r['candidate'] == slot['selected'],
                             'reason': slot['reason'] if r['candidate'] == slot['selected'] else None,
                             'user_pick': r['candidate'] == slot['selected'] and slot.get('user_pick') is not None,
-                            'prompt_id': r.get('prompt_id')})
+                            'prompt_id': r.get('prompt_id'), 'face_refine': r.get('face_refine')})
     return records
 
 
