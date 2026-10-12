@@ -259,7 +259,8 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     config.pop('generation_reference', None)
     config['auto_retry_failed'] = False
     control = config['identity_control']
-    face_ref = (portrait_reference(job_dir, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'])
+    face_ref = (portrait_reference(job_dir, portrait, 'face', client, 'ipadapter', control['ipadapter_strength'],
+                                   start_at=control.get('ipadapter_start_at', 0.0))
                 if control['mechanism'] == 'ipadapter' else None)
     # V2-21 (TASK-v2 §10.3): candidates, screening, selection.
     from storycg.candidates import run_candidate_delivery

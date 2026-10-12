@@ -129,6 +129,7 @@
   },
   "generation_identity_control": {
     "mechanism": "ipadapter",
-    "ipadapter_strength": 0.4
+    "ipadapter_strength": 0.4,
+    "ipadapter_start_at": 0.3
   }
 }

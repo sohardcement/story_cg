@@ -18,6 +18,9 @@ def apply_options(config, options):
     check_removed_switches({'layout_mode': options.get('layout_mode', 'none')})
     if not 0 <= control.get('ipadapter_strength', 0.4) <= 1:
         raise ValueError('invalid IPAdapter strength')
+    # V2-48: IPAdapter starts at this fraction of the sampling steps; a missing key means 0.0 (old behaviour).
+    if not 0 <= control.get('ipadapter_start_at', 0.0) < 1:
+        raise ValueError('invalid IPAdapter start_at')
     if 'generation_seed' in options:
         config['generation_seed'] = options['generation_seed']
     if 'generation_seed' in config and (not isinstance(config['generation_seed'], int)
@@ -40,7 +43,7 @@ def upload_reference(root, path, client, *, expected_sha256=None):
     return records[sha]
 
 
-def portrait_reference(root, portrait, key, client, mechanism, strength):
+def portrait_reference(root, portrait, key, client, mechanism, strength, start_at=0.0):
     detection = None
     if key == 'face' and mechanism == 'ipadapter':
         from storycg.detection_review import detect_face_record
@@ -53,7 +56,7 @@ def portrait_reference(root, portrait, key, client, mechanism, strength):
         item['path'] = str(target.relative_to(root))
     else:
         item = portrait[key]
-    return {'mechanism': mechanism, 'strength': strength, 'path': item['path'],
+    return {'mechanism': mechanism, 'strength': strength, 'start_at': start_at, 'path': item['path'],
             **({'detection': detection} if detection else {}),
             'sha256': item['sha256'], 'source_task': portrait['source_task'],
             'portrait_sha256': portrait['image']['sha256'],
