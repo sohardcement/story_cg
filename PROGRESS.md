@@ -25,7 +25,7 @@
 - **D47（2026-10-08 用户选 b）**：层级缓存的模型身份改用 ComfyUI `/experiment/models/<folder>` 报告的文件名加文件大小，不用修改时间（复制文件会改它，但内容不变）；拿不到时这次不缓存。落实为 V2-04b，排在 V2-05 之后、V2-07 之前。
 - **D81（用户，2026-10-12）`.gitignore` 加 `/jobs/`、`/logs/`**。用户问监工有没有必要，监工建议加（运行时产物，防止误提交、减少 `git status` 噪音），用户回复"可以，你直接加吧"。只锚定项目根目录，`reports/assets`、`tests/fixtures` 里嵌套的 `jobs/` 不受影响；已入库的 2,538 个旧任务文件照旧跟踪。v2 分支 03d3fc6，合入主线 a2b5ecb。主线 `git status` 未跟踪项 325 → 140。
   - **意外：主线未跟踪文件被 stash 走，已恢复**。07:41:08 有个叫 epitaxy 的东西在 master 上执行了 stash（`epitaxy: pre-switch from master`，含未跟踪文件），07:41:57 又执行了 `reset: moving to HEAD`，主线工作区的 5,033 个未跟踪文件（实跑任务 `jobs/cg-67a180fb5bc8`、第五轮实测任务、`logs/supervisor` 验收证据、`cache/danbooru`、`EXPERIMENT.md`、未提交的 e2e 报告等）都不见了。不是监工执行的。用户随后说明：当时他用 Claude Desktop 加载了这个会话，epitaxy 应该是 Claude Desktop 切换前收起工作区的动作。`/home` 没有 btrfs 快照，这个 stash 是唯一副本。`.v2` 工作树不受影响。
-  - 用户同意后，监工 07:52 执行 `git stash apply 7309f0c`（apply，不是 pop）：5,033 个文件全部恢复，逐个比对哈希都和 stash 一致，没有覆盖任何现有文件。stash 记录 `stash@{0}` 保留，删不删由用户定。
+  - 用户同意后，监工 07:52 执行 `git stash apply 7309f0c`（apply，不是 pop）：5,033 个文件全部恢复，逐个比对哈希都和 stash 一致，没有覆盖任何现有文件。stash 记录 `stash@{0}` 先保留；用户随后同意删除，监工按 SHA 7309f0c 找到这一条后 `git stash drop`（07:5x），stash 列表已空，恢复的文件不受影响。
   - `git stash -u` 不收被忽略的文件，所以当时 `.v2/`、`.pytest-*`（在 `.git/info/exclude` 里）都没被收走。D81 之后 `/jobs/`、`/logs/` 也被忽略，下次再这样只会收走剩下的约 140 个未跟踪项（`reports/`、`verify/`、`runs/`、`review/`、`EXPERIMENT.md`）。
   - 排查中监工一度误判为另一个会话执行了 `git clean`，那份转录其实是本会话自己的，作废。
 - **D80（用户，2026-10-12）按工单类型选执行者**。用户原话："纯删除、改动机械的工单（比如 V2-46）交给 Haiku 加监工复核，性价比不错；改 SKILL.md 这类偏判断的文字，可以由监工给出更具体的保留清单，或者换更强的模型来做。"
