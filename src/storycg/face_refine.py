@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 from storycg import runner
-from storycg.budget import BudgetExceeded
+from storycg.budget import BudgetExceeded, remaining_images
 from storycg.controls import upload_reference
 from storycg.detect import detect_faces
 
@@ -113,11 +113,16 @@ def _inspect(root, attempt, cfg):
             'confidence': face['confidence']}
 
 
-def _start(root, attempt, cfg, parts, client, budget):
-    """Budget check, crop and upload. Leaves the face record 'submitted' with everything a resume needs."""
+def _start(root, attempt, cfg, parts, client, budget, state, reserve):
+    """Budget check, crop and upload. Leaves the face record 'submitted' with everything a resume needs.
+
+    V2-52: the refinement must leave `reserve` images for the first-round candidates still to come.
+    """
     face = attempt['face_refine']
     try:
-        budget.check(images=1)
+        budget.check(images=1 + reserve)
+        if remaining_images(budget, state) < 1 + reserve:
+            raise BudgetExceeded('job_image_budget')
     except BudgetExceeded:
         face['status'] = 'skipped_budget'
         return
@@ -181,11 +186,12 @@ def _compose(root, attempt, face, refine, config):
     face.update(status='refined', original_image=original, refine_attempt_number=refine['attempt_number'])
 
 
-def refine_candidate(job_dir, shot_id, candidate, *, parts, client, budget):
+def refine_candidate(job_dir, shot_id, candidate, *, parts, client, budget, reserve=0):
     """Refine one completed candidate in place (once) and return its face record; None for jobs without the section.
 
     Safe to call again after an interruption: a finished record is returned as it is, a submitted one is
     reconciled, and a downloaded refinement whose composite was not written yet is composed now.
+    V2-52: `reserve` is the number of images to leave for first-round candidates; without enough left it is skipped.
     """
     root = Path(job_dir)
     with runner._job_lock(root):
@@ -199,7 +205,7 @@ def refine_candidate(job_dir, shot_id, candidate, *, parts, client, budget):
             face = attempt['face_refine'] = _inspect(root, attempt, cfg)
             runner._save(root, state)
         if face['status'] == 'pending':
-            _start(root, attempt, cfg, parts, client, budget)
+            _start(root, attempt, cfg, parts, client, budget, state, reserve)
             runner._save(root, state)
         if face['status'] == 'submitted':
             _submit(root, state, attempt, client)

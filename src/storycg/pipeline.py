@@ -96,6 +96,28 @@ def _model_manifest(config: dict, client) -> dict:
     return {"checkpoint": checkpoint, "loras": loras}
 
 
+def attempt_record(attempt: dict) -> dict:
+    """V2-52: the manifest record of one image, from the attempt that made it: its own prompt, seed and parameters.
+
+    A face-refined candidate keeps its own prompt and seed (the refinement attempt is not the record); the image
+    fields are the composite's, and the face_refine summary says what was refined.
+    """
+    from storycg.face_refine import summary as face_refine_summary
+    workflow = attempt["workflow"]
+    record = {"shot_id": attempt["shot_id"], "attempt_number": attempt["attempt_number"],
+              "candidate": attempt.get("candidate"), "prompt_id": attempt["prompt_id"],
+              "filename_prefix": attempt["filename_prefix"], "seed": attempt["seed"],
+              "positive_prompt": workflow["4"]["inputs"].get("text", workflow["4"]["inputs"].get("prompt")),
+              "negative_prompt": workflow["5"]["inputs"].get("text", workflow["5"]["inputs"].get("prompt")),
+              "sampler": workflow["7"]["inputs"], "resolution": workflow["6"]["inputs"],
+              "reference": attempt.get("reference"), "created_at": attempt["created_at"],
+              "completed_at": attempt.get("completed_at"),
+              "dropped_scene_tags": attempt.get("dropped_scene_tags", []), **attempt["image"]}
+    if attempt.get("face_refine"):
+        record["face_refine"] = face_refine_summary(attempt["face_refine"])
+    return record
+
+
 def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
@@ -112,15 +134,7 @@ def write_story_manifest(job_dir: str | Path, config: dict, client) -> dict:
         attempt = matching[-1]
         parts = assemble_prompt(identity, entry, config=config,
                                 **({'props': board['props']} if board.get('props') else {}))
-        workflow = attempt["workflow"]
-        images.append({"shot_id": shot_id, "attempt_number": attempt["attempt_number"],
-                       "prompt_id": attempt["prompt_id"], "filename_prefix": attempt["filename_prefix"],
-                       "identity_block": parts["identity_block"], "prompt_parts": parts,
-                       "positive_prompt": workflow["4"]["inputs"].get("text",workflow["4"]["inputs"].get("prompt")),
-                       "negative_prompt": workflow["5"]["inputs"].get("text",workflow["5"]["inputs"].get("prompt")),
-                       "seed": attempt["seed"], "sampler": workflow["7"]["inputs"],
-                       "resolution": workflow["6"]["inputs"], "reference": attempt.get("reference"),
-                       "created_at": attempt["created_at"], "completed_at": attempt["completed_at"], **attempt["image"]})
+        images.append({**attempt_record(attempt), "identity_block": parts["identity_block"], "prompt_parts": parts})
     elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(job["created_at"])).total_seconds()
     prior_path = job_dir / "manifest.json"
     prior = json.loads(prior_path.read_text(encoding="utf-8")) if prior_path.exists() else {}

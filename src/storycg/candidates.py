@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from storycg import cycle as frozen
 from storycg import extra_part
-from storycg.budget import Budget, CycleClient
+from storycg.budget import Budget, CycleClient, remaining_images
 from storycg.config import candidates_per_shot, pairwise_enabled
 from storycg.face_refine import REASONS as FACE_REASONS, refine_candidate, summary as face_refine_summary
 from storycg.review import load_reliability, reliability_key
@@ -128,6 +128,16 @@ def _save_store(root, store):
     save_json_atomic(_store_path(root), store)
 
 
+def _reserve(state, board, number, numbers, per):
+    """V2-52: images to keep for the candidates still to come: this shot's `numbers` (the round in progress)
+    without an attempt, and the first round of the shots after this one without an attempt."""
+    made = {(a['shot_id'], a['candidate']) for a in state['attempts'] if a.get('candidate') is not None}
+    shots = [e['number'] for e in board['shots']]
+    own = sum(1 for n in numbers if (f'shot{number:02d}', n) not in made)
+    later = shots[shots.index(number) + 1:]
+    return own + sum(1 for m in later for c in range(1, per + 1) if (f'shot{m:02d}', c) not in made)
+
+
 def _run_round(root, store, entry, board, identity, config, client, vlm, budget, base, parts, shot_config, numbers, round_no, face_ref):
     from storycg.cycle import audit_candidate
     from storycg.runner import run_candidate
@@ -148,7 +158,8 @@ def _run_round(root, store, entry, board, identity, config, client, vlm, budget,
         face = None
         if attempt['status'] == 'completed':
             # V2-50 (D87): a small face is refined before the audit; the audit and delivery then see the composite.
-            face = refine_candidate(root, shot_id, n, parts=parts, client=client, budget=budget)
+            reserve = _reserve(state, board, number, numbers, candidates_per_shot(config))
+            face = refine_candidate(root, shot_id, n, parts=parts, client=client, budget=budget, reserve=reserve)
             state = load_state(root)
             attempt = [a for a in state['attempts'] if a['shot_id'] == shot_id and a.get('candidate') == n][-1]
         label = f'cand_{number:02d}_{n:02d}'
@@ -195,8 +206,20 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
             args = (root, store, entry, board, identity, config, client, vlm, budget, base, parts, shot_config)
             _run_round(*args, range(1, per + 1), 1, face_ref)
             if not any(r['status'] == 'completed' and not r['screen'] for r in slot['candidates']):
-                slot['rounds'] = 2
-                _run_round(*args, range(per + 1, 2 * per + 1), 2, face_ref)
+                # V2-52: the second round runs when it has started (its candidates are in state.json, even if
+                # candidates.json was not written yet) or when the budget covers it and the later shots' first rounds.
+                state = load_state(root)
+                second = range(per + 1, 2 * per + 1)
+                started = slot['rounds'] == 2 or any(a['shot_id'] == f'shot{number:02d}' and a.get('candidate') in second
+                                                     for a in state['attempts'])
+                needed = _reserve(state, board, number, second, per)
+                remaining = remaining_images(budget, state)
+                if started or remaining >= needed:
+                    slot['rounds'] = 2
+                    slot.pop('second_round_skipped', None)
+                    _run_round(*args, range(per + 1, 2 * per + 1), 2, face_ref)
+                else:
+                    slot['second_round_skipped'] = {'reason': 'budget', 'remaining': remaining, 'needed': needed}
             chosen, reason = pick(slot['candidates'])
             if chosen is not None and pairwise_enabled(config):
                 # V2-23 (D65): the side-by-side pick may replace the ranking result; it never fails the shot.
@@ -476,6 +499,9 @@ def result_text(root, store=None):
             lines.append(f"- 未完成：候选 {r['candidate']}（{'；'.join(r['screen'])}）")
         if not _passed(slot):
             lines.append('- 所有候选都没通过筛选：交付的是按排序取到的最好候选，请人工复看。')
+            if slot.get('second_round_skipped'):
+                skipped = slot['second_round_skipped']
+                lines.append(f"- 第二轮没有补：出图额度不够（剩 {skipped['remaining']} 张，需要 {skipped['needed']} 张）")
         auto = slot.get('auto_selected', slot['selected'])
         if slot.get('user_pick') is not None and slot['user_pick'] != auto:
             lines.append(f"- 由用户换过：第 {number} 镜由用户换成候选 {slot['selected']}；看图复述是换之前那组图的。"
@@ -519,7 +545,10 @@ def result_text(root, store=None):
     for number in numbers:
         slot = store.get(str(number))
         if slot is not None and not _passed(slot):
-            issues.append(f'第 {number} 镜所有候选都没通过筛选，交付的是按排序取到的最好候选，请人工复看。')
+            if slot.get('second_round_skipped'):
+                issues.append(f'第 {number} 镜所有候选都没通过筛选，因出图额度不够没有补第二轮，交付的是第一轮里排序最好的候选，请人工复看。')
+            else:
+                issues.append(f'第 {number} 镜所有候选都没通过筛选，交付的是按排序取到的最好候选，请人工复看。')
     issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
     if board.get('story_note'):
         issues.append('分镜改写提醒（story_note）：' + board['story_note'])

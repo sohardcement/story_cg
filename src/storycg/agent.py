@@ -299,8 +299,9 @@ def execute(root):
         print(f'storycg: {type(exc).__name__}: {exc}', file=sys.stderr)
 
 
-def _delivery_images(root, board, state, cycle, manifest):
+def _delivery_images(root, board, state, cycle):
     """The image record of every shot, from the selected (cycle best) attempts."""
+    from storycg.pipeline import attempt_record
     images, drop_lines = [], []
     for e in board['shots']:
         number = e['number']; selected = cycle.get('shots', {}).get(str(number), {}).get('best_attempt')
@@ -310,9 +311,8 @@ def _delivery_images(root, board, state, cycle, manifest):
         attempt = next((a for a in matches if a['attempt_number'] == selected), matches[-1])
         if not (root/attempt['image']['path']).is_file():
             raise ValueError(f'missing image file for shot {number}')
-        previous = next((x for x in manifest.get('images', []) if x['shot_id'] == attempt['shot_id'] and x.get('attempt_number') == attempt['attempt_number']), {})
-        images.append({**previous, 'shot_id': attempt['shot_id'], 'attempt_number': attempt['attempt_number'],
-                       'dropped_scene_tags': attempt.get('dropped_scene_tags', []), **attempt['image']})
+        # V2-52: the record is the attempt's own (prompt, seed, parameters), not a copy of the older manifest.
+        images.append({**attempt_record(attempt), 'entry': e})
         dropped = attempt.get('dropped_scene_tags') or []
         if dropped:
             drop_lines.append(f'第 {number} 镜因景别物件上限省略了：{"、".join(dropped)}')
@@ -335,8 +335,9 @@ def pick_delivery(root, number, candidate):
     slot['best_audit'] = read(root/'cycle_artifacts', f"{change['audit_label']}.json")
     save_json_atomic(root/'cycle.json', cycle)
     board, state, manifest = read(root, 'storyboard.json'), read(root, 'state.json'), read(root, 'manifest.json')
-    images, _ = _delivery_images(root, board, state, cycle, manifest)
+    images, _ = _delivery_images(root, board, state, cycle)
     manifest.update(images=images, attempts=state['attempts'])
+    manifest.pop('repair_history', None)  # V2-52: the old per-shot audit copy is no longer written
     save_json_atomic(root/'manifest.json', manifest)
     # Contact sheet: rebuilt in a scratch folder, then written over the job's own delivery file.
     import tempfile
@@ -367,10 +368,11 @@ def deliver(root):
         raise ValueError('no generated storyboard images to deliver')
     cycle = read(root, 'cycle.json')
     manifest = read(root, 'manifest.json')
-    images, drop_lines = _delivery_images(root, board, state, cycle, manifest)
+    images, drop_lines = _delivery_images(root, board, state, cycle)
     make_contact_sheet(root, root/'delivery')
     manifest.update(images=images, usage=count_usage(root), attempts=state['attempts'])
     manifest.pop('review_gate', None)  # V2-42: the group verdict is no longer recorded, also not in older manifests
+    manifest.pop('repair_history', None)  # V2-52: the old per-shot audit copy is no longer written
     manifest.setdefault('identity_file', 'identity.json')
     manifest.setdefault('storyboard_file', 'storyboard.json')
     manifest.setdefault('models', {'status': 'unavailable', 'reason': 'no persisted model snapshot; offline delivery does not query models'})
