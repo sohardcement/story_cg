@@ -602,8 +602,11 @@ def beats_cli(argv):
         # The tag existence checks call Danbooru during compile; the same failure as above.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
+    from storycg.display import compile_rewrites
+    # V2-51 (D88): every rewrite of this compile, the automatic ones and the removed or replaced tags.
     print(json.dumps({'status': 'valid',
-                      'storyboard': board, 'job_dir': str(root), 'character_guide': guide},
+                      'storyboard': board, 'job_dir': str(root), 'character_guide': guide,
+                      'rewrites': compile_rewrites(root)},
                      ensure_ascii=False, indent=2))
     return 0
 

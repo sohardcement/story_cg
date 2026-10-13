@@ -69,13 +69,53 @@ def _pose_key(pose):
 
 def _set_combo(shot, framing, angle, pose):
     """Write a combo the way materialize derives it (pose drives action, description and tags)."""
+    from storycg.shot_contract import shot_tags
+    # V2-51 (D88): the action tag survives a rewrite; the pose may change, so the tags are rebuilt from both.
     shot.update(framing=framing, camera_angle=angle, pose=pose, action=pose, description=pose,
-                tags=list(dict.fromkeys([pose, shot['expression']])))
+                tags=shot_tags(pose, shot.get('action_tag'), shot['expression']))
 
 
 def _append_note(board, sentence):
     note = board.get('story_note', '')
     board['story_note'] = (note + ' ' if note else '') + sentence
+
+
+def tag_rewrites(records):
+    """V2-51 (D88): the tags validate_tag_lists discarded or replaced, as rewrite records (same keys as rewrite_board).
+
+    records are the registry lookups of that validation. Records with the same action, field and tag (and the same
+    replacement) become one record; its shots are listed in order, joined with 、 in the text.
+    """
+    groups = {}
+    for record in records:
+        action = record.get('action')
+        match = re.match(r'^(\d+)\.(.+)$', record.get('field') or '')
+        if action not in ('discarded', 'pose_replaced', 'pose_omitted') or not match:
+            continue
+        number, field = int(match.group(1)), match.group(2)
+        if action != 'discarded':
+            field = 'shot.pose'
+        key = (action, field, record['input'], record.get('replacement'))
+        groups.setdefault(key, []).append(number)
+    rewrites = []
+    for (action, field, tag, replacement), numbers in groups.items():
+        numbers = sorted(set(numbers))
+        where = '、'.join(str(n) for n in numbers)
+        if action == 'discarded':
+            rule, to = 'tag_unavailable', None
+            text = f'第 {where} 镜：{field} 的 {tag} → 删除，Danbooru 上不存在或已废弃'
+            reason = 'Danbooru 上不存在或已废弃'
+        elif action == 'pose_replaced':
+            rule, to = 'pose_replaced', replacement
+            text = f'第 {where} 镜：shot.pose 的 {tag} → {replacement}，Danbooru 上不存在，换成同词的体位 tag'
+            reason = 'Danbooru 上不存在，换成同词的体位 tag'
+        else:
+            rule, to = 'pose_omitted', None
+            text = f'第 {where} 镜：shot.pose 的 {tag} → 不进提示词，Danbooru 上不存在，也没有可替换的体位 tag'
+            reason = 'Danbooru 上不存在，也没有可替换的体位 tag'
+        rewrites.append({'shot': numbers[0], 'shots': numbers, 'rule': rule, 'field': field, 'from': tag,
+                         'to': to, 'reason': reason, 'text': text})
+    return rewrites
 
 
 def rewrite_board(board, config):
@@ -453,6 +493,7 @@ def character_guide(identity, config=None):
             'locked': identity.get('status') == 'locked',
             'unsupported': unsupported,
             'outfit_tags': [item['tag'] for item in identity.get('default_outfit_tags', [])],
+            'unavailable_tags': [item['tag'] for item in identity.get('unavailable_identity_tags', [])],
             'outfit_rule': OUTFIT_RULE,
             'vocab': prompt_section(config),
             'collision_notes': collision_notes(config)}
@@ -498,8 +539,11 @@ def _character_section(info):
     lines = ['## 4. 角色：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下信息仅供参考）')]
     if info.get('unsupported'):
         lines.append(info['unsupported'])
-    lines += ['标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）'),
-             info['outfit_rule'],
+    lines += ['标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）')]
+    # V2-51 (D88): tags removed at identity resolution are named, so the writer knows why they are not in the list.
+    if info.get('unavailable_tags'):
+        lines.append('已去掉 Danbooru 上废弃或不存在的 tag：' + ', '.join(info['unavailable_tags']))
+    lines += [info['outfit_rule'],
              info['vocab'].strip(),
              '撞键说明（同一景别、角度、动作有多个条目时）：']
     lines += ['- ' + note for note in info['collision_notes']] or ['- （无）']
@@ -590,7 +634,13 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             # The real checks, in plan_story's order. The collector above found nothing,
             # so a failure here is a gap in the collector and is reported as one error.
             validate_storyboard(board, shot_count, identity, config)
+            tag_start = len(registry.records)
             validate_tag_lists(board, registry, config, drop_unknown=True)
+            dropped = tag_rewrites(registry.records[tag_start:])
+        # V2-51 (D88): what validate_tag_lists removed or replaced is reported in the rewrite record, as rewrite_board does.
+        for rewrite in dropped:
+            _append_note(board, rewrite['text'] + '。')
+        record['rewrites'] = record['rewrites'] + dropped
         derive_outfit_changes(board)
         record['outfit_changes'] = [{'shot': entry['number'], 'derived': entry['outfit'].get('change_at_shot')}
                                     for entry in board['shots']]

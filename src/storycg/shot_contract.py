@@ -113,6 +113,11 @@ def planner_schema(schema):
     return schema
 
 
+def shot_tags(pose, action_tag, expression):
+    """V2-51: the conditioning tags of one moment, pose, then the optional action tag, then expression; no gaps, no repeats."""
+    return list(dict.fromkeys(t for t in (pose, action_tag, expression) if t))
+
+
 def materialize(board):
     """Compile the single structured moment, without rewriting a supplied pose."""
     import copy
@@ -124,9 +129,8 @@ def materialize(board):
         for field in ('action','description','tags'):
             if field in shot:raise ValueError('planner supplied derived field: shot.'+field)
         # V2-49: the action tag, when written, sits between pose and expression (the order the prompt uses).
-        tags=[shot['pose'],shot.get('action_tag'),shot['expression']]
         shot.update(action=shot['pose'],description=shot['pose'],
-                    tags=list(dict.fromkeys(t for t in tags if t)))
+                    tags=shot_tags(shot['pose'],shot.get('action_tag'),shot['expression']))
         shot['key_props']=[]
         entry['scene']['tags']=list(dict.fromkeys([*entry['scene']['tags'], *shot['prop_tags']]))
     from storycg.planning import derive_outfit_changes
