@@ -576,6 +576,7 @@
 | 面部精修实验（监工，D87，`verify/v2/face-ab/`）：5 个远景镜 × 3 候选，检出 14 张 × denoise 0.35/0.5 | 28 | 614 |
 | V2-50 验收补测（监工，`verify/v2/face-ab/run_scenery.py`）：芙莉莲第 1 镜候选 2、3，用 V2-50 的提示词重跑精修 | 2 | 616 |
 | V2-50 合入后监工实跑（后藤一里 5 镜，`jobs/cg-51af1913a553`）：候选 15 + 面部精修 6（定妆图复用） | 21 | 637 |
+| V2-53 验收（监工，D89，`verify/v2/face-ab/run_fallback.py`）：`jobs/cg-d7ecacac0a79` 第 1 镜候选 1 用 1280 回退找到的脸精修 1 张；另一张侧脸候选的工作流用的画风 LoRA 已不在 ComfyUI，提交被拒，没出图 | 1 | 638 |
 
 ### 工单
 
@@ -911,6 +912,14 @@
   - 测试 812 → 822（`tests/test_v2_52.py` 10 个）；`test_p7_agent`、`test_v2_09`、`test_p10_03_notes` 的替身 attempt 补全了工作流、seed 等字段，断言一行没改（监工核对）。
   - 监工独立验证：`.v2` 全量 822 passed（`logs/supervisor/pytest-v2-52.log`），合入后主线也是 822 passed（`pytest-main-v2-52.log`），退出码 0；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；`attempt_record` 对两棵树 63 个旧任务、260 条选中记录全部能生成（含修图时代的任务）；从 `.v2` 入口对 `jobs/cg-51af1913a553` 的副本跑 `deliver`：result.md 和两张拼图逐字节相同，manifest 1,221,516 → 321,065 字节，只少 `repair_history`，每镜记录原有字段一个没变，第 1、4 镜（精修过）的记录是合成图、带原图名，提示词等于候选自己的节点 4；再 `pick --shot 2 --candidate 1`，第 2 镜记录的 seed 和提示词换成候选 1 的，result.md 写了"由用户换成候选"。副本已删。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
   - 剩下的限制：时间预算（每组 60 分钟）用完仍会中途停下，已出的镜交付不了；"第二轮已开始"那条分支没有单独的测试。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-52.md`，a3e0eb4 |
+| V2-53 面部精修找不到脸时放大到 1280 再找；检测器什么都没看到的候选排到同镜后面（D89） | **通过**（f08cfbf，返工 0，合入主线 a723e41）。
+  - `face_refine._inspect`：640 没有脸、任务配置的 `face_refine` 有 `fallback_imgsz`（`config/default.json` 设 1280）时再找一次，结果只给精修用，记 `detect_imgsz`；人数检查、审核和终审的检测仍是 640。
+  - `candidates.nothing_detected`：审核里 640 的 `faces`、`persons` 都为空，并且精修记录是 `no_face`，rank 第 0 级加 1，记 `nothing_detected`，不筛掉；被选中时 result.md 已知问题写一句。`LEVEL_NAMES[0]` 改名。
+  - 执行者回放两棵树 249 个候选：原来找得到脸的 246 个记录完全相同；原来 `no_face` 的 3 个里，`cg-d7ecacac0a79` 第 1 镜候选 1 变成 `pending`（脸长边 38.3），`cg-cb9c4ab7d356` 第 1 镜候选 1（侧脸，选中过）变成 `pending`（91.2），第 5 镜候选 1（特写侧脸）仍是 `no_face`。已有 rank 重算全部不变：已存的精修记录里没有 `no_face`，降级只由单元和流程测试覆盖。
+  - 测试 822 → 839（`tests/test_v2_53.py` 17 个，含用真检测器跑原图夹具）；`test_v2_50` 一个替身补了 `config` 参数，断言没改。
+  - 监工独立验证：`.v2` 全量 839 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-53.log`），合入后主线也是 839 passed（`pytest-main-v2-53.log`）；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；逐行看了 diff。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
+  - **监工实测 1 张**（`verify/v2/face-ab/run_fallback.py`，拼图 `fallback/faces.jpg`、`fallback/context.jpg`）：用 V2-53 的 `_inspect` 在 1280 找到候选 1 的脸，按候选自己的工作流和 closeup 提示词精修。原图脸上眼睛位置是一道暗条、几乎没有五官；精修后画出紫眼和浅笑，刘海不变，原尺寸看不出接缝。精修后的合成图 640 下仍然检测不到人，人数检查照旧是 `none_visible`；按 D89，它的精修记录是 `refined`，不降级。
+  - 没验证的：侧脸被精修的效果。唯一的例子 `cg-cb9c4ab7d356` 第 1 镜候选 1 是用户在别的会话跑的任务，工作流里的画风 LoRA `akai_melon_style_Illustrious_v170.safetensors` 已不在 ComfyUI，提交被拒；去掉 LoRA 就不是候选自己的工作流，所以没做。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-53.md`，f08cfbf |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
