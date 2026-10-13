@@ -924,6 +924,13 @@
   - 监工独立验证：`.v2` 全量 839 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-53.log`），合入后主线也是 839 passed（`pytest-main-v2-53.log`）；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；逐行看了 diff。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
   - **监工实测 1 张**（`verify/v2/face-ab/run_fallback.py`，拼图 `fallback/faces.jpg`、`fallback/context.jpg`）：用 V2-53 的 `_inspect` 在 1280 找到候选 1 的脸，按候选自己的工作流和 closeup 提示词精修。原图脸上眼睛位置是一道暗条、几乎没有五官；精修后画出紫眼和浅笑，刘海不变，原尺寸看不出接缝。精修后的合成图 640 下仍然检测不到人，人数检查照旧是 `none_visible`；按 D89，它的精修记录是 `refined`，不降级。
   - 没验证的：侧脸被精修的效果。唯一的例子 `cg-cb9c4ab7d356` 第 1 镜候选 1 是用户在别的会话跑的任务，工作流里的画风 LoRA `akai_melon_style_Illustrious_v170.safetensors` 已不在 ComfyUI，提交被拒；去掉 LoRA 就不是候选自己的工作流，所以没做。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-53.md`，f08cfbf |
+| V2-54 取消每组 60 分钟的耗时上限（D90） | **通过**（97c0209，返工 0，合入主线 4ca3f18）。
+  - `config/cycle.json` 删 `max_minutes`，`Budget.check` 不再查时间；删 `Budget.remaining_seconds` 和它的全部用法（候选审核、终审、定妆图三处视觉客户端的总时长，`CycleClient.call` 的收紧，`GuardedComfy.wait_for_history` 的收紧）。`VisionClient` 的 `max_seconds` 可为 `None`，每次请求仍是 180 秒超时，默认 3600 不变。
+  - 单张图等 ComfyUI 的超时单独留下：`config/default.json` 的 `budget.max_job_minutes` 改名 `image_wait_minutes`（60）；`runner._process` 先取它，旧任务快照回退到 `max_job_minutes`，都没有取 60。删了 `pipeline` 里的 `min(60, …)`。
+  - result.md 那条已知问题改为"出图或审核调用额度用完，任务提前结束：…"，触发条件不变。出图 40 张、审核调用 139 次上限不变。
+  - 测试 839 → 846（`tests/test_v2_54.py` 7 个，先在旧代码上复现 `BudgetExceeded: time_budget`）；`test_v2_44a` 一条断言由 `max_minutes == 60` 改为它不存在。
+  - 监工独立验证：`.v2` 全量 846 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-54.log`），合入后主线也是 846 passed（`pytest-main-v2-54.log`）；执行者的新测试只走到候选轮次，监工另写一个临时测试，复用 `test_v2_52` 的流程替身，把 `job.json` 的创建时间设成 2 小时前，跑完整个候选交付（轮次、挑选、交付、终审步骤、result.md）：改前代码（f08cfbf）停在 `BudgetExceeded: time_budget`，改后跑完、交付 2 镜；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；`jobs/cg-51af1913a553` 副本从 `.v2` 入口跑 `deliver`，result.md 和原任务的逐字节相同，`status` 为 completed、无错误。副本和临时测试已删。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
+  - 解决 D88 遗留的"时间预算用完、已出的镜交付不了"。剩下的：单张图等 60 分钟仍会超时，超时的候选记"生成未完成"、任务继续；如果一镜的候选全部超时，这一镜没有图，任务仍会停下。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-54.md`，97c0209 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
