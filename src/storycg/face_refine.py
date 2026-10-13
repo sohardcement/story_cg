@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from storycg import runner
 from storycg.budget import BudgetExceeded, remaining_images
 from storycg.controls import upload_reference
-from storycg.detect import detect_faces
+from storycg.detect import detect_faces, load_detect_config
 
 # Terminal states: the candidate keeps its final image (refined) or its original one (the rest).
 FINAL_STATES = ('refined', 'no_face', 'not_needed', 'skipped_budget', 'failed')
@@ -102,15 +102,25 @@ def _refine_attempt(state, shot_id, candidate):
 
 
 def _inspect(root, attempt, cfg):
-    faces = detect_faces(root / attempt['image']['path'])
+    path = root / attempt['image']['path']
+    faces = detect_faces(path)
+    detect_imgsz = None
+    if not faces and cfg.get('fallback_imgsz'):
+        # V2-53 (D89): a far protagonist can be too small for the 640 detector. Only this search retries larger;
+        # the count check and the audit keep the 640 result.
+        detect_config = load_detect_config()
+        detect_config['imgsz'] = cfg['fallback_imgsz']
+        faces = detect_faces(path, config=detect_config)
+        detect_imgsz = cfg['fallback_imgsz'] if faces else None
     face = pick_face(faces)
     if face is None:
         return {'status': 'no_face', 'face_long_side': None}
     side = long_side(face['bbox'])
+    found = {} if detect_imgsz is None else {'detect_imgsz': detect_imgsz}
     if side >= cfg['max_face_px']:
-        return {'status': 'not_needed', 'face_long_side': round(side, 1)}
+        return {'status': 'not_needed', 'face_long_side': round(side, 1), **found}
     return {'status': 'pending', 'face_long_side': round(side, 1), 'face_bbox': list(face['bbox']),
-            'confidence': face['confidence']}
+            'confidence': face['confidence'], **found}
 
 
 def _start(root, attempt, cfg, parts, client, budget, state, reserve):

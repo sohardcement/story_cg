@@ -29,7 +29,7 @@ def is_prop_item(key):
     return key == 'props' or key.startswith('prop_')
 
 
-LEVEL_NAMES = ('count and extra body part (D29 level 0)', 'identity item (D29 level 1)',
+LEVEL_NAMES = ('count, extra body part or nothing detected (D29 level 0)','identity item (D29 level 1)',
                'outfit (D29 level 2)', 'action and expression (reliable items)',
                'other reliable items (not props)', 'minor count (not props)', 'candidate number')
 # Prop items (TASK-v2 §0: props are décor, never a veto) take no part in the comparison at all.
@@ -65,13 +65,23 @@ def screen_reasons(audit):
     return reasons
 
 
-def rank_key(audit, number):
+def nothing_detected(audit, face):
+    """V2-53 (D89): the detector saw neither a face nor a body, and the refinement's search found no face either."""
+    detection = (audit.get('detection_items') or {}).get('detection')
+    if not detection or detection.get('faces') or detection.get('persons'):
+        return False
+    return (face or {}).get('status') == 'no_face'
+
+
+def rank_key(audit, number, face=None):
     """Lower is better, compared lexicographically over LEVEL_NAMES (V2-21 rework 1).
 
     Levels 0-2 are the failure tiers of cycle.failure_tier (count/extra, identity, outfit); level 3
     is action and expression; level 4 is every other reliable failure; level 5 is the minor count;
     level 6 is the candidate number. Prop items (props, prop_*) are left out of every level,
     including minor. Only reliable failures count; cycle.failure_tier is used unchanged.
+    V2-53: a candidate with nothing detected (see nothing_detected) gets +1 on level 0, so it ranks
+    behind the others of its shot; it is not screened out. `face` is its face_refine record, if any.
     """
     results = [audit.get('single', {}), audit.get('consistency', {})]
     if not all(r.get('data') for r in results):
@@ -92,6 +102,8 @@ def rank_key(audit, number):
                     levels[3] += 1
                 else:
                     levels[4] += 1
+    if nothing_detected(audit, face):
+        levels[0] += 1
     return [levels[0], levels[1], levels[2], levels[3], levels[4], minor, number]
 
 
@@ -172,8 +184,10 @@ def _run_round(root, store, entry, board, identity, config, client, vlm, budget,
             record['image'] = {'path': attempt['image']['path'], 'sha256': attempt['image']['sha256']}
             audit = audit_candidate(root, number, attempt['image'], entry, board, identity, config, vlm, label)
             record['screen'] = screen_reasons(audit)
-            record['rank'] = rank_key(audit, n)
+            record['rank'] = rank_key(audit, n, attempt.get('face_refine'))
             record['conclusion'] = audit['conclusion']
+            if nothing_detected(audit, attempt.get('face_refine')):
+                record['nothing_detected'] = True
         else:
             record['screen'] = [f"生成未完成（{attempt['status']}）"]
         slot['candidates'].append(record)
@@ -549,6 +563,11 @@ def result_text(root, store=None):
                 issues.append(f'第 {number} 镜所有候选都没通过筛选，因出图额度不够没有补第二轮，交付的是第一轮里排序最好的候选，请人工复看。')
             else:
                 issues.append(f'第 {number} 镜所有候选都没通过筛选，交付的是按排序取到的最好候选，请人工复看。')
+    for number in numbers:
+        slot = store.get(str(number))
+        selected = next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None) if slot else None
+        if selected is not None and selected.get('nothing_detected'):
+            issues.append(f'第 {number} 镜选中的候选里，本机检测器没找到人，放大检测也没找到脸，主角可能很小或没画出来，请看图确认。')
     issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
     if board.get('story_note'):
         issues.append('分镜改写提醒（story_note）：' + board['story_note'])
@@ -622,14 +641,17 @@ def candidate_records(store):
     for key, slot in sorted(store.items(), key=lambda kv: int(kv[0])):
         number = int(key)
         for r in slot['candidates']:
-            records.append({'shot': number, 'candidate': r['candidate'], 'round': r['round'], 'seed': r['seed'],
-                            'attempt_number': r['attempt_number'], 'status': r['status'],
-                            'image': r['image'], 'screen': r['screen'],
-                            'screen_codes': [screen_code(x) for x in r['screen']], 'rank': r['rank'],
-                            'conclusion': r['conclusion'], 'selected': r['candidate'] == slot['selected'],
-                            'reason': slot['reason'] if r['candidate'] == slot['selected'] else None,
-                            'user_pick': r['candidate'] == slot['selected'] and slot.get('user_pick') is not None,
-                            'prompt_id': r.get('prompt_id'), 'face_refine': r.get('face_refine')})
+            record = {'shot': number, 'candidate': r['candidate'], 'round': r['round'], 'seed': r['seed'],
+                      'attempt_number': r['attempt_number'], 'status': r['status'],
+                      'image': r['image'], 'screen': r['screen'],
+                      'screen_codes': [screen_code(x) for x in r['screen']], 'rank': r['rank'],
+                      'conclusion': r['conclusion'], 'selected': r['candidate'] == slot['selected'],
+                      'reason': slot['reason'] if r['candidate'] == slot['selected'] else None,
+                      'user_pick': r['candidate'] == slot['selected'] and slot.get('user_pick') is not None,
+                      'prompt_id': r.get('prompt_id'), 'face_refine': r.get('face_refine')}
+            if r.get('nothing_detected'):
+                record['nothing_detected'] = True
+            records.append(record)
     return records
 
 
