@@ -138,6 +138,47 @@ def _danbooru_for_list_tag(source, list_tag):
     return matches.pop() if len(matches)==1 else None
 
 
+IDENTITY_TAG_BATCH = 100
+
+
+def drop_unavailable_identity_tags(result, source):
+    """V2-51 (D88): remove appearance and standard outfit tags that Danbooru does not offer.
+
+    Same rule as TagRegistry.lookup: a tag is available only when an entry with the same name is not deprecated.
+    Removed tags go to result['unavailable_identity_tags'] as {tag, field, reason ('deprecated' or 'not_found'), source}.
+    Names with a comma cannot go in name_comma, so they are asked one by one with search[name].
+    """
+    fields = ('appearance_tags', 'default_outfit_tags')
+    names = sorted({item['tag'] for field in fields for item in result[field]})
+    verdict = {}
+    plain = [name for name in names if ',' not in name]
+    queries = []
+    for start in range(0, len(plain), IDENTITY_TAG_BATCH):
+        batch = plain[start:start + IDENTITY_TAG_BATCH]
+        queries.append((batch, {'search[name_comma]': ','.join(batch), 'limit': len(batch)}))
+    queries += [([name], {'search[name]': name, 'limit': 1}) for name in names if ',' in name]
+    for batch, params in queries:
+        payload, url = source.get('/tags.json', params)
+        for name in batch:
+            matches = [item for item in payload if item.get('name') == name]
+            if any(not item.get('is_deprecated', False) for item in matches):
+                verdict[name] = ('available', url)
+            else:
+                verdict[name] = ('deprecated' if matches else 'not_found', url)
+    unavailable = []
+    for field in fields:
+        kept = []
+        for item in result[field]:
+            status, url = verdict[item['tag']]
+            if status == 'available':
+                kept.append(item)
+            else:
+                unavailable.append({'tag': item['tag'], 'field': field, 'reason': status, 'source': url})
+        result[field] = kept
+    result['unavailable_identity_tags'] = unavailable
+    return result
+
+
 def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client | None = None,
                      work: str | None = None, character_tag: str | None = None,
                      rules: dict | None = None, wai: dict | None = None) -> dict:
@@ -232,6 +273,7 @@ def resolve_identity(name: str, cache_dir: str | Path, *, client: httpx.Client |
             'candidates':candidates}
     related,related_url=source.get('/related_tag.json',{'query':' '.join(x for x in [character,rules.get('related_query_suffix','')] if x),'category':0})
     result=enrich_identity(result,related,related_url,rules)
+    drop_unavailable_identity_tags(result,source)
     result['identity_block']=', '.join(x for x in ['1girl',character,chosen.get('work_tag'),
                                      *(item['tag'] for item in result['appearance_tags'])] if x)
     result['outfit_block']=', '.join(item['tag'] for item in result['default_outfit_tags'])
