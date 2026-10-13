@@ -178,9 +178,11 @@ def _process(job_dir: Path, state: dict, attempt: dict, client, *, recovering: b
         attempt["status"] = "queued"
         _save(job_dir, state)
 
+    # V2-54: the wait for one image is its own limit; jobs made before V2-54 only have max_job_minutes.
+    budget = config["budget"]
+    wait_minutes = budget.get("image_wait_minutes", budget.get("max_job_minutes", 60))
     record = client.wait_for_history(
-        attempt["prompt_id"], config["poll_interval_seconds"],
-        config["budget"]["max_job_minutes"] * 60,
+        attempt["prompt_id"], config["poll_interval_seconds"], wait_minutes * 60,
     )
     if record is None:
         attempt["status"] = "waiting"

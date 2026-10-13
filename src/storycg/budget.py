@@ -52,12 +52,10 @@ def count_usage(root):
 class Budget:
     def __init__(self,root,settings):self.root=Path(root);self.settings=settings
     def usage(self):return count_usage(self.root)
-    def remaining_seconds(self):return max(0,self.settings['max_minutes']*60-self.usage()['elapsed_seconds'])
     def check(self,*,images=0,vision=0):
         u=self.usage();s=self.settings
         if u['submission_attempts']+images>s['max_images']:raise BudgetExceeded('image_budget')
         if u['review_calls']+vision>s['max_vision_calls']:raise BudgetExceeded('vision_budget')
-        if u['elapsed_seconds']>=s['max_minutes']*60:raise BudgetExceeded('time_budget')
 
 
 def remaining_images(budget, state):
@@ -74,7 +72,6 @@ class CycleClient(review.VisionClient):
     def call(self,purpose,*args,**kwargs):
         try:self.budget.check(vision=1)
         except BudgetExceeded as exc:return {'status':'fail','error':str(exc),'purpose':purpose}
-        self.max_seconds=min(self.max_seconds,(__import__('time').monotonic()-self.started)+self.budget.remaining_seconds())
         return super().call(purpose,*args,**kwargs)
 
 
@@ -86,4 +83,4 @@ class GuardedComfy:
         self.budget.check()
         return self.client.submit_prompt(workflow,client_id)
     def wait_for_history(self,prompt_id,interval_seconds,timeout_seconds):
-        return self.client.wait_for_history(prompt_id,interval_seconds,min(timeout_seconds,self.budget.remaining_seconds()))
+        return self.client.wait_for_history(prompt_id,interval_seconds,timeout_seconds)

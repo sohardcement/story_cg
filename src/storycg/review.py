@@ -76,6 +76,7 @@ def messages(text, paths=()):
 class VisionClient:
     def __init__(self, job_dir, url, *, model=None, client=None, max_calls=30,
                  max_seconds=3600, timeout=180):
+        # max_seconds=None: no limit on the total time; each request still has its own timeout (180 s).
         self.job_dir = Path(job_dir)
         self.url = url.rstrip('/')
         self.owned = client is None
@@ -124,7 +125,8 @@ class VisionClient:
             self.log(record)
 
     def call(self, purpose, message_list, schema, paths=()):
-        if self.calls >= self.max_calls or time.monotonic() - self.started >= self.max_seconds:
+        over_time = self.max_seconds is not None and time.monotonic() - self.started >= self.max_seconds
+        if self.calls >= self.max_calls or over_time:
             return {'status': 'fail', 'error': 'review budget exhausted', 'purpose': purpose}
         call_id = f'{self.session_id}:{self.calls + 1}'
         started = time.monotonic()
@@ -150,11 +152,13 @@ class VisionClient:
                       'call_id': call_id, 'purpose': purpose,
                       'at': datetime.now(timezone.utc).isoformat(),
                       'url': self.url + '/chat/completions', 'request': logged})
-            remaining = self.max_seconds - (time.monotonic() - self.started)
-            if remaining <= 0:
-                raise TimeoutError('review time budget exhausted')
-            response = self.http.post(self.url + '/chat/completions', json=request,
-                                      timeout=min(180, remaining))
+            timeout = 180
+            if self.max_seconds is not None:
+                remaining = self.max_seconds - (time.monotonic() - self.started)
+                if remaining <= 0:
+                    raise TimeoutError('review time budget exhausted')
+                timeout = min(180, remaining)
+            response = self.http.post(self.url + '/chat/completions', json=request, timeout=timeout)
             raw = response.text
             response.raise_for_status()
             envelope = json_body(response)

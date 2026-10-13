@@ -16,7 +16,6 @@
     }
   },
   "max_images": 40,
-  "max_minutes": 60,
   "max_vision_calls": 139,
   "story_rules": {
     "max_obscured": 1,

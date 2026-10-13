@@ -34,7 +34,7 @@
   },
   "budget": {
     "max_images_per_job": 40,
-    "max_job_minutes": 60
+    "image_wait_minutes": 60
   },
   "camera_tags": {
     "front": [],

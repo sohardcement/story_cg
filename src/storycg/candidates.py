@@ -207,7 +207,7 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
     reserve = 3 * len(board['shots']) + 4  # full review after selection
     vlm = CycleClient(root, config['model_service_url'], budget=budget,
                       max_calls=max(0, cycle_cfg['max_vision_calls'] - budget.usage()['review_calls'] - reserve),
-                      max_seconds=budget.remaining_seconds())
+                      max_seconds=None)
     try:
         for entry in board['shots']:
             number = entry['number']
@@ -572,7 +572,7 @@ def result_text(root, store=None):
     if board.get('story_note'):
         issues.append('分镜改写提醒（story_note）：' + board['story_note'])
     if 'Budget' in str(agent.get('error') or '') or 'budget' in str(agent.get('error') or ''):
-        issues.append(f"预算或时间耗尽，任务提前结束：{agent.get('error')}")
+        issues.append(f"出图或审核调用额度用完，任务提前结束：{agent.get('error')}")
     lines += ['## 已知问题', '']
     lines += [f'- {x}' for x in issues]
     lines += ['', '## 详细审核', '', '见 review.md 和 manifest.json。', '']

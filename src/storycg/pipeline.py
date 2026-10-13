@@ -252,7 +252,7 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     from storycg.reference import ensure_portrait
     gate.check()
     portrait_kwargs = {"redo": True} if redo_portrait else {}
-    portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=gate.remaining_seconds())
+    portrait_vlm=CycleClient(job_dir.resolve(),config["model_service_url"],budget=gate,max_calls=6,max_seconds=None)
     try:portrait=ensure_portrait(job_dir,identity,config,client,vlm=portrait_vlm,**portrait_kwargs)
     finally:portrait_vlm.close()
     gate.check()
@@ -265,7 +265,6 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     else:
         config = copy.deepcopy(config)
         config["budget"]["max_images_per_job"] -= gate.usage()["submission_attempts"]
-        config["budget"]["max_job_minutes"] = min(60, config["budget"]["max_job_minutes"])
     config = tier_generation_config(config)
     from storycg.controls import apply_options, portrait_reference
     job = json.loads((job_dir / 'job.json').read_text())
