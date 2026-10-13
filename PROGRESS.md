@@ -891,6 +891,13 @@
   - 监工独立验证：`.v2` 全量 812 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-51.log`），合入后主线也是 812 passed（`pytest-main-v2-51.log`）；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；从 `.v2` 入口实跑编译后藤一里最新的 beats（`jobs/cg-51af1913a553/beats.json`）：valid，`rewrites` 是"第 3、4、5 镜：outfit.tags 的 brown_footwear → 删除，Danbooru 上不存在或已废弃"，第 1、2 镜的 `under_covers`、`curtain_grab` 仍在 `shot.tags` 里，定妆图提示词不再带 brown footwear；执行者的前后对比（`.v2/reports/assets/V2-51/compare.txt`）只有工单预期的差别。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
   - **监工失误（已纠正）**：第一次复跑全量没带 `PYTHONPATH=$PWD/src`。`.v2/.venv` 链到主线的 venv，测到的是主线代码，新测试收集失败；带上以后 812 passed。开工前记的 796 也是这样跑出来的，当时两边代码相同，数字不受影响。
   - 已知影响：新解析的身份都多了 `unavailable_identity_tags` 键，定妆图缓存键是按整个身份算的，所以每个角色下次运行都会重出一张定妆图。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-51.md`，e0a59a6 |
+| V2-52 出图额度先保住还没出的候选；manifest 每镜记录带上提示词和 seed，不再复制整份审核记录（D88 第 4、5、6 条） | **通过**（a3e0eb4，返工 1 次，合入主线 b54d5c5）。
+  - 额度：`candidates._reserve` 算"本镜这一轮剩下的候选 + 后面各镜第一轮还没出的候选"，`budget.remaining_images` 取整个任务和任务 state 两道上限里较小的剩余。面部精修扣掉自己之后剩余不够预留，就记 `skipped_budget`；第二轮已开始的照常跑完，没开始的要额度够这一轮加后面的预留才补，否则记 `second_round_skipped`，result.md 每镜和已知问题各写一句。
+  - manifest：`pipeline.attempt_record` 从选中 attempt 生成每镜记录（提示词、seed、采样参数、分辨率、参考、时间、图像字段，精修过的带 `face_refine` 摘要），`write_story_manifest`、`delivery.deliver`、`deliver` 命令和 `pick` 共用；不再写 `repair_history`，重写旧任务时删掉它。
+  - **返工 1**：第二轮里的精修会占掉本镜第二轮后面候选的额度。剩余额度正好等于批准第二轮的数时，最后一张候选会撞上限，任务照样停下。这是监工工单的疏漏：只要求预留"各镜第一轮"。执行者按要求先写测试，在返工前的代码上复现出 `BudgetExceeded: image_budget`，改后通过。续跑时"第二轮已开始"改成也看 state.json 里有没有第二轮编号的 attempt。
+  - 测试 812 → 822（`tests/test_v2_52.py` 10 个）；`test_p7_agent`、`test_v2_09`、`test_p10_03_notes` 的替身 attempt 补全了工作流、seed 等字段，断言一行没改（监工核对）。
+  - 监工独立验证：`.v2` 全量 822 passed（`logs/supervisor/pytest-v2-52.log`），合入后主线也是 822 passed（`pytest-main-v2-52.log`），退出码 0；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；`attempt_record` 对两棵树 63 个旧任务、260 条选中记录全部能生成（含修图时代的任务）；从 `.v2` 入口对 `jobs/cg-51af1913a553` 的副本跑 `deliver`：result.md 和两张拼图逐字节相同，manifest 1,221,516 → 321,065 字节，只少 `repair_history`，每镜记录原有字段一个没变，第 1、4 镜（精修过）的记录是合成图、带原图名，提示词等于候选自己的节点 4；再 `pick --shot 2 --candidate 1`，第 2 镜记录的 seed 和提示词换成候选 1 的，result.md 写了"由用户换成候选"。副本已删。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
+  - 剩下的限制：时间预算（每组 60 分钟）用完仍会中途停下，已出的镜交付不了；"第二轮已开始"那条分支没有单独的测试。 | 1 | Haiku 5.5 subagent（新开，返工 SendMessage 续派，转录核实） | `.v2/reports/V2-52.md`，a3e0eb4 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
