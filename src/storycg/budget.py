@@ -60,6 +60,13 @@ class Budget:
         if u['elapsed_seconds']>=s['max_minutes']*60:raise BudgetExceeded('time_budget')
 
 
+def remaining_images(budget, state):
+    """V2-52: images the job can still submit, the smaller of the cycle's total and the job's own cap."""
+    from storycg.runner import _submission_count
+    job_left = state['config']['budget']['max_images_per_job'] - _submission_count(state)
+    return min(budget.settings['max_images'] - budget.usage()['submission_attempts'], job_left)
+
+
 class CycleClient(review.VisionClient):
     def __init__(self,root,url,*,budget,**kwargs):
         self.budget=budget

@@ -11,7 +11,7 @@ from storycg.state import load_state, save_json_atomic
 
 
 def deliver(root, cycle, config, client):
-    from storycg.pipeline import write_story_manifest, make_contact_sheet
+    from storycg.pipeline import attempt_record, write_story_manifest, make_contact_sheet
     selected_board = read(root/'storyboard.json')
     if not (root/'initial_storyboard.json').exists():
         save_json_atomic(root/'initial_storyboard.json', selected_board)
@@ -22,7 +22,7 @@ def deliver(root, cycle, config, client):
     final = cycle.get('final_review', {})
     for number, slot in cycle['shots'].items():
         a = selected_attempt(state, int(number), slot['best_attempt'])
-        manifest['images'].append({'shot_id': a['shot_id'], 'attempt_number': a['attempt_number'], **a['image'], 'entry': slot['entry']})
+        manifest['images'].append({**attempt_record(a), 'entry': slot['entry']})
         audit = slot['best_audit']
         consistencies = [r for r in final.get('consistency', []) if r['shot'] == int(number)]
         faces = [r for r in final.get('faces', []) if r['shot'] == int(number)]
@@ -31,7 +31,8 @@ def deliver(root, cycle, config, client):
                      'conclusion': review.conclude([*review.result_statuses(audit['single']), *review.result_statuses(consistencies[0]),
                                                     *[r['status'] for r in faces]])}
         slot['final_conclusion'] = audit['conclusion']
-    manifest['usage'] = usage(root); manifest['repair_cycle_file'] = 'cycle.json'; manifest['repair_history'] = cycle['shots']
+    # V2-52: the per-shot audit copy (repair_history) is not written; cycle.json holds the same records.
+    manifest['usage'] = usage(root); manifest['repair_cycle_file'] = 'cycle.json'
     manifest['attempts'] = state['attempts']
     save_json_atomic(root/'manifest.json', manifest)
     make_contact_sheet(root)
