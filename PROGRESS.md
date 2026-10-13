@@ -883,6 +883,14 @@
   - 测试 776 → 794（`tests/test_v2_50.py` 18 个，fixture 是主线 `jobs/cg-188b6d70c3db` 的两张候选图，已有测试没改）。**基线更正**：PROGRESS 里 V2-49 记的 778，用 021748a 干净导出只收集到 776 个，现在主线也是 776。测试文件从那以后没动过，所以当时多出的 2 个来自工作区里某个未跟踪的东西，现已不在，原因没查到。
   - 执行者复现实验：14 张的脸框、裁剪框、seed、工作流改动和贴回（逐像素）全部一致；节点 4 的文字 12/14 逐字相同。芙莉莲第 1 镜候选 2、3 多一个 `scenery`：她的场景 tag 里有 `scenery`，实验的转换把它和构图里的一起删了，工单规定只换构图段，所以保留。**监工补测 2 张**（`verify/v2/face-ab/run_scenery.py`，拼图 `scenery_check.jpg`）：用 V2-50 代码的提示词重跑这两张，结果和实验几乎一样，眼睛都画出来了，按工单规则保留。
   - 监工独立验证：全量 794 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-50.log`），合入后主线也是 794 passed（`pytest-main-v2-50.log`）；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同（这两个旧任务的配置里没有 `face_refine`，走的是"不精修"那条路）；核实 `make` 每次从 `config/default.json` 取配置，新任务带 `face_refine`；`comfy_output` 没有别的读者，`resume_job` 没有调用方。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-50.md`，fcd3c60 |
+| V2-51 改写分镜不丢动作 tag；身份去掉 Danbooru 上废弃的 tag，编译删掉的 tag 写进改写记录（D88 第 1、2 条） | **通过**（e0a59a6，返工 0，合入主线 321c8c5）。
+  - `shot_contract.shot_tags` 让 `materialize` 和 `_set_combo` 用同一条规则，三条改写规则都保留 `action_tag`。监工用分析时的复现脚本重跑：改写后第 2 镜的镜头段是 `cowboy shot, standing, drinking, smile`，改前没有 drinking。
+  - `identity.drop_unavailable_identity_tags`：外貌和标准服装 tag 一次批量查 `tags.json`（`search[name_comma]`），废弃或不存在的去掉，记进 `unavailable_identity_tags`；`beats-guide` 在标准服装下一行列出。菲伦去掉 `black_footwear`，后藤一里去掉 `brown_footwear`，都是 deprecated；喜多川海梦、芙莉莲不变。
+  - 编译里 `validate_tag_lists` 删掉或替换的 tag 合成改写记录，进 `story_note`、plan_log 和确认页的 `compile_rewrites`；`compile` 输出多一个 `rewrites`。
+  - 测试 796 → 812（`tests/test_v2_51.py` 16 个）。`test_p1_02` 的假传输补一条应答，请求数 4 → 5；`v2_35` 离线快照补 2 条真实只读响应（爱丽丝、雷姆，都没有要去掉的 tag），监工核对过 URL 和文件名一致。
+  - 监工独立验证：`.v2` 全量 812 passed、无 NETWORK GUARD（`logs/supervisor/pytest-v2-51.log`），合入后主线也是 812 passed（`pytest-main-v2-51.log`）；`tools/v2_43_capture.py` 两组和 V2-48 基线逐字节相同；从 `.v2` 入口实跑编译后藤一里最新的 beats（`jobs/cg-51af1913a553/beats.json`）：valid，`rewrites` 是"第 3、4、5 镜：outfit.tags 的 brown_footwear → 删除，Danbooru 上不存在或已废弃"，第 1、2 镜的 `under_covers`、`curtain_grab` 仍在 `shot.tags` 里，定妆图提示词不再带 brown footwear；执行者的前后对比（`.v2/reports/assets/V2-51/compare.txt`）只有工单预期的差别。reflog 无执行者 git 操作，暂存区空，主线和 Hermes 未被改动。
+  - **监工失误（已纠正）**：第一次复跑全量没带 `PYTHONPATH=$PWD/src`。`.v2/.venv` 链到主线的 venv，测到的是主线代码，新测试收集失败；带上以后 812 passed。开工前记的 796 也是这样跑出来的，当时两边代码相同，数字不受影响。
+  - 已知影响：新解析的身份都多了 `unavailable_identity_tags` 键，定妆图缓存键是按整个身份算的，所以每个角色下次运行都会重出一张定妆图。 | 0 | Haiku 5.5 subagent（新开，转录核实） | `.v2/reports/V2-51.md`，e0a59a6 |
 | V2-27 skill 不依赖特定工具、改名 story-cg（D71） | **通过**（9a5d3f0，返工 1 次，合入主线 6d20334）。
   - 改名为 `skill/story-cg`；交付改成按当前环境展示图片（Hermes 仍用 `MEDIA:`）；新增"运行环境"一节。
   - 包装脚本没有 `project_path` 时，按仓库目录结构找项目。
