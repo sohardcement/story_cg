@@ -92,6 +92,6 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
 
 def full_review(root,config,budget):
     calls=budget.settings['max_vision_calls']-budget.usage()['review_calls']
-    owned=CycleClient(root,config['model_service_url'],budget=budget,max_calls=max(0,calls),max_seconds=budget.remaining_seconds())
+    owned=CycleClient(root,config['model_service_url'],budget=budget,max_calls=max(0,calls),max_seconds=None)
     try:return review.review_job(root,config,client=owned)
     finally:owned.close()
