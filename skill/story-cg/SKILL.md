@@ -9,7 +9,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 
 ## 标准流程（beats）
 
-1. `scripts/storycg beats-guide --character '角色名' --shots 4`：读 schema、写作规则、标准服装 tag 和词汇表。没换衣服用标准服装 tag，换衣服的镜写新 tag。
+1. `scripts/storycg beats-guide --character '角色名' --shots 4`：读 schema、写作规则、标准服装 tag 和词汇表。没换衣服用标准服装 tag，换衣服的镜写新 tag；标准服装是场合服装（兔女郎装、泳装等）又不合剧情时，可以整组换成日常服装，规则见 beats-guide。
 2. 按说明写 beats 文件（一个 JSON 对象）。
 3. `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4`：只解析和编译，不出图。返回 invalid 时按错误的镜号和字段修改，直到 valid。
 4. `scripts/storycg make --character '角色名' --story '剧情' --beats '<beats 文件>' --shots 4`：默认在分镜和定妆图生成后停在 `awaiting_approval`，不出镜头图。每 15–30 秒 `scripts/storycg status '<job_dir>'` 轮询一次。

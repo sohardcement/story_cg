@@ -480,7 +480,7 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
     return errors
 
 
-OUTFIT_RULE = '剧情没换衣服时，服装 tag 原样用这几个；换衣服的镜头写新衣服的 tag。'
+OUTFIT_RULE = '剧情没换衣服时，服装 tag 原样用这几个；换衣服的镜头写新衣服的 tag。标准服装是兔女郎装、泳装、战斗服这类场合服装，又和剧情场景不合时（比如穿兔女郎装去海边散步），可以从第 1 镜起整组换成一套合场景的日常服装：主要衣服写带颜色的 tag（如 white_dress），每镜的服装 tag 和 clothing_state 保持一致。'
 
 
 def collision_notes(config=None):
