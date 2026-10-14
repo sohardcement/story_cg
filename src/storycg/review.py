@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -75,8 +76,8 @@ def messages(text, paths=()):
 
 class VisionClient:
     def __init__(self, job_dir, url, *, model=None, client=None, max_calls=30,
-                 max_seconds=3600, timeout=180):
-        # max_seconds=None: no limit on the total time; each request still has its own timeout (180 s).
+                 max_seconds=3600, timeout=180, request_max_seconds=180):
+        # max_seconds=None: no limit on the total time; each request still has its own cap (request_max_seconds).
         self.job_dir = Path(job_dir)
         self.url = url.rstrip('/')
         self.owned = client is None
@@ -85,6 +86,7 @@ class VisionClient:
         self.session_id = uuid.uuid4().hex
         self.started = time.monotonic()
         self.max_seconds = max_seconds
+        self.request_max_seconds = request_max_seconds
         self.max_calls = max_calls
         self.calls = 0
         self.call_seconds = 0.0
@@ -124,6 +126,26 @@ class VisionClient:
             record['elapsed_seconds'] = time.monotonic() - started
             self.log(record)
 
+    def post_with_limit(self, request, timeout, limit):
+        """Total-time cap. httpx timeouts only bound each wait, so a server trickling bytes never trips them.
+        The post runs in a daemon thread that reads the whole body; if it is not done after `limit` seconds,
+        the caller gives up. The abandoned thread only fills its own `outcome` dict, never self or the log."""
+        outcome = {}
+
+        def send():
+            try:
+                outcome['response'] = self.http.post(self.url + '/chat/completions', json=request, timeout=timeout)
+            except Exception as exc:
+                outcome['error'] = exc
+        worker = threading.Thread(target=send, daemon=True)
+        worker.start()
+        worker.join(limit)
+        if worker.is_alive():
+            raise TimeoutError(f'vision request exceeded {limit:.1f} s')
+        if 'error' in outcome:
+            raise outcome['error']
+        return outcome['response']
+
     def call(self, purpose, message_list, schema, paths=()):
         over_time = self.max_seconds is not None and time.monotonic() - self.started >= self.max_seconds
         if self.calls >= self.max_calls or over_time:
@@ -153,12 +175,14 @@ class VisionClient:
                       'at': datetime.now(timezone.utc).isoformat(),
                       'url': self.url + '/chat/completions', 'request': logged})
             timeout = 180
+            limit = self.request_max_seconds
             if self.max_seconds is not None:
                 remaining = self.max_seconds - (time.monotonic() - self.started)
                 if remaining <= 0:
                     raise TimeoutError('review time budget exhausted')
                 timeout = min(180, remaining)
-            response = self.http.post(self.url + '/chat/completions', json=request, timeout=timeout)
+                limit = min(limit, remaining)
+            response = self.post_with_limit(request, timeout, limit)
             raw = response.text
             response.raise_for_status()
             envelope = json_body(response)
