@@ -268,6 +268,23 @@ def _new_outfit_colour_errors(shots, identity):
     return errors
 
 
+def _dropped_prop_tag_errors(board, records):
+    """V2-55: a scene tag that validate_tag_lists removed is still the shot's prop tag, so report it on that shot."""
+    errors, seen = [], set()
+    for record in records:
+        match = re.match(r'^(\d+)\.scene\.tags$', record.get('field') or '')
+        if record.get('action') != 'discarded' or not match:
+            continue
+        number, tag = int(match.group(1)), record['input']
+        entry = next(e for e in board['shots'] if e['number'] == number)
+        if tag in entry['shot'].get('prop_tags', []) and (number, tag) not in seen:
+            seen.add((number, tag))
+            _add(errors, number, 'shot.prop_tags',
+                 f'道具 tag {tag} 在 Danbooru 上不存在或已废弃，已从 scene.tags 删除，但这一镜的 prop_tags 还用着它',
+                 '换一个 Danbooru 上存在的 tag，或从 prop_tags 去掉')
+    return errors
+
+
 def _action_tag_errors(errors, number, entry, tag_registry):
     """V2-49 (D87): shot.action_tag must add an action the pose, outfit, scene and props do not already carry."""
     from storycg.planning import appearance_forbidden
@@ -314,7 +331,8 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
     reporting only. tag_registry is needed only when a shot has an action_tag (V2-49).
     """
     from storycg.identity_enrichment import category_for, load_rules
-    from storycg.planning import appearance_forbidden, body_target_violation, production_schema, sequence_violation
+    from storycg.planning import (appearance_forbidden, body_action_verbs, body_part_words, body_target_violation,
+                                  production_schema, sequence_violation)
     from storycg.prompt_rules import companion_conflicts
     from storycg.shot_contract import EXPRESSION_TAGS, moment
     from storycg.shot_vocab import classify_shots, load_vocab, substitute_text
@@ -416,9 +434,15 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
             covered = field in ('shot.action_tag', 'shot.tags') and value == shot.get('action_tag')
             if not covered and appearance_forbidden(value, body_action=body_action):
                 if body_action and body_target_violation(value) == 'clause':
-                    _add(errors, number, field, f'这个字段只能写一个动作子句："{value}"',
-                         '只保留一个动作子句（如 "close eyes"、"hands on face"）；原因、时间、并列的第二个动作'
-                         '移到别的字段或删去；眼睛状态和体位动作可以保留')
+                    parts = '、'.join(body_part_words(value))
+                    verbs = '、'.join(body_action_verbs())
+                    _add(errors, number, field, f'这个字段里有身体部位词（{parts}），但整句不是认可的写法："{value}"',
+                         '只写两种认可的写法之一：① 动词 + [the/own/their/her/his] + 部位，如 "touching lips"，'
+                         f'动词取自 ACTION_VERBS：{verbs}（也可用它们的 -ing、-ed 等变形）；'
+                         '② hands on/over/against + 部位，如 "hands on face"。'
+                         '两种写法前面都可以加主语 subject / person / character / hands / fingers / palms，'
+                         '或 move to / reach to；整句只能是这一种写法，前后不能再加别的词（"spoon touching lips" 不行）。'
+                         '也可以去掉身体部位词，比如 "tasting soup"')
                 else:
                     _add(errors, number, field, f'外貌描写 "{value}" 不允许',
                          '删除外貌、发色、瞳色、体型等描写；眼睛状态和体位动作可以保留')
@@ -636,6 +660,10 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             validate_storyboard(board, shot_count, identity, config)
             tag_start = len(registry.records)
             validate_tag_lists(board, registry, config, drop_unknown=True)
+            # V2-55: a removed tag that the shot still names as its prop is reported on that shot, not as a global error.
+            prop_errors = _dropped_prop_tag_errors(board, registry.records[tag_start:])
+            if prop_errors:
+                raise BeatsError(prop_errors)
             dropped = tag_rewrites(registry.records[tag_start:])
         # V2-51 (D88): what validate_tag_lists removed or replaced is reported in the rewrite record, as rewrite_board does.
         for rewrite in dropped:
