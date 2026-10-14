@@ -1,6 +1,12 @@
 {
   "checkpoint": "waiIllustriousSDXL_v170.safetensors",
-  "style_loras": [],
+  "style_loras": [
+    {
+      "name": "akml_style_v3.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0
+    }
+  ],
   "sampler": {
     "steps": 28,
     "cfg": 5.5,
@@ -26,9 +32,9 @@
       1024
     ]
   },
-  "positive_prefix": "masterpiece, best quality, general, safe, sfw",
+  "positive_prefix": "akml, masterpiece, best quality, general, safe, sfw",
   "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
-  "selection_status": "supervisor selected 2026-09-30 (P2-01); evidence verify/p2-gridA.jpg, verify/p2-gridB.jpg, verify/p2-Bfaces.jpg",
+  "selection_status": "D95 (2026-10-14): user adopted akml_style_v3 at strength 1.0 with trigger akml, replacing the P2-01 no-LoRA style; evidence verify/v2/akml-grid/sheet.jpg, verify/v2/style-d93/page/index.html",
   "model_hashes": {
     "waiIllustriousSDXL_v170.safetensors": {
       "sha256": "unavailable",
@@ -47,6 +53,12 @@
       "reason": "Remote Windows model files are not locally mounted; ComfyUI metadata API does not provide whole-file SHA256.",
       "sshs_model_hash": "700403771cb0fe241a23330a023cb7c3b9a4de9dc00cade2e6188dc7b2c8e209",
       "sshs_model_hash_reason": "reported by safetensors metadata"
+    },
+    "akml_style_v3.safetensors": {
+      "sha256": "unavailable",
+      "reason": "Remote Windows model files are not locally mounted; ComfyUI metadata API does not provide whole-file SHA256.",
+      "sshs_model_hash": "unavailable",
+      "sshs_model_hash_reason": "no akml entry in local cache/lora_metadata.json (checked 2026-10-14; the file has no akml_style_v3 record)"
     }
   }
 }
