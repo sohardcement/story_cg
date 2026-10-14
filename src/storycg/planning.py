@@ -208,6 +208,18 @@ def body_target_violation(value):
     return 'appearance' if hits - BODY_TARGET_NOUNS else 'clause'
 
 
+def body_action_verbs():
+    """V2-55: the first inflection of each ACTION_VERBS stem (touches, raises, ...), for the body-target error text."""
+    return [stem + re.findall(r'[a-z]+', group)[0] for stem, group in ACTION_VERBS]
+
+
+def body_part_words(value):
+    """V2-55: the body-part words in a body-target value, for the body-target error text."""
+    normalized = re.sub(r'[_-]', ' ', re.sub(r'\beye[ -]level\b', '', value, flags=re.I))
+    hits = {match.group(0).lower() for match in APPEARANCE_EN.finditer(normalized)}
+    return sorted(hits & BODY_TARGET_NOUNS) or sorted(hits)
+
+
 # V2-40: a shot is one still instant, so spatial_relation may not chain a second action with an order word.
 # "after" and "before" stay allowed (they give the state's cause, "relieved after the scare"); "next to" is a place.
 SEQUENCE_WORDS = re.compile(r"\b(?:then|afterwards?|subsequently|after\s+that|followed\s+by|finally|next(?!\s+to\b))\b",
