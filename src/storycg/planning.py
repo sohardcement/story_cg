@@ -285,9 +285,6 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         for value in prop.get('description_tags', []):
             if APPEARANCE_EN.search(value.replace('_', ' ')) or APPEARANCE_ZH.search(value):
                 raise ValueError(f"appearance description is forbidden in props: {value}")
-    first = board['shots'][0]['shot']
-    if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
-        raise ValueError("first shot must establish the environment: wide framing and establishing role")
     derive_outfit_changes(board)
     previous = None
     for entry in board["shots"]:

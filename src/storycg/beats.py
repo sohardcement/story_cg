@@ -157,27 +157,15 @@ def rewrite_board(board, config):
         return f"{shot['framing']}/{shot['camera_angle']}/{shot['pose']}"
 
     def stable_candidates(pose, shot_index, shot):
-        """Stable entries for this pose; the first shot may only use wide. Order: framing, angle, id."""
+        """Stable entries for this pose. Order: framing, angle, id. (D98: the first shot is no longer wide-only.)"""
         found = [item for item in items if _pose_key(pose) in
                  [_pose_key(a) for a in item['action_tags']]
                  and grade_of(item) == 'stable']
-        if shot_index == 0:
-            found = [item for item in found if item['framing'] == 'wide']
         return sorted(found, key=lambda item: (item['framing'] != shot['framing'],
                                                item['camera_angle'] != shot['camera_angle'], item['id']))
 
     shots = board['shots']
-    # Rule 0 (V2-62, D96): the first shot is wide and establishing (TASK-v2 §9 item 3); the code sets it.
-    if shots:
-        first = shots[0]['shot']
-        if first.get('narrative_role') != 'establishing':
-            log(1, 'first_shot_role', 'shot.narrative_role', f"narrative_role {first.get('narrative_role')!r}",
-                "narrative_role 'establishing'", '首镜固定为 establishing（原文只作展示，不进提示词）')
-            first['narrative_role'] = 'establishing'
-        if first.get('framing') != 'wide':
-            before = combo(first)
-            first['framing'] = 'wide'
-            log(1, 'first_shot_wide', 'shot.framing', before, combo(first), '首镜固定用远景')
+    # D98 (user): the first shot is not forced to wide or establishing any more; it is planned like every other shot.
     # Rule 0b (V2-62): an outfit is decided by its tags. A shot with the previous shot's outfit tags keeps the
     # previous clothing_state text, so the review checklist matches what is drawn.
     from storycg.tags import canonical_tag as _canonical
@@ -214,8 +202,6 @@ def rewrite_board(board, config):
         if not row or row.get('substitute_id') is None or row['substitute_id'] not in by_id:
             continue  # rewrite-only or unknown substitute: the validation error reports the text
         substitute = by_id[row['substitute_id']]
-        if index == 0 and substitute['framing'] != 'wide':
-            continue  # the first shot must stay wide
         if not substitute['action_tags']:
             continue
         before = combo(shot)
@@ -251,7 +237,7 @@ def rewrite_board(board, config):
 
     # Rule 4 (V2-66): a rewrite can make a shot's framing and angle equal to the previous shot's; the writer could
     # not know, so the code fills the composition_reason (display text) and logs it.
-    touched = {r['shot'] for r in rewrites if r['rule'] in ('off_table_stable', 'unusable_substitute', 'sometimes_overflow', 'first_shot_wide')}
+    touched = {r['shot'] for r in rewrites if r['rule'] in ('off_table_stable', 'unusable_substitute', 'sometimes_overflow')}
     for previous, entry in zip(shots, shots[1:]):
         a, b = previous['shot'], entry['shot']
         if ((a['framing'], a['camera_angle']) == (b['framing'], b['camera_angle']) and not b['composition_reason'].strip()
@@ -424,11 +410,6 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
         number, field = _shot_of_path(error.absolute_path)
         _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
 
-    if shots:
-        first = shots[0]['shot']
-        if first['framing'] != 'wide' or first['narrative_role'] != 'establishing':
-            _add(errors, 1, 'shot.framing, shot.narrative_role',
-                 '首镜必须是 wide 加 establishing', '把第 1 镜改为 framing: wide、narrative_role: establishing')
     for index in range(1, len(shots)):
         number, shot, previous = index + 1, shots[index]['shot'], shots[index - 1]['shot']
         if ((shot['framing'], shot['camera_angle']) == (previous['framing'], previous['camera_angle'])
@@ -637,7 +618,7 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '',
         '## 3. 字段',
         '- shot.framing：wide 远景、full 全身、medium 中景、closeup 近景。shot.camera_angle：front、side、above、'
-        'below、behind、dutch。首镜由程序固定为 wide 和 establishing。',
+        'below、behind、dutch。首镜和其他镜一样自己选景别。',
         '- shot.pose：一个体位或动作 tag，优先用第 5 节词汇表里的。',
         '- shot.action_tag：pose 之外还要画的一个动作，比如 drinking、reading、waving。借用意思不同的 tag，'
         '就会画成那个 tag 本来的意思。',
