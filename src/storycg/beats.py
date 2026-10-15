@@ -613,7 +613,9 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '',
         '## 3. 字段',
         '- framing：wide 远景、full 全身、medium 中景、closeup 近景。camera_angle：front、side、above、below、behind、dutch。',
-        '- pose：一个体位或动作 tag，优先用第 5 节词汇表里的。',
+        '- pose：剧情里的动作有对应的 Danbooru tag 就直接用，词汇表里没有也可以，不要换成意思相近的别的动作。'
+        '第 5 节词汇表只说明哪些组合画得稳：表里有的，省略 framing 和 camera_angle 时程序能补；表外的要自己写。',
+        '- 剧情点名的物件和它的颜色，要写进 scene.tags 或 prop_tags，别省略。',
         '- action_tag：pose 之外还要画的一个动作，比如 drinking、reading、waving。借用意思不同的 tag，'
         '就会画成那个 tag 本来的意思。',
         '- expression 只能取：' + '、'.join(EXPRESSION_TAGS) + '。睡着、闭眼、哭这类状态写在这里。',
