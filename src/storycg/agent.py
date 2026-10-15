@@ -524,7 +524,8 @@ def _progress(root, total, cycle):
         shots.append({'shot': number,
                       'candidates_generated': len(generated.get(f'shot{number:02d}', set())),
                       'candidates_expected': per * slot.get('rounds', 1),
-                      'candidates_reviewed': sum(1 for r in cands if r.get('conclusion') is not None),
+                      # V2-61: a screened candidate is marked checked (records before V2-61 carry a conclusion).
+                      'candidates_reviewed': sum(1 for r in cands if r.get('checked') or r.get('conclusion') is not None),
                       'picked': slot.get('selected') is not None})
     return {'completed_shots': sum(1 for s in shots if s['picked']), 'total_shots': total, 'shots': shots,
             'final_review_done': cycle.get('phase') == 'complete'}
