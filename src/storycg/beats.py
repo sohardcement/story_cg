@@ -249,6 +249,16 @@ def rewrite_board(board, config):
             log(entry['number'], 'sometimes_overflow', 'shot.framing, shot.camera_angle',
                 before, combo(shot), '有时组合超额，改用同一动作的稳定组合')
 
+    # Rule 4 (V2-66): a rewrite can make a shot's framing and angle equal to the previous shot's; the writer could
+    # not know, so the code fills the composition_reason (display text) and logs it.
+    touched = {r['shot'] for r in rewrites if r['rule'] in ('off_table_stable', 'unusable_substitute', 'sometimes_overflow', 'first_shot_wide')}
+    for previous, entry in zip(shots, shots[1:]):
+        a, b = previous['shot'], entry['shot']
+        if ((a['framing'], a['camera_angle']) == (b['framing'], b['camera_angle']) and not b['composition_reason'].strip()
+                and {previous['number'], entry['number']} & touched):
+            b['composition_reason'] = 'same framing and angle as the previous shot after an automatic rewrite'
+            log(entry['number'], 'composition_reason_filled', 'shot.composition_reason', '空', '已补说明',
+                '改写后和上一镜景别、角度相同，程序补了 composition_reason；想换机位请改 framing 或 camera_angle')
     # Rule 5: indoor precipitation gets a window (budget-exempt in the filter, so it stays in closeups).
     scene_rules = (config or {}).get('scene_rules') or {}
     if scene_rules:
@@ -614,7 +624,7 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '',
         '## 1. 例子（只写了第 1 镜）',
         '```json', _guide_example(), '```',
-        '可以省略、由程序补默认值的字段：story_note、shot 的 action_tag、prop_tags、change_from_previous、'
+        '可以省略、由程序补默认值的字段：顶层的 story_note（和 shots 同级，不要写进 shot 里）、shot 的 action_tag、prop_tags、change_from_previous、'
         'composition_reason、unchanged_person_reason、subject_visibility、other_people、hand_owners、reflection、'
         'protagonist_instances，scene 的 environment_change、lighting、negative_tags。',
         '',
