@@ -573,63 +573,55 @@ def fill_defaults(parsed):
     return list(dict.fromkeys(filled))
 
 
-GUIDE_EXAMPLE = {
-    'shots': [{
-        'number': 1,
-        'scene': {'location': 'small park after rain', 'time': 'afternoon', 'weather': 'clear',
-                  'tags': ['outdoors', 'park', 'day', 'bench']},
-        'outfit': {'clothing_state': 'standard outfit', 'tags': ['<服装 tag>']},
-        'shot': {'narrative_role': 'establishing', 'framing': 'wide', 'camera_angle': 'side', 'pose': 'walking',
-                 'expression': 'light_smile', 'spatial_relation': 'she walks along the path past the bench'}}]}
-
-
-def _guide_example():
-    """One line per block of the example shot, so the example stays short and readable."""
-    entry = GUIDE_EXAMPLE['shots'][0]
-    dumps = lambda value: json.dumps(value, ensure_ascii=False)
-    return '\n'.join(['{"shots": [{', f' "number": {entry["number"]},', f' "scene": {dumps(entry["scene"])},',
-                      f' "outfit": {dumps(entry["outfit"])},', f' "shot": {dumps(entry["shot"])}', '}]}'])
+GUIDE_EXAMPLE = """{"schema_version": 3,
+ "scenes": {"room": {"tags": ["indoors", "bedroom", "day"]},
+            "street": {"tags": ["outdoors", "street", "day"]}},
+ "outfits": {"coat": {"tags": ["brown_coat"]}},
+ "shots": [
+  {"scene": "room", "pose": "sitting", "expression": "expressionless"},
+  {"scene": "room", "pose": "standing", "expression": "surprised"},
+  {"scene": "street", "outfit": "coat", "pose": "running", "expression": "worried", "prop_tags": ["umbrella"]},
+  {"scene": "street", "outfit": "coat", "pose": "walking", "expression": "light_smile", "framing": "wide", "camera_angle": "side"}
+ ]}"""
 
 
 def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
-    """V2-63 (D96, TASK-v2 §12 item 1): the writing guide, short enough for a small local model.
+    """P0.1 (beats v3): the writing guide. Scenes and outfits are named once; each shot only says what changes.
 
-    An example instead of the JSON schema, then the rules that compile checks or applies. With
-    character_guide_info (from character_guide), also the standard outfit tags, the vocabulary and the action tags.
+    With character_guide_info (from character_guide), also the standard outfit tags, the vocabulary and the action tags.
     """
     from storycg.shot_contract import EXPRESSION_TAGS
     lines = [
         f'# 故事分镜（beats）写作说明：{shot_count} 镜',
         '',
-        f'写一个 JSON 对象，照下面的例子写 {shot_count} 镜，number 从 1 开始。不要加例子以外的字段。',
+        f'写一个 JSON 对象，照下面的例子写 {shot_count} 镜。场景和服装各写一次、起名字，每一镜只写引用和变化的东西。',
         '',
-        '## 1. 例子（只写了第 1 镜）',
-        '```json', _guide_example(), '```',
-        '可以省略、由程序补默认值的字段：顶层的 story_note（和 shots 同级，不要写进 shot 里）、shot 的 action_tag、prop_tags、change_from_previous、'
-        'composition_reason、unchanged_person_reason、subject_visibility、other_people、hand_owners、reflection、'
-        'protagonist_instances，scene 的 environment_change、lighting、negative_tags。',
+        '## 1. 例子',
+        '```json', GUIDE_EXAMPLE, '```',
+        '- scenes：每个场景写一次 tags（地点、时间、天气、光线）。场景变了就用另一个名字。',
+        '- outfits：只在换衣服时写，每套写带颜色的 tag。镜里不写 outfit，就是角色的标准服装。',
+        '- 每镜必须有 scene、pose、expression。其余都可以省略：framing 和 camera_angle 省略时，程序按词汇表里这个 pose 的'
+        '稳定组合补上，并在 rewrites 里告诉你补了什么；找不到稳定组合时报错，那时自己写。',
+        '- 可选：framing、camera_angle、action_tag、prop_tags、spatial_relation（给人看的一句英文）、顶层 story_note。'
+        '相邻镜头景别角度相同、表情 pose 相同的说明，程序会补。',
         '',
         '## 2. 只有 tag 会画进图',
-        '- 进提示词的只有 scene.tags、scene.negative_tags、outfit.tags、shot.pose、shot.action_tag、shot.expression、'
-        'shot.prop_tags。只写 Danbooru 上存在的 tag（小写、下划线）。compile 输出的 prompt_preview 就是最终提示词。',
-        '- 其余字段是给人看的简短英文，不进提示词，只是不要写角色名和作品名。',
+        '- 进提示词的只有 scenes 和 outfits 里的 tags、pose、action_tag、expression、prop_tags。'
+        '只写 Danbooru 上存在的 tag（小写、下划线）。compile 输出的 prompt_preview 就是最终提示词。',
         '- 任何 tag 里都不写外貌（发色、瞳色、发型、肤色、体型），身份 tag 由程序加。',
-        '- 一镜只画一个瞬间。先后两个动作拆成两镜，spatial_relation 里不写 then、finally 这类顺序词。',
+        '- 一镜只画一个瞬间。先后两个动作拆成两镜。',
         '',
         '## 3. 字段',
-        '- shot.framing：wide 远景、full 全身、medium 中景、closeup 近景。shot.camera_angle：front、side、above、'
-        'below、behind、dutch。首镜和其他镜一样自己选景别。',
-        '- shot.pose：一个体位或动作 tag，优先用第 5 节词汇表里的。',
-        '- shot.action_tag：pose 之外还要画的一个动作，比如 drinking、reading、waving。借用意思不同的 tag，'
+        '- framing：wide 远景、full 全身、medium 中景、closeup 近景。camera_angle：front、side、above、below、behind、dutch。',
+        '- pose：一个体位或动作 tag，优先用第 5 节词汇表里的。',
+        '- action_tag：pose 之外还要画的一个动作，比如 drinking、reading、waving。借用意思不同的 tag，'
         '就会画成那个 tag 本来的意思。',
-        '- shot.expression 只能取：' + '、'.join(EXPRESSION_TAGS) + '。睡着、闭眼、哭这类状态写在这里。',
-        '- shot.prop_tags：这一镜要画出来的物件或动物，最多 1 个。只写在说明文字里的东西画不出来。',
-        '- scene.tags：地点、时间、天气、光线。物件上限：近景 0 个（道具除外），中景 2 个，全身和远景 3 个。'
-        '电脑、书、杯子、手机这类会引出动作的物件，只在它是这一镜的道具时才写。'
-        '室内写了下雨，程序会补窗户；睡着类 pose，程序会补闭眼。',
-        '- scene.negative_tags：不该出现的天气或元素，比如雨停了就写 rain。',
-        '- 相邻两镜景别和角度都相同，要写 composition_reason；表情和 pose 都相同，要写 unchanged_person_reason。',
-        '- 背影或遮挡主角的镜头最多 1 个。其他人只能是背影、路人、画面外或局部入镜，写进 other_people。',
+        '- expression 只能取：' + '、'.join(EXPRESSION_TAGS) + '。睡着、闭眼、哭这类状态写在这里。',
+        '- prop_tags：这一镜要画出来的物件或动物，最多 1 个。只写在说明文字里的东西画不出来。',
+        '- 场景物件上限：近景 0 个（道具除外），中景 2 个，全身和远景 3 个。电脑、书、杯子、手机这类会引出动作的物件，'
+        '只在它是这一镜的道具时才写。室内写了下雨，程序会补窗户；睡着类 pose，程序会补闭眼。',
+        '- 场景的 negative_tags：不该出现的天气或元素，比如雨停了就写 rain。',
+        '- 背影或遮挡主角的镜头最多 1 个。',
         '- 剧情靠拿错东西、认错人推进时，改成用表情和动作表达，并在 story_note 里用一句中文说明。',
         '',
         *_character_section(character_guide_info),
@@ -731,9 +723,10 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
     """
     from storycg.planning import derive_outfit_changes, production_schema, validate_storyboard
     from storycg.shot_contract import materialize, planner_schema
-    from storycg.shot_vocab import validate_shot_vocab
+    from storycg.shot_vocab import load_vocab, validate_shot_vocab
     from storycg.story_rules import validate_story_rules
     from storycg.tags import validate_tag_lists
+    from storycg.beats_v3 import expand as expand_v3, is_v3
 
     job_dir = Path(job_dir)
     beats_path = Path(beats)
@@ -761,6 +754,15 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             # V2-62 (D96): a copied schema header is harmless; drop it instead of failing the whole file.
             parsed.pop('$schema')
             record['dropped_keys'] = ['$schema']
+        v3_notes = []
+        if is_v3(parsed):
+            # P0.1: scenes and outfits are named once and expanded here; the pipeline after this reads the old format.
+            v3_errors = []
+            parsed, v3_notes = expand_v3(parsed, identity, load_vocab(config)['items'],
+                                         lambda shot, field, problem, fix: _add(v3_errors, shot, field, problem, fix))
+            record['expanded_from'] = 'beats_v3'
+            if v3_errors:
+                raise BeatsError(v3_errors)
         record['defaults_filled'] = fill_defaults(parsed)  # V2-63 (D96): omitted boilerplate gets its one value
         schema_errors = list(Draft202012Validator(planner_schema(production_schema())).iter_errors(parsed))
         if schema_errors:
@@ -770,7 +772,10 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
                 _add(errors, number, field, f'schema: {error.message}', '按 beats-guide 中的 schema 修正该字段')
             raise BeatsError(errors)
         board = materialize(parsed)
+        for note in v3_notes:
+            _append_note(board, note['text'] + '。')
         board, rewrites = rewrite_board(board, config)
+        rewrites = [*v3_notes, *rewrites]
         if record.get('dropped_keys'):
             rewrites = [{'shot': None, 'rule': 'dropped_key', 'field': '$schema', 'from': '$schema', 'to': None,
                          'reason': 'beats 文件不需要 schema 头', 'text': '顶层的 $schema 字段 → 删除，beats 文件不需要 schema 头'},
