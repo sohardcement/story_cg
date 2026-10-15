@@ -91,8 +91,8 @@ def _split_prop_attribute(tag, kind, registry, path):
 
 
 class TagRegistry:
-    def __init__(self, cache_dir, *, client):
-        self.source = _CachedDanbooru(Path(cache_dir), client)
+    def __init__(self, cache_dir, *, client, max_age_days=None):
+        self.source = _CachedDanbooru(Path(cache_dir), client, max_age_days=max_age_days)
         self.records = []
 
     def lookup(self, value):

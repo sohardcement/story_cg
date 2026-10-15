@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -65,6 +66,32 @@ def end_wait(root):
         update(root, waiting_since=None, paused_seconds=record.get('paused_seconds', 0)+duration)
     if stopped:
         update(root,finished_at=None)
+
+
+def install_exit_record(root):
+    """V2-64 (D96): a worker that is stopped by SIGTERM or SIGINT leaves a record instead of a silent phase."""
+    import signal
+
+    def on_signal(signum, frame):
+        record = read(root, 'agent.json')
+        if record.get('phase') not in ('completed', 'stopped', 'cancelled', 'needs_user', 'awaiting_approval'):
+            update(root, phase='cancelled' if signum == signal.SIGTERM and record.get('cancel_requested') else 'stopped',
+                   needs_user=False, error=f'worker 收到信号 {signal.Signals(signum).name} 后退出；可以运行 resume 接着跑')
+        os._exit(1)
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+
+
+def cancel_job(root):
+    """V2-64 (D96): the one way for a caller to stop a running job. Marks the request, then ends the worker."""
+    import signal
+    record = read(root, 'agent.json')
+    pid = record.get('worker_pid')
+    if not worker_alive(root):
+        raise ValueError('job has no running worker; nothing to cancel')
+    update(root, cancel_requested=True)
+    os.kill(pid, signal.SIGTERM)
+    return pid
 
 
 def worker_alive(root):
@@ -637,7 +664,7 @@ def main(argv):
     sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
     sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
     sub.add_parser('prune', help='remove finished jobs\' intermediate PNGs and old compile scratch folders (--days N; --apply deletes)')
-    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', '_worker'):
+    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', 'cancel', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
         if name in ('make', 'approve', 'resume'):
@@ -690,7 +717,10 @@ def main(argv):
             update(root, phase='queued', needs_user=False, storyboard_first=confirm, approved=False, **beats_fields)
         elif not (root/'job.json').exists():
             raise ValueError('story job not found')
-        if args.command != 'status':
+        if args.command == 'cancel':
+            cancel_job(root)  # before the job lock: the running worker holds it
+            time.sleep(1.5)
+        elif args.command != 'status':
             with (root/'agent.lock').open('a') as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX if args.command == '_worker' else fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -769,6 +799,8 @@ def main(argv):
                 elif args.command == 'resume' and read(root, 'agent.json').get('phase') in ('awaiting_approval', 'completed'):
                     pass
                 elif args.command == '_worker' or getattr(args, 'foreground', False):
+                    if args.command == '_worker':
+                        install_exit_record(root)
                     with contextlib.redirect_stdout(sys.stderr):
                         execute(root)
                 else:

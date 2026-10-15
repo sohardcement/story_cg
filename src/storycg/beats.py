@@ -721,7 +721,11 @@ def _tag_registry(job_dir, tag_registry, record):
     import httpx
     from storycg.tags import TagRegistry
     with httpx.Client(base_url='https://danbooru.donmai.us', timeout=30, trust_env=False) as tag_client:
-        registry = TagRegistry(job_dir / 'cache' / 'tags', client=tag_client)
+        # V2-64 (D96): one project-level cache for every compile (it was a new folder per compile), 30 days.
+        job_cache = job_dir / 'cache' / 'tags'  # a job that already carries its own cache keeps using it
+        project_cache = Path(__file__).resolve().parents[2] / 'cache' / 'tags'
+        registry = TagRegistry(job_cache if job_cache.is_dir() and any(job_cache.iterdir()) else project_cache,
+                               client=tag_client, max_age_days=30)
         try:
             yield registry
         finally:
