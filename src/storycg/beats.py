@@ -242,7 +242,7 @@ def rewrite_board(board, config):
 NOT_NEW_OUTFIT_TAGS = frozenset({'towel', 'bath_towel', 'naked_towel', 'barefoot', 'blanket'})
 
 
-def _new_outfit_colour_errors(shots, identity):
+def _new_outfit_colour_errors(shots, identity, config=None):
     """V2-47: a segment of shots in a new outfit must name a colour in one of its outfit tags.
 
     Segments split where the canonical outfit tag set changes (the same rule as change_at_shot). A segment's new tags
@@ -251,6 +251,7 @@ def _new_outfit_colour_errors(shots, identity):
     """
     from storycg.tags import canonical_tag, color_split
     standard = {canonical_tag(item['tag']) for item in (identity or {}).get('default_outfit_tags', [])}
+    exempt = set(NOT_NEW_OUTFIT_TAGS)
     if not standard:
         return []
     segments = []
@@ -260,7 +261,7 @@ def _new_outfit_colour_errors(shots, identity):
             segments.append((index + 1, tags))
     errors = []
     for number, tags in segments:
-        new = list(dict.fromkeys(tag for tag in tags if tag not in standard and tag not in NOT_NEW_OUTFIT_TAGS))
+        new = list(dict.fromkeys(tag for tag in tags if tag not in standard and tag not in exempt))
         if new and not any(color_split(tag) for tag in new):
             _add(errors, number, 'outfit.tags',
                  f'第 {number} 镜换上的新衣服没有写颜色（{", ".join(new)}）：只写款式时模型容易画回角色自己的衣服，前后镜的颜色也会变',
@@ -411,7 +412,7 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
                  f'第 {index + 1} 镜的服装状态变成了 {state}，但服装 tag 没变，请写出 {state} 对应的服装 tag',
                  f'把 {state} 对应的服装 tag 写进 outfit.tags，或保持服装状态与上一镜相同')
         previous_outfit = (state, outfit_tags)
-    errors += _new_outfit_colour_errors(shots, identity)
+    errors += _new_outfit_colour_errors(shots, identity, config)
 
     identity_terms = []
     if identity:
@@ -513,6 +514,8 @@ def character_guide(identity, config=None):
     if tag and not wai_list.tier_row(tag, wai_list.settings_from(config)):
         # V2-38: only characters on the WAI list are supported; the guide says so instead of failing.
         unsupported = '不支持：' + wai_list.refusal_question(wai_list.settings_from(config))
+    if tag and unsupported is None:
+        unsupported = '不支持：' + question if question else None
     return {'character': identity.get('character_tag') or identity.get('input_name'),
             'locked': identity.get('status') == 'locked',
             'unsupported': unsupported,
