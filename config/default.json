@@ -33,7 +33,7 @@
     "denoise": 1.0
   },
   "budget": {
-    "max_images_per_job": 40,
+    "max_images_per_job": 60,
     "image_wait_minutes": 60
   },
   "camera_tags": {

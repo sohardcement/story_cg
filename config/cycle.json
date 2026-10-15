@@ -15,8 +15,8 @@
       }
     }
   },
-  "max_images": 40,
-  "max_vision_calls": 139,
+  "max_images": 60,
+  "max_vision_calls": 200,
   "story_rules": {
     "max_obscured": 1,
     "detached_position_requires_separated": true,
