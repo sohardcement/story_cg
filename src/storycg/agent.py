@@ -626,13 +626,17 @@ def beats_cli(argv):
 
 
 def main(argv):
+    if argv and argv[0] == 'prune':
+        from storycg.prune import prune_cli
+        return prune_cli(argv[1:])
     if argv and argv[0] in ('beats-guide', 'compile'):
         return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
-    # Help-only entries: beats-guide and compile are dispatched before this parser runs.
+    # Help-only entries: beats-guide, compile and prune are dispatched before this parser runs.
     sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
     sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
+    sub.add_parser('prune', help='remove finished jobs\' intermediate PNGs and old compile scratch folders (--days N; --apply deletes)')
     for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
