@@ -444,6 +444,16 @@ def _final_shot_lines(root, cycle, number, selected):
     return deviations
 
 
+def vision_failures(root):
+    """V2-65: (failed calls, all calls) of the vision service in this job, from review_log.jsonl (read only)."""
+    path = Path(root) / 'review_log.jsonl'
+    if not path.exists():
+        return 0, 0
+    rows = [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
+    responses = [r for r in rows if r.get('event') == 'response']
+    return sum(1 for r in responses if r.get('status') != 'pass'), len(responses)
+
+
 def result_text(root, store=None):
     """V2-24 (TASK-v2 §10.3 / §10.4 notes): the whole result.md of a candidate job, in the order
     overview, files, each shot, blind narrative, known issues, detail pointer. No group verdict and no
@@ -518,6 +528,10 @@ def result_text(root, store=None):
     group = list(dict.fromkeys(k for number, selected in picks.items()
                                for k in _unreliable_keys(root, selected, cycle, number)))
     lines += ['## 已观察到的偏差', '']
+    failed_calls, all_calls = vision_failures(root)
+    if failed_calls:  # V2-65: a service that was down must not read as "no deviations"
+        lines.append(f'- **视觉审核有 {failed_calls}/{all_calls} 次调用失败**（服务不可用或超时）：失败的部分没有审核结果，'
+                     '下面写“没有观察到偏差”的地方只表示没有记录，不表示审核通过。请看图确认。')
     lines += _group_deviation_lines(root, group)
     lines.append('')
     # V2-34: the final review's narrative comparison is reported here; its per-shot items follow each shot.
@@ -527,7 +541,7 @@ def result_text(root, store=None):
     # V2-45: a shot with nothing to list gets no subsection; the clean shots are summed up in one line at the end.
     clean = []
     for number in numbers:
-        if _shot_is_clean(root, cycle, number, picks[number]):
+        if not failed_calls and _shot_is_clean(root, cycle, number, picks[number]):
             clean.append(number)
             continue
         lines.append(f'### 第 {number} 镜')
@@ -559,6 +573,9 @@ def result_text(root, store=None):
         selected = next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None) if slot else None
         if selected is not None and selected.get('nothing_detected'):
             issues.append(f'第 {number} 镜选中的候选里，本机检测器没找到人，放大检测也没找到脸，主角可能很小或没画出来，请看图确认。')
+    if failed_calls:
+        issues.append(f'视觉审核有 {failed_calls}/{all_calls} 次调用失败：多余肢体检查、并排挑选、整组终审里失败的部分没有结果，'
+                      '挑选可能退回按候选号，看图复述可能缺失，请人工看图。')
     issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
     if board.get('story_note'):
         issues.append('分镜改写提醒（story_note）：' + board['story_note'])
