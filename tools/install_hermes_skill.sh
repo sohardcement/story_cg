@@ -1,40 +1,34 @@
 #!/usr/bin/env bash
-# Run by supervisor; no Hermes global configuration changes.
+# Run by supervisor. Check only: never copies, links or deletes anything (V2-59, D96).
 set -euo pipefail
-force=false
-if [[ ${1:-} == --force && $# == 1 ]]; then
-  force=true
-elif [[ $# != 0 ]]; then
-  printf '用法：%s [--force]\n' "$0" >&2
+if [[ $# != 0 ]]; then
+  printf '用法：%s\n' "$0" >&2
   exit 2
 fi
 project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source_dir="$project_root/skill/story-cg"
-target="$HOME/.hermes/skills/story-cg"
-if [[ -e "$target" || -L "$target" ]]; then
-  if [[ "$force" != true ]]; then
-    printf '拒绝覆盖已有目标：%s；明确需要替换时使用 --force。\n' "$target" >&2
-    exit 1
-  fi
-  printf '警告：--force 将替换 %s（不修改全局配置）。\n' "$target" >&2
-  if [[ -L "$target" || ! -d "$target" ]]; then
-    printf '拒绝替换符号链接或非目录目标。\n' >&2
-    exit 1
-  fi
+link="$HOME/.agents/skills/story-cg"
+duplicate="$HOME/.hermes/skills/story-cg"
+status=0
+if [[ ! -e "$link" && ! -L "$link" ]]; then
+  printf '未找到 %s。请执行：ln -s %s %s（脚本不替你执行）\n' "$link" "$source_dir" "$link" >&2
+  status=1
+elif [[ "$(readlink -f -- "$link")" != "$(readlink -f -- "$source_dir")" || ! -d "$link" ]]; then
+  printf '%s 指向的真实路径与项目不一致（或目录不存在）：\n  实际：%s\n  应为：%s\n' \
+    "$link" "$(readlink -f -- "$link")" "$(readlink -f -- "$source_dir")" >&2
+  status=1
+else
+  printf '已就绪：%s -> %s\n' "$link" "$(readlink -f -- "$link")"
 fi
-mkdir -p -- "$(dirname -- "$target")"
-staging=$(mktemp -d "$(dirname -- "$target")/.story-cg.XXXXXXXX")
-trap 'rm -rf -- "$staging"' EXIT
-cp -R -- "$source_dir/." "$staging/"
-printf '%s\n' "$project_root" > "$staging/project_path"
-chmod +x "$staging/scripts/storycg"
-if [[ -d "$target" ]]; then rm -rf -- "$target"; fi
-mv -- "$staging" "$target"
-printf '已安装：%s\n' "$target"
+if [[ -e "$duplicate" || -L "$duplicate" ]]; then
+  printf '发现重复的 story-cg，Hermes 会拒绝加载；请删除 ~/.hermes/skills/story-cg\n' >&2
+  status=1
+fi
 if command -v hermes >/dev/null 2>&1; then
-  # Preserve command failures; list can show whether Hermes discovers the skill.
+  # Same rule as before: a failing list is an error; a list without story-cg is only reported.
   listing=$(hermes skills list) || { printf 'hermes skills list 失败，请监工检查。\n' >&2; exit 1; }
   printf '%s\n' "$listing" | awk '/story-cg/ {print; found=1} END {if (!found) print "hermes skills list 未显示 story-cg，请监工检查。"}'
 else
-  printf '未发现 hermes 命令；安装文件已准备，请在 Hermes 环境执行 hermes skills list。\n' >&2
+  printf '未发现 hermes 命令；请在 Hermes 环境执行 hermes skills list。\n' >&2
 fi
+exit "$status"

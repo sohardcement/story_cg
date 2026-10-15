@@ -1,12 +1,14 @@
 """V2-21 (TASK-v2 §10.3): per-shot candidates, screening, selection, delivery without repair.
 
 Default delivery. Each shot gets `candidates_per_shot` images with distinct, reproducible seeds.
-Each candidate is audited by the existing audit_candidate (no new kind of model call). Candidates
-failing the protagonist-count gate or showing a positive extra-body-part finding are screened out.
-The selection order is the failure tiers of TASK-v2 §0 (identity, then action/expression, then
-minor count, then candidate number). A shot whose candidates all fail screening gets one more
-round of the same size; if still all screened, the best of all candidates is delivered and the
-reason is written down. Since V2-28 this is the only delivery (the repair delivery was removed).
+Each candidate is screened by cycle.audit_candidate (V2-61, D96: local detection plus one extra-body-part
+question; no per-candidate identity or single-shot review). Candidates failing the protagonist-count gate
+or showing a positive extra-body-part finding are screened out. The rest go to the side-by-side pick
+(pairwise.resolve); the ranking only puts a candidate with nothing detected behind its shot mates, then
+orders by candidate number. A shot whose candidates all fail screening gets one more round of the same
+size; if still all screened, the best of all candidates is delivered and the reason is written down.
+The selected candidates' identity and outfit are reviewed once, in the final review.
+Since V2-28 this is the only delivery (the repair delivery was removed).
 """
 import copy
 import hashlib
@@ -29,12 +31,8 @@ def is_prop_item(key):
     return key == 'props' or key.startswith('prop_')
 
 
-LEVEL_NAMES = ('count, extra body part or nothing detected (D29 level 0)','identity item (D29 level 1)',
-               'outfit (D29 level 2)', 'action and expression (reliable items)',
-               'other reliable items (not props)', 'minor count (not props)', 'candidate number')
-# Prop items (TASK-v2 §0: props are décor, never a veto) take no part in the comparison at all.
-ACTION_EXPRESSION_KEYS = ('action', 'expression')
-RANK_CRITICAL = 99  # an audit with no data ranks last; it is never preferred over a complete audit
+# V2-61 (D96): the ranking has two levels; the side-by-side pick decides among the screened-in candidates.
+LEVEL_NAMES = ('nothing detected (V2-53: no face or body found, behind its shot mates)', 'candidate number')
 
 
 def base_seed(config, job_id):
@@ -60,7 +58,7 @@ def screen_reasons(audit):
     if reliable and (item.get('status') in ('fail', 'duplicate') or observed == 'duplicate' or top == 'duplicate'):
         reasons.append(f'人数检测不过（protagonist_count: {item.get("status") or top or observed}）')
     if extra_part.is_positive(audit):
-        location = audit['consistency']['data'][extra_part.ITEM].get('location', 'unknown')
+        location = extra_part.item_of(audit).get('location', 'unknown')
         reasons.append(f'多余身体局部阳性（{location}）')
     return reasons
 
@@ -74,37 +72,14 @@ def nothing_detected(audit, face):
 
 
 def rank_key(audit, number, face=None):
-    """Lower is better, compared lexicographically over LEVEL_NAMES (V2-21 rework 1).
+    """V2-61 (D96): [nothing detected, candidate number]; lower is better, compared in order.
 
-    Levels 0-2 are the failure tiers of cycle.failure_tier (count/extra, identity, outfit); level 3
-    is action and expression; level 4 is every other reliable failure; level 5 is the minor count;
-    level 6 is the candidate number. Prop items (props, prop_*) are left out of every level,
-    including minor. Only reliable failures count; cycle.failure_tier is used unchanged.
-    V2-53: a candidate with nothing detected (see nothing_detected) gets +1 on level 0, so it ranks
-    behind the others of its shot; it is not screened out. `face` is its face_refine record, if any.
+    Screened-out candidates are left out before ranking (pick), and the side-by-side pick chooses among the rest;
+    the ranking decides only when that pick does not run or does not agree with itself. V2-53: a candidate with
+    nothing detected (see nothing_detected) ranks behind its shot mates; it is not screened out. `face` is its
+    face_refine record, if any. Before V2-61 the rank had seven levels built from the per-candidate audit.
     """
-    results = [audit.get('single', {}), audit.get('consistency', {})]
-    if not all(r.get('data') for r in results):
-        return [RANK_CRITICAL, 0, 0, 0, 0, 0, number]
-    levels = [0, 0, 0, 0, 0]
-    minor = 0
-    for result in results:
-        for key, item in result.get('data', {}).items():
-            if not isinstance(item, dict) or is_prop_item(key):
-                continue
-            if item.get('status') == 'minor':
-                minor += 1
-            if item.get('status') == 'fail' and item.get('reliability') == 'reliable':
-                tier = frozen.failure_tier(key)
-                if tier < 3:
-                    levels[tier] += 1
-                elif reliability_key(key) in ACTION_EXPRESSION_KEYS:
-                    levels[3] += 1
-                else:
-                    levels[4] += 1
-    if nothing_detected(audit, face):
-        levels[0] += 1
-    return [levels[0], levels[1], levels[2], levels[3], levels[4], minor, number]
+    return [1 if nothing_detected(audit, face) else 0, number]
 
 
 def pick(records):
@@ -177,7 +152,7 @@ def _run_round(root, store, entry, board, identity, config, client, vlm, budget,
         label = f'cand_{number:02d}_{n:02d}'
         record = {'candidate': n, 'round': round_no, 'seed': seed, 'attempt_number': attempt['attempt_number'],
                   'status': attempt['status'], 'image': None, 'screen': [], 'rank': None,
-                  'audit_label': label, 'conclusion': None, 'prompt_id': attempt.get('prompt_id')}
+                  'audit_label': label, 'checked': False, 'prompt_id': attempt.get('prompt_id')}
         if face is not None:
             record['face_refine'] = face_refine_summary(face)
         if attempt['status'] == 'completed':
@@ -185,7 +160,7 @@ def _run_round(root, store, entry, board, identity, config, client, vlm, budget,
             audit = audit_candidate(root, number, attempt['image'], entry, board, identity, config, vlm, label)
             record['screen'] = screen_reasons(audit)
             record['rank'] = rank_key(audit, n, attempt.get('face_refine'))
-            record['conclusion'] = audit['conclusion']
+            record['checked'] = True  # V2-61 (Q4 of D96): no conclusion is stored, only the screen and the rank
             if nothing_detected(audit, attempt.get('face_refine')):
                 record['nothing_detected'] = True
         else:
@@ -312,17 +287,30 @@ def _audit_path(root, selected):
     return root / 'cycle_artifacts' / f"{selected['audit_label']}.json"
 
 
-def _unreliable_keys(root, selected):
-    """Categories of the selected candidate's audit that were not reliably reviewed (read only)."""
-    if selected is None or not _audit_path(root, selected).exists():
-        return []
-    from storycg.display import read_json
-    audit = read_json(_audit_path(root, selected))
+def _final_consistency(cycle, number):
+    """V2-61: the final review's identity/outfit/scene items of one shot (the only identity review since V2-61)."""
+    for entry in (cycle.get('final_review') or {}).get('consistency') or []:
+        if entry.get('shot') == number:
+            return entry.get('data') or {}
+    return {}
+
+
+def _unreliable_keys(root, selected, cycle=None, number=None):
+    """Categories not reliably reviewed for this shot: the selected candidate's own audit (jobs before V2-61)
+    and the final review's consistency items of the shot (read only)."""
     keys = []
-    for part in ('single', 'consistency'):
-        for key, item in ((audit.get(part) or {}).get('data') or {}).items():
-            if isinstance(item, dict) and not is_prop_item(key) and item.get('reliability') != 'reliable':
-                keys.append(key)
+    if selected is not None and _audit_path(root, selected).exists():
+        from storycg.display import read_json
+        audit = read_json(_audit_path(root, selected))
+        for part in ('single', 'consistency'):
+            for key, item in ((audit.get(part) or {}).get('data') or {}).items():
+                if isinstance(item, dict) and not is_prop_item(key) and item.get('reliability') != 'reliable':
+                    keys.append(key)
+    for key, item in (_final_consistency(cycle or {}, number).items() if number is not None else []):
+        # Scene items are the final review's own scene check, not an identity category.
+        if isinstance(item, dict) and not is_prop_item(key) and not key.startswith('scene_') \
+                and item.get('reliability') != 'reliable':
+            keys.append(key)
     return list(dict.fromkeys(keys))
 
 
@@ -356,7 +344,9 @@ def _audit_deviation_lines(root, selected):
         return [head, f"- 审核记录缺失：cycle_artifacts/{selected['audit_label']}.json"]
     deviations = _audit_deviation_items(root, selected)
     lines = [head]
-    if not deviations:
+    from storycg.display import read_json
+    reviewed_here = any(key in read_json(audit_path) for key in ('single', 'consistency'))
+    if not deviations and reviewed_here:  # V2-61: a screen record has no review of its own; the final review follows
         lines.append('- 审核观察到的偏差：无（没有 fail 或 minor 项）')
     # Six lines per shot at most: the head always stays; deviations take the rest.
     room = DEVIATION_LINES_PER_SHOT - 1
@@ -525,7 +515,8 @@ def result_text(root, store=None):
     for number in numbers:
         slot = store.get(str(number))
         picks[number] = None if slot is None else next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
-    group = list(dict.fromkeys(k for selected in picks.values() for k in _unreliable_keys(root, selected)))
+    group = list(dict.fromkeys(k for number, selected in picks.items()
+                               for k in _unreliable_keys(root, selected, cycle, number)))
     lines += ['## 已观察到的偏差', '']
     lines += _group_deviation_lines(root, group)
     lines.append('')
@@ -645,7 +636,7 @@ def candidate_records(store):
                       'attempt_number': r['attempt_number'], 'status': r['status'],
                       'image': r['image'], 'screen': r['screen'],
                       'screen_codes': [screen_code(x) for x in r['screen']], 'rank': r['rank'],
-                      'conclusion': r['conclusion'], 'selected': r['candidate'] == slot['selected'],
+                      'selected': r['candidate'] == slot['selected'],
                       'reason': slot['reason'] if r['candidate'] == slot['selected'] else None,
                       'user_pick': r['candidate'] == slot['selected'] and slot.get('user_pick') is not None,
                       'prompt_id': r.get('prompt_id'), 'face_refine': r.get('face_refine')}

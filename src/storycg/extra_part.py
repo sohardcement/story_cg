@@ -60,10 +60,18 @@ def merge_into(consistency, extra):
     return consistency
 
 
+def item_of(audit):
+    """The check's data item: the screen's top-level extra_body_part (V2-61), or the consistency item of an older audit."""
+    audit = audit or {}
+    extra = audit.get(ITEM)
+    if isinstance(extra, dict) and 'data' in extra:
+        return (extra.get('data') or {}).get(ITEM, {})
+    return (audit.get('consistency') or {}).get('data', {}).get(ITEM, {})
+
+
 def is_positive(audit):
-    """True when the audit's consistency result reports a reliable extra-body-part failure."""
-    item = (audit or {}).get('consistency', {}).get('data', {}).get(ITEM, {})
-    return item.get('status') == 'fail'
+    """True when the screen (or an older audit's consistency result) reports an extra-body-part failure."""
+    return item_of(audit).get('status') == 'fail'
 
 
 def adopt(before_positive, after_positive):
@@ -82,5 +90,5 @@ def strip(results):
 
 
 def known_issue(number, audit):
-    item = audit['consistency']['data'][ITEM]
+    item = item_of(audit)
     return (f'- 第 {number} 镜疑似有多余身体局部（{item.get("location", "unknown")}：{item.get("reason", "")}），待人工复看')

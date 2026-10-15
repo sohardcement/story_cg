@@ -20,7 +20,7 @@ def wai_locked(identity, config=None):
 
 def ensure_wai_identity(job_dir,identity,config):
     """The identity gate for every command. A locked character outside the WAI list stops here (needs_user,
-    reason character_not_in_wai_list); a listed one keeps its WAI match evidence. No ComfyUI or vision call."""
+    reason character_not_in_wai_list); a listed one keeps its WAI match evidence. No ComfyUI or vision call.
     from storycg.identity_enrichment import outfit_hair_ornaments
     from storycg import wai_list
     from storycg.tiers import wai_list_result

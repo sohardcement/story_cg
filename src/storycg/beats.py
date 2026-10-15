@@ -18,6 +18,11 @@ from storycg.state import save_json_atomic
 
 OBSCURED_TAG = re.compile(r'back view|from behind|covered face|hidden face|face out of frame')
 ACTION_FIELDS = {'pose', 'action', 'description', 'spatial_relation', 'change_from_previous', 'tags'}
+# V2-62 (D96, TASK-v2 §12 item 5): the fields that enter the image prompt. Only these get the appearance check;
+# the display fields (prose such as composition_reason, spatial_relation, clothing_state, scene.location) are
+# checked for character and work names only.
+PROMPT_FIELDS = frozenset({'scene.tags', 'scene.negative_tags', 'outfit.tags', 'shot.pose', 'shot.action',
+                           'shot.description', 'shot.tags', 'shot.action_tag', 'shot.expression', 'shot.prop_tags'})
 
 
 class BeatsError(ValueError):
@@ -162,6 +167,27 @@ def rewrite_board(board, config):
                                                item['camera_angle'] != shot['camera_angle'], item['id']))
 
     shots = board['shots']
+    # Rule 0 (V2-62, D96): the first shot is wide and establishing (TASK-v2 §9 item 3); the code sets it.
+    if shots:
+        first = shots[0]['shot']
+        if first.get('narrative_role') != 'establishing':
+            log(1, 'first_shot_role', 'shot.narrative_role', f"narrative_role {first.get('narrative_role')!r}",
+                "narrative_role 'establishing'", '首镜固定为 establishing（原文只作展示，不进提示词）')
+            first['narrative_role'] = 'establishing'
+        if first.get('framing') != 'wide':
+            before = combo(first)
+            first['framing'] = 'wide'
+            log(1, 'first_shot_wide', 'shot.framing', before, combo(first), '首镜固定用远景')
+    # Rule 0b (V2-62): an outfit is decided by its tags. A shot with the previous shot's outfit tags keeps the
+    # previous clothing_state text, so the review checklist matches what is drawn.
+    from storycg.tags import canonical_tag as _canonical
+    for previous, entry in zip(shots, shots[1:]):
+        same_tags = {_canonical(t) for t in previous['outfit']['tags']} == {_canonical(t) for t in entry['outfit']['tags']}
+        if same_tags and entry['outfit']['clothing_state'] != previous['outfit']['clothing_state']:
+            log(entry['number'], 'clothing_state_aligned', 'outfit.clothing_state',
+                repr(entry['outfit']['clothing_state']), repr(previous['outfit']['clothing_state']),
+                '服装 tag 和上一镜相同，服装状态沿用上一镜；要画出变化，请写出对应的服装 tag')
+            entry['outfit']['clothing_state'] = previous['outfit']['clothing_state']
     # Rule 1: an off-table combo takes the best stable entry for its pose.
     for index, entry in enumerate(shots):
         shot = entry['shot']
@@ -242,7 +268,7 @@ def rewrite_board(board, config):
 NOT_NEW_OUTFIT_TAGS = frozenset({'towel', 'bath_towel', 'naked_towel', 'barefoot', 'blanket'})
 
 
-def _new_outfit_colour_errors(shots, identity):
+def _new_outfit_colour_errors(shots, identity, config=None):
     """V2-47: a segment of shots in a new outfit must name a colour in one of its outfit tags.
 
     Segments split where the canonical outfit tag set changes (the same rule as change_at_shot). A segment's new tags
@@ -251,6 +277,7 @@ def _new_outfit_colour_errors(shots, identity):
     """
     from storycg.tags import canonical_tag, color_split
     standard = {canonical_tag(item['tag']) for item in (identity or {}).get('default_outfit_tags', [])}
+    exempt = set(NOT_NEW_OUTFIT_TAGS)
     if not standard:
         return []
     segments = []
@@ -260,7 +287,7 @@ def _new_outfit_colour_errors(shots, identity):
             segments.append((index + 1, tags))
     errors = []
     for number, tags in segments:
-        new = list(dict.fromkeys(tag for tag in tags if tag not in standard and tag not in NOT_NEW_OUTFIT_TAGS))
+        new = list(dict.fromkeys(tag for tag in tags if tag not in standard and tag not in exempt))
         if new and not any(color_split(tag) for tag in new):
             _add(errors, number, 'outfit.tags',
                  f'第 {number} 镜换上的新衣服没有写颜色（{", ".join(new)}）：只写款式时模型容易画回角色自己的衣服，前后镜的颜色也会变',
@@ -268,21 +295,24 @@ def _new_outfit_colour_errors(shots, identity):
     return errors
 
 
-def _dropped_prop_tag_errors(board, records):
-    """V2-55: a scene tag that validate_tag_lists removed is still the shot's prop tag, so report it on that shot."""
-    errors, seen = [], set()
+def _drop_missing_prop_tags(board, records):
+    """V2-55 reported a scene tag that validate_tag_lists removed while the shot still named it as its prop.
+    V2-63 (D96): the code removes it from prop_tags too and returns rewrite records; the object is not drawn."""
+    rewrites, seen = [], set()
     for record in records:
         match = re.match(r'^(\d+)\.scene\.tags$', record.get('field') or '')
         if record.get('action') != 'discarded' or not match:
             continue
         number, tag = int(match.group(1)), record['input']
         entry = next(e for e in board['shots'] if e['number'] == number)
-        if tag in entry['shot'].get('prop_tags', []) and (number, tag) not in seen:
+        props = entry['shot'].get('prop_tags', [])
+        if tag in props and (number, tag) not in seen:
             seen.add((number, tag))
-            _add(errors, number, 'shot.prop_tags',
-                 f'道具 tag {tag} 在 Danbooru 上不存在或已废弃，已从 scene.tags 删除，但这一镜的 prop_tags 还用着它',
-                 '换一个 Danbooru 上存在的 tag，或从 prop_tags 去掉')
-    return errors
+            entry['shot']['prop_tags'] = [p for p in props if p != tag]
+            text = f'第 {number} 镜：shot.prop_tags 的 {tag} → 删除，Danbooru 上不存在或已废弃，这一镜不会画出它'
+            rewrites.append({'shot': number, 'rule': 'prop_tag_unavailable', 'field': 'shot.prop_tags', 'from': tag,
+                             'to': None, 'reason': 'Danbooru 上不存在或已废弃', 'text': text})
+    return rewrites
 
 
 def _action_tag_errors(errors, number, entry, tag_registry):
@@ -402,16 +432,9 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
                  '与上一镜表情和动作相同，需要 unchanged_person_reason',
                  '改表情或动作，或填写 unchanged_person_reason')
 
-    previous_outfit = None
-    for index, entry in enumerate(shots):
-        state = entry['outfit']['clothing_state']
-        outfit_tags = {canonical_tag(tag) for tag in entry['outfit']['tags']}
-        if previous_outfit is not None and state != previous_outfit[0] and outfit_tags == previous_outfit[1]:
-            _add(errors, index + 1, 'outfit.clothing_state',
-                 f'第 {index + 1} 镜的服装状态变成了 {state}，但服装 tag 没变，请写出 {state} 对应的服装 tag',
-                 f'把 {state} 对应的服装 tag 写进 outfit.tags，或保持服装状态与上一镜相同')
-        previous_outfit = (state, outfit_tags)
-    errors += _new_outfit_colour_errors(shots, identity)
+    # V2-62 (D96): a clothing_state change without an outfit tag change is no longer an error; rewrite_board
+    # aligns the text to the previous shot (rule 0b) and logs it.
+    errors += _new_outfit_colour_errors(shots, identity, config)
 
     identity_terms = []
     if identity:
@@ -432,7 +455,9 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
         for field, value, body_action in pairs:
             # V2-49: an action_tag, and its copy in shot.tags, is judged once by _action_tag_errors.
             covered = field in ('shot.action_tag', 'shot.tags') and value == shot.get('action_tag')
-            if not covered and appearance_forbidden(value, body_action=body_action):
+            # V2-62: action, description and the pose's copy in tags are derived from pose; report it once, on pose.
+            covered = covered or field in ('shot.action', 'shot.description') or (field == 'shot.tags' and value == shot.get('pose'))
+            if not covered and field in PROMPT_FIELDS and appearance_forbidden(value, body_action=body_action):
                 if body_action and body_target_violation(value) == 'clause':
                     parts = '、'.join(body_part_words(value))
                     verbs = '、'.join(body_action_verbs())
@@ -473,9 +498,9 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
                  f"改用替代组合：{substitute_text(entry)}；或改用稳定组合")
     sometimes = [item for item in classified if item['grade'] == 'sometimes']
     if len(sometimes) > 1:
-        for item in sometimes:
+        for item in sometimes:  # V2-62 (D96): off-table shots are 'untested' and take no part in this quota
             _add(errors, item['shot'], 'shot.pose',
-                 f"动作 {item['action']} 为有时{'（表外）' if item['off_table'] else ''}；每组最多 1 镜有时（含表外）",
+                 f"动作 {item['action']} 为有时；每组最多 1 镜有时（表外动作不算）",
                  '换用稳定组合；或保留 1 镜有时，其余改为稳定组合')
     return errors
 
@@ -495,8 +520,7 @@ def collision_notes(config=None):
         if len(items) < 2:
             continue
         parts = [f"第 {item['id']} 项表情 {'/'.join(item['expression_tags']) or '（无）'}" for item in items]
-        notes.append(f"{framing}/{angle}/{action}：" + '；'.join(parts)
-                     + '。本镜表情属于其中一部分时按那部分定档；都不属于时取保守档。')
+        notes.append(f"{framing}/{angle}/{action}：" + '；'.join(parts) + '，按表情定档，都不属于时取保守档')
     return notes
 
 
@@ -513,6 +537,8 @@ def character_guide(identity, config=None):
     if tag and not wai_list.tier_row(tag, wai_list.settings_from(config)):
         # V2-38: only characters on the WAI list are supported; the guide says so instead of failing.
         unsupported = '不支持：' + wai_list.refusal_question(wai_list.settings_from(config))
+    if tag and unsupported is None:
+        unsupported = '不支持：' + question if question else None
     return {'character': identity.get('character_tag') or identity.get('input_name'),
             'locked': identity.get('status') == 'locked',
             'unsupported': unsupported,
@@ -523,67 +549,163 @@ def character_guide(identity, config=None):
             'collision_notes': collision_notes(config)}
 
 
-def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
-    """Writing guide for the agent: schema, the planner's writing rules, first-shot rule.
+# V2-63 (D96, TASK-v2 §12 item 1): boilerplate fields the writer may leave out; compile fills them before the schema
+# check. Only fields with one obvious value are here; everything that tells the story stays required.
+SHOT_DEFAULTS = {'action_tag': None, 'prop_tags': [], 'change_from_previous': 'none', 'composition_reason': '',
+                 'unchanged_person_reason': '', 'subject_visibility': 'clear', 'other_people': [],
+                 'hand_owners': ['subject'], 'reflection': False, 'protagonist_instances': 1}
+SCENE_DEFAULTS = {'environment_change': 'none', 'lighting': 'natural light', 'negative_tags': []}
+TOP_DEFAULTS = {'schema_version': 2, 'scope_version': 2, 'story_note': ''}
 
-    With character_guide_info (from character_guide), also the standard outfit tags and the vocabulary.
+
+def fill_defaults(parsed):
+    """Fill the omitted boilerplate fields in place; return the names filled (field paths, deduplicated)."""
+    import copy as _copy
+    filled = []
+    if not isinstance(parsed, dict):
+        return filled
+    for key, value in TOP_DEFAULTS.items():
+        if key not in parsed:
+            parsed[key] = value
+            filled.append(key)
+    for entry in parsed.get('shots') or []:
+        if not isinstance(entry, dict):
+            continue
+        for group, defaults in (('shot', SHOT_DEFAULTS), ('scene', SCENE_DEFAULTS)):
+            block = entry.get(group)
+            if not isinstance(block, dict):
+                continue
+            for key, value in defaults.items():
+                if key not in block:
+                    block[key] = _copy.deepcopy(value)
+                    filled.append(f'{group}.{key}')
+    return list(dict.fromkeys(filled))
+
+
+GUIDE_EXAMPLE = {
+    'shots': [{
+        'number': 1,
+        'scene': {'location': 'small park after rain', 'time': 'afternoon', 'weather': 'clear',
+                  'tags': ['outdoors', 'park', 'day', 'bench']},
+        'outfit': {'clothing_state': 'standard outfit', 'tags': ['<服装 tag>']},
+        'shot': {'narrative_role': 'establishing', 'framing': 'wide', 'camera_angle': 'side', 'pose': 'walking',
+                 'expression': 'light_smile', 'spatial_relation': 'she walks along the path past the bench'}}]}
+
+
+def _guide_example():
+    """One line per block of the example shot, so the example stays short and readable."""
+    entry = GUIDE_EXAMPLE['shots'][0]
+    dumps = lambda value: json.dumps(value, ensure_ascii=False)
+    return '\n'.join(['{"shots": [{', f' "number": {entry["number"]},', f' "scene": {dumps(entry["scene"])},',
+                      f' "outfit": {dumps(entry["outfit"])},', f' "shot": {dumps(entry["shot"])}', '}]}'])
+
+
+def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
+    """V2-63 (D96, TASK-v2 §12 item 1): the writing guide, short enough for a small local model.
+
+    An example instead of the JSON schema, then the rules that compile checks or applies. With
+    character_guide_info (from character_guide), also the standard outfit tags, the vocabulary and the action tags.
     """
-    from storycg.planning import FIRST_SHOT_RULE, production_schema, writing_rules
-    from storycg.shot_contract import planner_schema
-    schema = planner_schema(production_schema())
-    return '\n'.join([
-        '# 故事分镜（beats）写作说明',
+    from storycg.shot_contract import EXPRESSION_TAGS
+    lines = [
+        f'# 故事分镜（beats）写作说明：{shot_count} 镜',
         '',
-        f'目标：{shot_count} 镜。输出一个 JSON 对象，符合下面的 schema；不要输出 schema 之外的字段，不要出现派生字段'
-        '（action、description、shot.tags 由程序生成）。',
+        f'写一个 JSON 对象，照下面的例子写 {shot_count} 镜，number 从 1 开始。不要加例子以外的字段。',
         '',
-        '## 1. JSON schema',
-        '```json',
-        json.dumps(schema, ensure_ascii=False, indent=2),
-        '```',
+        '## 1. 例子（只写了第 1 镜）',
+        '```json', _guide_example(), '```',
+        '可以省略、由程序补默认值的字段：story_note、shot 的 action_tag、prop_tags、change_from_previous、'
+        'composition_reason、unchanged_person_reason、subject_visibility、other_people、hand_owners、reflection、'
+        'protagonist_instances，scene 的 environment_change、lighting、negative_tags。',
         '',
-        '## 2. 写作规则（compile 按这些规则和词汇表校验）',
-        writing_rules(shot_count).strip(),
+        '## 2. 只有 tag 会画进图',
+        '- 进提示词的只有 scene.tags、scene.negative_tags、outfit.tags、shot.pose、shot.action_tag、shot.expression、'
+        'shot.prop_tags。只写 Danbooru 上存在的 tag（小写、下划线）。compile 输出的 prompt_preview 就是最终提示词。',
+        '- 其余字段是给人看的简短英文，不进提示词，只是不要写角色名和作品名。',
+        '- 任何 tag 里都不写外貌（发色、瞳色、发型、肤色、体型），身份 tag 由程序加。',
+        '- 一镜只画一个瞬间。先后两个动作拆成两镜，spatial_relation 里不写 then、finally 这类顺序词。',
         '',
-        '## 3. 首镜规则',
-        FIRST_SHOT_RULE.strip(),
+        '## 3. 字段',
+        '- shot.framing：wide 远景、full 全身、medium 中景、closeup 近景。shot.camera_angle：front、side、above、'
+        'below、behind、dutch。首镜由程序固定为 wide 和 establishing。',
+        '- shot.pose：一个体位或动作 tag，优先用第 5 节词汇表里的。',
+        '- shot.action_tag：pose 之外还要画的一个动作，比如 drinking、reading、waving。借用意思不同的 tag，'
+        '就会画成那个 tag 本来的意思。',
+        '- shot.expression 只能取：' + '、'.join(EXPRESSION_TAGS) + '。睡着、闭眼、哭这类状态写在这里。',
+        '- shot.prop_tags：这一镜要画出来的物件或动物，最多 1 个。只写在说明文字里的东西画不出来。',
+        '- scene.tags：地点、时间、天气、光线。物件上限：近景 0 个（道具除外），中景 2 个，全身和远景 3 个。'
+        '电脑、书、杯子、手机这类会引出动作的物件，只在它是这一镜的道具时才写。'
+        '室内写了下雨，程序会补窗户；睡着类 pose，程序会补闭眼。',
+        '- scene.negative_tags：不该出现的天气或元素，比如雨停了就写 rain。',
+        '- 相邻两镜景别和角度都相同，要写 composition_reason；表情和 pose 都相同，要写 unchanged_person_reason。',
+        '- 背影或遮挡主角的镜头最多 1 个。其他人只能是背影、路人、画面外或局部入镜，写进 other_people。',
+        '- 剧情靠拿错东西、认错人推进时，改成用表情和动作表达，并在 story_note 里用一句中文说明。',
         '',
         *_character_section(character_guide_info),
-        '## 5. 自查',
-        '写好后运行：storycg compile --character <角色> --beats <文件> --shots ' + str(shot_count),
-        '有错误按每条的镜号和字段修改，直到通过，再运行 storycg make --beats <文件>。',
+        '## 7. 自查',
+        f'运行 storycg compile --character <角色> --beats <文件> --shots {shot_count}。'
+        'invalid 时按每条错误的镜号和字段改，再编译。valid 后看 rewrites 和 prompt_preview，'
+        '确认要画的 tag 都在，再运行 storycg make --beats <文件>。',
         '',
-    ])
+    ]
+    return '\n'.join(lines)
 
 
 def _character_section(info):
     if not info:
-        return ['## 4. 角色（未指定 --character）', '未指定角色：标准服装与词汇表未列出。'
-                '需要时运行 beats-guide --character 角色名。', '']
-    lines = ['## 4. 角色：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下信息仅供参考）')]
+        return ['## 4–6. 角色（未指定 --character）',
+                '未指定角色，标准服装、词汇表和动作 tag 没有列出。需要时运行 beats-guide --character 角色名。', '']
+    lines = ['## 4. 服装：' + str(info['character']) + ('' if info['locked'] else '（身份未锁定，以下仅供参考）')]
     if info.get('unsupported'):
         lines.append(info['unsupported'])
-    lines += ['标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）')]
+    lines.append('- 标准服装 tag：' + (', '.join(info['outfit_tags']) or '（无）'))
     # V2-51 (D88): tags removed at identity resolution are named, so the writer knows why they are not in the list.
     if info.get('unavailable_tags'):
-        lines.append('已去掉 Danbooru 上废弃或不存在的 tag：' + ', '.join(info['unavailable_tags']))
-    lines += [info['outfit_rule'],
-             info['vocab'].strip(),
-             '撞键说明（同一景别、角度、动作有多个条目时）：']
-    lines += ['- ' + note for note in info['collision_notes']] or ['- （无）']
-    return lines + _action_tag_lines() + ['']
+        lines.append('- 已去掉 Danbooru 上废弃或不存在的 tag：' + ', '.join(info['unavailable_tags']))
+    lines += ['- ' + info['outfit_rule'],
+              '- 换没换衣服只看 outfit.tags。主要的新衣服写带颜色的 tag（pink_pajamas、brown_coat）；同一套衣服每镜 tag 相同。'
+              'clothing_state 只是说明，tag 没变时程序沿用上一镜的写法。',
+              '', '## 5. 词汇表', info['vocab'].strip()]
+    if info['collision_notes']:
+        lines.append('- 撞键说明（同一景别、角度、pose 有多项）：' + '。'.join(info['collision_notes']) + '。')
+    return lines + [''] + _action_tag_lines() + ['']
 
 
 def _action_tag_lines():
-    """V2-49: the action tags measured on the base model (config/action_tags.json), printed after the vocabulary."""
+    """V2-49: the action tags measured on the base model (config/action_tags.json), compact (V2-63)."""
     from storycg.shot_contract import load_action_tags
-    lines = ['### 动作 tag（shot.action_tag）：基础模型上测过的结果',
-             '表外的 tag 也可以用，只要 Danbooru 上存在；没测过，画不画得出不保证。']
-    for tag, item in load_action_tags().items():
-        note = f"（{item['note']}）" if item.get('note') else ''
-        reject = f"【{item['compile']}】" if item.get('compile') else ''
-        lines.append(f"- {tag}：画出 {item['drawn']}/{item['total']}{note}{reject}")
+    table = load_action_tags()
+    good = [f"{tag} {item['drawn']}/{item['total']}" for tag, item in table.items()
+            if not item.get('compile') and not item.get('note') and item['drawn'] * 2 > item['total']]
+    weak = [f"{tag} {item['drawn']}/{item['total']}" + (f"（{item['note']}）" if item.get('note') else '')
+            for tag, item in table.items() if not item.get('compile') and (item.get('note') or item['drawn'] * 2 <= item['total'])]
+    refused = [f"{tag}（{item['compile']}）" for tag, item in table.items() if item.get('compile')]
+    lines = ['## 6. 动作 tag（shot.action_tag）：基础模型上测过的结果',
+             '- 画得出：' + '、'.join(good)]
+    if weak:
+        lines.append('- 不建议：' + '、'.join(weak))
+    if refused:
+        lines.append('- compile 不接受：' + '、'.join(refused))
+    lines.append('- 表外的 tag 也可以用，只要 Danbooru 上存在；没测过，画不画得出不保证。')
     return lines
+
+
+def prompt_preview(board, identity, config):
+    """V2-62 (D96, TASK-v2 §12 item 7): each shot's final positive and negative prompt, built the way the candidates
+    are submitted (workflow.build_workflow, assembly.full_negative_prompt). No model call, no image."""
+    from storycg.assembly import assemble_prompt, full_negative_prompt
+    rows = []
+    for entry in board['shots']:
+        try:
+            parts = assemble_prompt(identity, entry, config=config,
+                                    **({'props': board['props']} if board.get('props') else {}))
+        except (KeyError, ValueError) as exc:  # a preview never fails a valid compile
+            rows.append({'shot': entry['number'], 'error': f'{type(exc).__name__}: {exc}'})
+            continue
+        rows.append({'shot': entry['number'], 'positive': f"{config['positive_prefix']}, {parts['positive_tags']}",
+                     'negative': full_negative_prompt(config, parts),
+                     'dropped_scene_tags': list(parts.get('dropped_scene_tags') or [])})
+    return rows
 
 
 @contextmanager
@@ -599,7 +721,11 @@ def _tag_registry(job_dir, tag_registry, record):
     import httpx
     from storycg.tags import TagRegistry
     with httpx.Client(base_url='https://danbooru.donmai.us', timeout=30, trust_env=False) as tag_client:
-        registry = TagRegistry(job_dir / 'cache' / 'tags', client=tag_client)
+        # V2-64 (D96): one project-level cache for every compile (it was a new folder per compile), 30 days.
+        job_cache = job_dir / 'cache' / 'tags'  # a job that already carries its own cache keeps using it
+        project_cache = Path(__file__).resolve().parents[2] / 'cache' / 'tags'
+        registry = TagRegistry(job_cache if job_cache.is_dir() and any(job_cache.iterdir()) else project_cache,
+                               client=tag_client, max_age_days=30)
         try:
             yield registry
         finally:
@@ -640,6 +766,11 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             return board
 
         parsed = json.loads(raw)
+        if isinstance(parsed, dict) and '$schema' in parsed:
+            # V2-62 (D96): a copied schema header is harmless; drop it instead of failing the whole file.
+            parsed.pop('$schema')
+            record['dropped_keys'] = ['$schema']
+        record['defaults_filled'] = fill_defaults(parsed)  # V2-63 (D96): omitted boilerplate gets its one value
         schema_errors = list(Draft202012Validator(planner_schema(production_schema())).iter_errors(parsed))
         if schema_errors:
             errors = []
@@ -649,6 +780,10 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             raise BeatsError(errors)
         board = materialize(parsed)
         board, rewrites = rewrite_board(board, config)
+        if record.get('dropped_keys'):
+            rewrites = [{'shot': None, 'rule': 'dropped_key', 'field': '$schema', 'from': '$schema', 'to': None,
+                         'reason': 'beats 文件不需要 schema 头', 'text': '顶层的 $schema 字段 → 删除，beats 文件不需要 schema 头'},
+                        *rewrites]
         record['rewrites'] = rewrites
         with _tag_registry(job_dir, tag_registry, record) as registry:
             errors = _collect_errors(board, shot_count, identity, config, tag_registry=registry)
@@ -660,11 +795,8 @@ def compile_beats(job_dir, beats, identity, shot_count, config, *, tag_registry=
             validate_storyboard(board, shot_count, identity, config)
             tag_start = len(registry.records)
             validate_tag_lists(board, registry, config, drop_unknown=True)
-            # V2-55: a removed tag that the shot still names as its prop is reported on that shot, not as a global error.
-            prop_errors = _dropped_prop_tag_errors(board, registry.records[tag_start:])
-            if prop_errors:
-                raise BeatsError(prop_errors)
-            dropped = tag_rewrites(registry.records[tag_start:])
+            # V2-63 (D96): a removed tag that the shot still names as its prop is dropped from prop_tags as well.
+            dropped = _drop_missing_prop_tags(board, registry.records[tag_start:]) + tag_rewrites(registry.records[tag_start:])
         # V2-51 (D88): what validate_tag_lists removed or replaced is reported in the rewrite record, as rewrite_board does.
         for rewrite in dropped:
             _append_note(board, rewrite['text'] + '。')

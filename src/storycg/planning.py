@@ -51,7 +51,7 @@ SHOT['properties'].update({
     'hand_owners':{'type':'array','items':{'enum':['subject','anonymous_other']}}})
 
 
-from storycg.shot_contract import extend_schema, validate_contract, RULE_PROMPT as CONTRACT_PROMPT
+from storycg.shot_contract import extend_schema, validate_contract
 extend_schema(STORYBOARD_SCHEMA)
 
 
@@ -305,10 +305,14 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
         clothing_for_check=copy.deepcopy(entry['outfit'])
         clothing_for_check['tags']=[tag for tag in entry['outfit']['tags'] if (category_for(canonical_tag(tag),rules) or {}).get('name') not in ('accessories','accessory_color')]
         action_fields = {'pose','action','description','spatial_relation','change_from_previous','tags'}
-        values = [(v, False) for v in _strings({'scene':entry['scene'],'outfit':clothing_for_check})]
-        values += [(v, key in action_fields) for key, field in entry['shot'].items() for v in _strings(field)]
-        for value, body_action in values:
-            if appearance_forbidden(value, body_action=body_action):
+        from storycg.beats import PROMPT_FIELDS
+        # V2-62 (D96): appearance is checked only where it would enter the image prompt; every field still gets
+        # the character and work name check below.
+        values = [(v, False, f'{group}.{key}') for group, block in (('scene', entry['scene']), ('outfit', clothing_for_check))
+                  for key, field in block.items() for v in _strings(field)]
+        values += [(v, key in action_fields, f'shot.{key}') for key, field in entry['shot'].items() for v in _strings(field)]
+        for value, body_action, name in values:
+            if name in PROMPT_FIELDS and appearance_forbidden(value, body_action=body_action):
                 raise ValueError(f"appearance description is forbidden in storyboard: {value}")
             if identity:
                 forbidden = [identity.get("character_tag"), identity.get("work_tag"),
@@ -318,63 +322,6 @@ def validate_storyboard(board: dict, shot_count: int, identity: dict | None = No
                        for term in forbidden):
                     raise ValueError(f"identity term is forbidden in storyboard: {value}")
     return board
-
-
-FIRST_SHOT_RULE = ("First shot MUST be wide with narrative_role establishing. ")
-
-
-def writing_rules(shot_count: int) -> str:
-    """Storyboard writing rules shared by plan_story and `storycg beats-guide` (V2-10).
-
-    Excludes the tier-dependent vocabulary section (prompt_section), which only plan_story adds.
-    """
-    instructions = (
-        "Return only schema JSON. Plan exactly " + str(shot_count) + " visually causal shots. "
-        "Prose fields (narrative_role, composition_reason, spatial_relation, change_from_previous, story_note) are concise English for display and audit ONLY. "
-        "Only tags arrays enter the image prompt. Use REAL Danbooru tags, not invented phrases. "
-        "No character names, franchises or physical appearance tags in any state. "
-        "Body parts may occur only as direct targets of the current physical action in pose, "
-        "spatial_relation and change_from_previous. Preserve the action's contact and direction. "
-        "spatial_relation names the one instant this shot depicts; no then or other order words there, "
-        "and two actions in order are two shots. "
-        "Keep each body-target field as one plain action clause; place no other clauses or "
-        "appearance adjectives in that field. "
-        "Never describe body-part appearance, color, shape, hair, skin, body shape or height. "
-        "Eye states (closed eyes, half-closed eyes, one eye closed, tears) go in expression; an eye action "
-        "listed in the vocabulary (wiping_tears) may be the pose; eye color, shape and "
-        "size remain forbidden. "
-        "Put the emotion in shot.expression as one tag from the expression list (surprised, confused, smile, ...). "
-        "When the shot's action is more than its pose (pulling a curtain, drinking, reading, waving), put one existing Danbooru action tag in shot.action_tag, such as curtain_grab, drinking, reading or waving; spatial_relation is not part of the image prompt, so an action written only there is not drawn. Leave shot.action_tag out when the pose already is the action. "
-        "scene.tags are concrete setting/time/weather/light tags; outfit.tags are clothing tags. Clothing-context hair ornaments/accessories belong in outfit.tags and are the sole exception to the hair-word ban; do not change anatomical hair tags. "
-        + FIRST_SHOT_RULE + "Vary framing and camera_angle "
-        "between adjacent shots; identical pairs require a meaningful composition_reason. "
-        "wide establishes place; medium focuses an interaction; closeup emphasizes reaction/detail. "
-        "Props are plain tags: not registered, not bound to a holder. An object or animal the story needs drawn in this shot "
-        "(held, found or looked at) must be written in this shot's prop_tags; words in spatial_relation or description alone "
-        "are not drawn. Put at most ONE ordinary object tag in shot.prop_tags, "
-        "or use [] when absent. Include every depicted prop there; scene.tags describe the setting, "
-        "time, weather and light, not extra objects. The script adds prop_tags to scene.tags. "
-        "Scene object budgets by framing: closeup keeps only setting/place/time/weather/light tags plus the one "
-        "shot.prop_tags entry; every other object is dropped; "
-        "medium at most 2 object tags; full and wide at most 3. Never place action-invoking objects "
-        "(computer, keyboard, monitor, laptop, smartphone, book, cup, mug, pen, musical instrument) "
-        "in scene.tags unless that object is this shot's single declared prop. "
-        "Actions that imply closed eyes (sleeping, sleeping on desk) must never pair with open eyes; "
-        "the assembler adds the closed-eyes companion tag automatically. "
-        "Do not register objects, bind holders, or track ownership, state or left/right hands. "
-        "Keep setting and clothes continuous. When the outfit differs from the standard outfit, give the main new garment a Danbooru tag that carries its color (brown_coat or pink_pajamas, not coat or winter_clothes), and keep the same outfit tags on every shot of that outfit. Preserve exact temporal/weather facts and causal ending. "
-        "scene.negative_tags MUST exclude incompatible weather/elements, including ongoing weather "
-        "when the story states it has ended. No captions or dialogue. "
-        "v2 has one main person; others only anonymous backs, cropped parts or offscreen. "
-        "If the plot relies on mistaken possession, object ownership or mistaken identity, "
-        "rewrite it at the storyboard stage so actions and expressions convey the key change. "
-        "Record that adaptation in story_note as one concise Chinese sentence. If the inference "
-        "cannot be expressed this way, continue planning and state in story_note that this part "
-        "may not be readable. Otherwise set story_note to an empty string."
-    )
-    from storycg.story_rules import RULE_PROMPT
-    instructions += RULE_PROMPT + CONTRACT_PROMPT + (' D25: scope_version=2. Key story changes must be expressed in expression/action. Each shot permits at most ONE prop tag. Adjacent shots must change expression or action; if both stay the same, provide a meaningful unchanged_person_reason, otherwise use an empty reason.')
-    return instructions
 
 
 def saved_storyboard(job_dir: str | Path, shot_count: int, identity: dict, config: dict | None = None) -> dict:

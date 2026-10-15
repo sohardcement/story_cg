@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -65,6 +66,32 @@ def end_wait(root):
         update(root, waiting_since=None, paused_seconds=record.get('paused_seconds', 0)+duration)
     if stopped:
         update(root,finished_at=None)
+
+
+def install_exit_record(root):
+    """V2-64 (D96): a worker that is stopped by SIGTERM or SIGINT leaves a record instead of a silent phase."""
+    import signal
+
+    def on_signal(signum, frame):
+        record = read(root, 'agent.json')
+        if record.get('phase') not in ('completed', 'stopped', 'cancelled', 'needs_user', 'awaiting_approval'):
+            update(root, phase='cancelled' if signum == signal.SIGTERM and record.get('cancel_requested') else 'stopped',
+                   needs_user=False, error=f'worker 收到信号 {signal.Signals(signum).name} 后退出；可以运行 resume 接着跑')
+        os._exit(1)
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+
+
+def cancel_job(root):
+    """V2-64 (D96): the one way for a caller to stop a running job. Marks the request, then ends the worker."""
+    import signal
+    record = read(root, 'agent.json')
+    pid = record.get('worker_pid')
+    if not worker_alive(root):
+        raise ValueError('job has no running worker; nothing to cancel')
+    update(root, cancel_requested=True)
+    os.kill(pid, signal.SIGTERM)
+    return pid
 
 
 def worker_alive(root):
@@ -524,7 +551,8 @@ def _progress(root, total, cycle):
         shots.append({'shot': number,
                       'candidates_generated': len(generated.get(f'shot{number:02d}', set())),
                       'candidates_expected': per * slot.get('rounds', 1),
-                      'candidates_reviewed': sum(1 for r in cands if r.get('conclusion') is not None),
+                      # V2-61: a screened candidate is marked checked (records before V2-61 carry a conclusion).
+                      'candidates_reviewed': sum(1 for r in cands if r.get('checked') or r.get('conclusion') is not None),
                       'picked': slot.get('selected') is not None})
     return {'completed_shots': sum(1 for s in shots if s['picked']), 'total_shots': total, 'shots': shots,
             'final_review_done': cycle.get('phase') == 'complete'}
@@ -557,6 +585,8 @@ def beats_cli(argv):
     comp.add_argument('--beats', required=True, type=Path)
     comp.add_argument('--shots', type=int, default=4)
     comp.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
+    comp.add_argument('--verbose', action='store_true',
+                      help='also print the compiled storyboard and the character guide (V2-63: off by default)')
     args = parser.parse_args(argv)
     if args.command == 'beats-guide':
         info = None
@@ -597,31 +627,44 @@ def beats_cli(argv):
     try:
         board = compile_beats(root, args.beats, identity, args.shots, config)
     except BeatsError as exc:
-        print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc),
-                          'character_guide': guide}, ensure_ascii=False, indent=2))
+        # V2-63 (D96): the errors only; the guide is the same text beats-guide printed, so it is not repeated.
+        payload = {'status': 'invalid', 'errors': exc.errors, 'message': str(exc)}
+        if args.verbose:
+            payload['character_guide'] = guide
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 2
     except RESOURCE_ERRORS as exc:
         # The tag existence checks call Danbooru during compile; the same failure as above.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
     from storycg.display import compile_rewrites
+    from storycg.beats import prompt_preview
+    from storycg.tags import canonical_tag
     # V2-51 (D88): every rewrite of this compile, the automatic ones and the removed or replaced tags.
-    print(json.dumps({'status': 'valid',
-                      'storyboard': board, 'job_dir': str(root), 'character_guide': guide,
-                      'rewrites': compile_rewrites(root)},
-                     ensure_ascii=False, indent=2))
+    # V2-62 (D96): the final prompts, so the writer sees which tags are actually drawn.
+    payload = {'status': 'valid', 'job_dir': str(root), 'rewrites': compile_rewrites(root),
+               'summary': [row['summary'] for row in beat_summaries(board, {canonical_tag(t['tag']) for t in
+                                                                           identity.get('default_outfit_tags', [])})],
+               'prompt_preview': prompt_preview(board, identity, config)}
+    if args.verbose:  # V2-63 (D96): the full storyboard and guide only on request
+        payload.update(storyboard=board, character_guide=guide)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
 
 def main(argv):
+    if argv and argv[0] == 'prune':
+        from storycg.prune import prune_cli
+        return prune_cli(argv[1:])
     if argv and argv[0] in ('beats-guide', 'compile'):
         return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
-    # Help-only entries: beats-guide and compile are dispatched before this parser runs.
+    # Help-only entries: beats-guide, compile and prune are dispatched before this parser runs.
     sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
     sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
-    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', '_worker'):
+    sub.add_parser('prune', help='remove finished jobs\' intermediate PNGs and old compile scratch folders (--days N; --apply deletes)')
+    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', 'cancel', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
         if name in ('make', 'approve', 'resume'):
@@ -674,7 +717,10 @@ def main(argv):
             update(root, phase='queued', needs_user=False, storyboard_first=confirm, approved=False, **beats_fields)
         elif not (root/'job.json').exists():
             raise ValueError('story job not found')
-        if args.command != 'status':
+        if args.command == 'cancel':
+            cancel_job(root)  # before the job lock: the running worker holds it
+            time.sleep(1.5)
+        elif args.command != 'status':
             with (root/'agent.lock').open('a') as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX if args.command == '_worker' else fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -753,6 +799,8 @@ def main(argv):
                 elif args.command == 'resume' and read(root, 'agent.json').get('phase') in ('awaiting_approval', 'completed'):
                     pass
                 elif args.command == '_worker' or getattr(args, 'foreground', False):
+                    if args.command == '_worker':
+                        install_exit_record(root)
                     with contextlib.redirect_stdout(sys.stderr):
                         execute(root)
                 else:

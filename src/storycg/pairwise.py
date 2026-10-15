@@ -1,13 +1,14 @@
 """V2-23 (D65): side-by-side pick between the top candidates of a shot.
 
-Used by candidates.py after the ranking. The comparison pool is the passing candidates that tie with
-the top candidate on failure levels 0-3 (count/extra, identity, outfit, action/expression); prop
-items never enter it. The pool is shown side by side in forward order and in reverse order, and the
-letters are mapped back to candidate numbers. The pick is adopted only when both orders choose the
-same candidate. Otherwise, on a call failure, a format error, a bad letter or a budget shortage, the
-ranking result stays as it was, and the reason says why.
+Used by candidates.py after the ranking. The comparison pool is the screened-in candidates that tie with the top
+candidate on every rank level except the candidate number (V2-61: that is, the nothing-detected level); prop items
+never enter it. The pool is shown side by side in forward order and in reverse order, and the letters are mapped back
+to candidate numbers. The pick is adopted only when both orders choose the same candidate. Otherwise, on a call
+failure, a format error, a bad letter or a budget shortage, the ranking result stays as it was, and the reason says why.
 
-PROMPT_TEMPLATE is the V2-22 prompt, copied unchanged.
+V2-61 (D96, TASK-v2 §12 item 7): the prompt names only what entered the image prompt (framing, camera angle, pose,
+action tag, expression). Before V2-61 it carried the writer's prose (spatial relation, narrative role) and no action
+tag, so the pick followed the writer's intent rather than what was asked of the image model.
 """
 import hashlib
 import json
@@ -17,12 +18,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 from storycg.review import TEXT, messages, object_schema
 
-PROMPT_TEMPLATE = 'You see {n} images side by side, labelled {labels} from left to right. Each image is a candidate picture of the same character. Requirement for this one shot only:\n- framing: {framing}\n- spatial relation: {spatial_relation}\n- pose / action: {pose}\n- expression: {expression}\n- narrative role of this shot: {narrative_role}\nQuestion: which image makes the requested action and expression most readable at a glance? Judge only the visible character\'s action and expression against this requirement. For every image, say whether the requested action is visible and whether the requested expression is visible, each as yes, partly or no. Answer with JSON only, following the schema: "best" is one of the labels; "reason" is one short sentence; "per_image" has one entry per label.'
+PROMPT_TEMPLATE = 'You see {n} images side by side, labelled {labels} from left to right. Each image is a candidate picture of the same character. These tags were in the image prompt for this one shot:\n- framing: {framing}\n- camera angle: {camera_angle}\n- pose: {pose}\n- action: {action_tag}\n- expression: {expression}\nQuestion: which image shows the pose, the action and the expression most readably at a glance? Judge only the visible character against these tags. For every image, say whether the requested action (pose and action) is visible and whether the requested expression is visible, each as yes, partly or no. Answer with JSON only, following the schema: "best" is one of the labels; "reason" is one short sentence; "per_image" has one entry per label.'
 LETTERS = 'ABCDEFGH'
 HEIGHT = 1024
 LABEL_H = 110
 GAP = 16
-COMPARE_LEVELS = 4  # rank indices 0-3: count/extra, identity, outfit, action/expression
+COMPARE_LEVELS = 4  # rank indices 0-3 of the seven-level rank used before V2-61
 CALLS_PER_SHOT = 2
 
 
@@ -35,8 +36,11 @@ def schema_for(labels):
 
 
 def shot_fields(entry):
+    """V2-61: the prompt-side fields of the shot; no action tag means the pose is the action."""
     shot = entry['shot']
-    return {k: shot.get(k, '') for k in ('framing', 'spatial_relation', 'pose', 'expression', 'narrative_role')}
+    fields = {k: shot.get(k, '') for k in ('framing', 'camera_angle', 'pose', 'expression')}
+    fields['action_tag'] = shot.get('action_tag') or 'none (the pose is the action)'
+    return fields
 
 
 def comparison_pool(records):
@@ -45,8 +49,10 @@ def comparison_pool(records):
                        key=lambda r: r['rank'])
     if not survivors:
         return []
-    top = survivors[0]['rank'][:COMPARE_LEVELS]
-    return [r for r in survivors if r['rank'][:COMPARE_LEVELS] == top]
+    def levels(rank):  # every level but the candidate number; the seven-level rank (before V2-61) compares 0-3
+        return rank[:COMPARE_LEVELS] if len(rank) > 2 else rank[:-1]
+    top = levels(survivors[0]['rank'])
+    return [r for r in survivors if levels(r['rank']) == top]
 
 
 def composite(paths, labels, out_path):

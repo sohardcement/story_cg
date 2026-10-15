@@ -7,9 +7,22 @@ import re
 from pathlib import Path
 
 
+def _read_with_extends(path: Path, seen=()) -> dict:
+    """V2-60: a config may name `extends` (a file next to it); its own top-level keys replace the base's."""
+    if path.resolve() in seen:
+        raise ValueError(f"config extends loop at {path}")
+    config = json.loads(path.read_text(encoding="utf-8"))
+    base_name = config.pop("extends", None)
+    if not base_name:
+        return config
+    base = _read_with_extends(path.parent / base_name, (*seen, path.resolve()))
+    base.update(config)
+    return base
+
+
 def load_config(path: str | Path) -> dict:
     path = Path(path)
-    config = json.loads(path.read_text(encoding="utf-8"))
+    config = _read_with_extends(path)
     if config.get("style_file"):
         style_path = path.parent / config["style_file"]
         raw = style_path.read_bytes()

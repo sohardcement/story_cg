@@ -60,6 +60,13 @@ def consistency_review(vlm,paths,identity,entry,config,purpose):
 
 
 def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
+    """V2-61 (D96, TASK-v2 §12 item 3): the screen of one candidate before the pick, no longer a full audit.
+
+    Local detection (protagonist count, accessory colour sample) and, unless the count already reports a duplicate,
+    the one extra-body-part question. There is no single-shot or identity/outfit review here: the selected
+    candidate's identity and outfit are reviewed once, in the final review. A stored record is reused as is,
+    including the older full audits (with single and consistency) of jobs made before V2-61.
+    """
     path=root/'cycle_artifacts'/f'{label}.json'
     if path.exists():
         result=read(path)
@@ -67,26 +74,17 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
         return result
     source=root/image['path']
     if digest(source)!=image['sha256']:raise ValueError('candidate hash mismatch')
-    single=review.audit_single(vlm,source,entry,board['props'],config,label+'_single')
     from storycg.detection_review import detect_face_record, audit_detection
+    from storycg import extra_part
     face_path=root/'cycle_artifacts'/f'{label}_face.png'
     detected,face=detect_face_record(source,face_path)
-    portrait=read(root/'portrait.json');paths=[root/portrait['image']['path'],source]
-    if face:
-        face['path']=str(face_path.relative_to(root))
-        pair=root/'cycle_artifacts'/f'{label}_pair.png'
-        # The reference pair also uses a local crop, including legacy portraits.
-        ref_path=root/'cycle_artifacts'/f'{label}_reference_face.png'
-        _,ref_face=detect_face_record(paths[0],ref_path)
-        if ref_face:
-            review.face_pair(ref_path,face_path,pair);paths.append(pair)
-    detection_items=audit_detection(source,identity,entry,reference_path=paths[0], review_config=config)
-    consistency=consistency_review(vlm,paths,identity,entry,config,label+'_identity_outfit')
-    from storycg import extra_part
-    if extra_part.should_check(detection_items):  # V2-16: one vision question, skipped on a reliable duplicate count
-        consistency=extra_part.merge_into(consistency,extra_part.check(vlm,source,identity,label+'_extra_body_part'))
-    result={'image':image,'single':single,'consistency':consistency,'detection':detected,'face':face,'detection_items':detection_items,
-            'conclusion':review.conclude([*review.result_statuses(single),*review.result_statuses(consistency),*review.result_statuses(detection_items['review'])])}
+    if face:face['path']=str(face_path.relative_to(root))
+    portrait=read(root/'portrait.json')
+    detection_items=audit_detection(source,identity,entry,reference_path=root/portrait['image']['path'],review_config=config)
+    extra=(extra_part.check(vlm,source,identity,label+'_extra_body_part')
+           if extra_part.should_check(detection_items) else None)  # V2-16: skipped on a reliable duplicate count
+    result={'version':2,'image':image,'detection':detected,'face':face,'detection_items':detection_items,
+            'extra_body_part':extra}
     save_json_atomic(path,result);return result
 
 

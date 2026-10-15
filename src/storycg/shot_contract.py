@@ -74,15 +74,6 @@ def validate_contract(board):
                 'keep the one expression in shot.expression')
     return board
 
-RULE_PROMPT=(
-    ' D16: schema_version=2. Every shot depicts exactly ONE instantaneous pose/action. '
-    'pose is ONE real atomic Danbooru tag for the instant\'s body position or single visible action; prefer the action tags listed in the vocabulary (e.g. sitting, on_back, wiping_tears). '
-    'A state that is not a listed pose (crying, closed eyes) belongs in expression. Posture tags may appear only in pose. '
-    'The script derives action, description and shot.tags from pose/expression; do not return these derived fields. '
-    'expression is ONE real emotion or eye/state tag, never another posture. Never put another pose in any tag block. '
-    'Background objects go in prop_tags as ordinary tags. Split sequential actions into separate shots. '
-    'Always declare reflection=false and protagonist_instances=1, or reflection=true and protagonist_instances=2 for exactly one reflection of that SAME instant. '
-)
 
 
 def planner_schema(schema):

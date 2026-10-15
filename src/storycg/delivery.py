@@ -27,10 +27,12 @@ def deliver(root, cycle, config, client):
         consistencies = [r for r in final.get('consistency', []) if r['shot'] == int(number)]
         faces = [r for r in final.get('faces', []) if r['shot'] == int(number)]
         if consistencies:
-            audit = {**audit, 'consistency': consistencies[0],
-                     'conclusion': review.conclude([*review.result_statuses(audit['single']), *review.result_statuses(consistencies[0]),
-                                                    *[r['status'] for r in faces]])}
-        slot['final_conclusion'] = audit['conclusion']
+            # V2-61: the screen record (since V2-61) has no single-shot review; older audits still carry one.
+            single = review.result_statuses(audit['single']) if audit.get('single') else []
+            slot['final_conclusion'] = review.conclude([*single, *review.result_statuses(consistencies[0]),
+                                                        *[r['status'] for r in faces]])
+        else:
+            slot['final_conclusion'] = audit.get('conclusion')
     # V2-52: the per-shot audit copy (repair_history) is not written; cycle.json holds the same records.
     manifest['usage'] = usage(root); manifest['repair_cycle_file'] = 'cycle.json'
     manifest['attempts'] = state['attempts']

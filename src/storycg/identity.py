@@ -46,7 +46,8 @@ def needs_user(root, identity, reason, *, question=None, persist=True):
 
 
 class _CachedDanbooru:
-    def __init__(self, cache_dir: Path, client: httpx.Client):
+    def __init__(self, cache_dir: Path, client: httpx.Client, *, max_age_days: float | None = None):
+        self.max_age_days = max_age_days  # V2-64: a cached answer older than this is asked again (None: never)
         self.cache_dir = cache_dir
         self.client = client
         self.last_request = 0.0
@@ -54,7 +55,7 @@ class _CachedDanbooru:
     def get(self, path: str, params: dict | None = None) -> tuple[object, str]:
         url = str(self.client.build_request("GET", path, params=params).url)
         cache = self.cache_dir / (hashlib.sha256(url.encode()).hexdigest() + ".json")
-        if cache.exists():
+        if cache.exists() and (self.max_age_days is None or time.time() - cache.stat().st_mtime < self.max_age_days * 86400):
             return json.loads(cache.read_text(encoding="utf-8"))["response"], url
         elapsed = time.monotonic() - self.last_request
         if self.last_request and elapsed < 0.8:
