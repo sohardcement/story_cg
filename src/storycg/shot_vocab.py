@@ -7,9 +7,9 @@ see TASK-v2 §2.3). This module only enforces and reports those grades:
   that share framing, angle and action (V2-12, D57: see classify_shots);
   same action with a different framing/angle is off-table;
 - each entry has one grade (V2-43b: the L1 column and the tier argument are gone);
-- off-table actions count as sometimes (D32) and share the group quota of at
-  most one sometimes shot per storyboard; unusable is rejected with the
-  registered substitute;
+- off-table actions are 'untested' (V2-62, D96; before that they counted as
+  sometimes, D32) and take no quota; at most one sometimes shot per storyboard;
+  unusable is rejected with the registered substitute;
 - off-table results observed at runtime are appended to an observation log,
   marked not human-judged; grades change only through user decisions.
 """
@@ -95,7 +95,7 @@ def classify_shots(board, vocab=None):
             scope = scoped if scoped else hits
             grade = max((grade_of(item) for item in scope), key=lambda g: GRADE_ORDER[g])
         else:
-            grade, expression_matches = "sometimes", []
+            grade, expression_matches = "untested", []  # V2-62 (D96): off-table takes no 'sometimes' quota
         shots.append({"shot": entry.get("number", index + 1), "action": action,
                       "framing": shot["framing"], "camera_angle": shot["camera_angle"],
                       "expression": shot["expression"], "vocab_ids": [item["id"] for item in hits],
@@ -134,11 +134,8 @@ def validate_shot_vocab(board, config=None, vocab=None):
     if len(sometimes) > 1:
         parts = [f"第 {c['shot']} 镜：动作 {c['action']} 为有时{'（表外）' if c['off_table'] else ''}"
                  for c in sometimes]
-        problem = "；".join(parts) + "；每组最多 1 镜有时（含表外）"
-        fix = "换用稳定组合；表外动作与“有时”项共享这 1 镜名额"
-        if any(c["off_table"] for c in sometimes):
-            fix += ("；表外的 pose 若是状态（如睡着、哭），把状态移到 expression，"
-                    "并换一个表内体位；其余表外 pose 改成表内动作")
+        problem = "；".join(parts) + "；每组最多 1 镜有时（表外动作不算）"
+        fix = "换用稳定组合；或保留 1 镜有时，其余改为稳定组合"
         raise StoryRuleViolation(
             "shot_vocab_sometimes_limit",
             [f"$.shots[{c['shot'] - 1}].shot.pose" for c in sometimes],
@@ -152,32 +149,23 @@ def _combo(item):
 
 
 def prompt_section(config=None, vocab=None):
-    """Instruction block listing the stable/sometimes/unusable combos."""
-    vocab = vocab or load_vocab(config)
-    items = vocab["items"]
-    header = (" Shot vocabulary from the capability probe "
-              "(a shot matches an entry when framing, camera_angle and the pose tag all agree; "
-              "the expression may differ).")
-    stable = [f"{_combo(item)}" for item in items if grade_of(item) == "stable"]
-    sometimes = [f"{_combo(item)}" for item in items if grade_of(item) == "sometimes"]
-    unusable = []
-    for item in items:
-        if grade_of(item) != "unusable":
-            continue
-        unusable.append(f"{_combo(item)} -> {substitute_text(item)}")
-    section = [header]
+    """V2-63 (D96, TASK-v2 §12 item 1): the vocabulary lines of beats-guide, short and in Chinese.
+
+    One line per grade, each combo written as `id framing/angle pose`; unusable combos name their substitute.
+    """
+    items = (vocab or load_vocab(config))["items"]
+    stable = [_combo(item) for item in items if grade_of(item) == "stable"]
+    sometimes = [_combo(item) for item in items if grade_of(item) == "sometimes"]
+    unusable = [f"{_combo(item)} → {substitute_text(item)}" for item in items if grade_of(item) == "unusable"]
+    lines = ["一个镜头按“景别/角度 pose”对表，表情可以不同。"]
     if stable:
-        section.append(" STABLE combos, plan these first: " + "; ".join(stable) + ".")
+        lines.append("- 稳定，优先用：" + "；".join(stable))
     if sometimes:
-        section.append(" SOMETIMES combos, at most ONE shot of this storyboard may use one: "
-                       + "; ".join(sometimes) + ".")
+        lines.append("- 有时，每组最多 1 镜：" + "；".join(sometimes))
     if unusable:
-        section.append(" UNUSABLE combos, never plan these; if the story needs the beat, use the substitute: "
-                       + "; ".join(unusable) + ".")
-    section.append(" Actions not listed here are allowed but count as SOMETIMES and share that "
-                   "single quota. When you substitute an unusable combo, record the substitution "
-                   "in story_note as one concise Chinese sentence.")
-    return "".join(section)
+        lines.append("- 不可用，不要用（改用替代，并在 story_note 里用一句中文记下）：" + "；".join(unusable))
+    lines.append("- 表里没有的组合可以用，记为未测，不占名额。")
+    return "\n".join(lines)
 
 
 def _review_conclusion(root, number):

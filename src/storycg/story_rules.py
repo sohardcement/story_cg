@@ -1,13 +1,6 @@
 """Generic static readability constraints, independent of story objects."""
 import re
 
-RULE_PROMPT = (
-    'Declare subject_visibility clear or obscured, other_people restricted modes, hand_owners subject/anonymous_other. '
-    'At most one shot may use behind camera or obscure the protagonist. Prefer front/side readable reactions. '
-    'Other people only anonymous back views, passersby, offscreen or cropped parts. '
-    'If any additional hand is depicted, put its owner in spatial_relation (hand_owner: subject or anonymous other). '
-    'Never depict unexplained floating hands. Keep the main protagonist visible in most shots.'
-)
 
 
 class StoryRuleViolation(ValueError):

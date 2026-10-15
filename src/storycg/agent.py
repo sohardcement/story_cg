@@ -558,6 +558,8 @@ def beats_cli(argv):
     comp.add_argument('--beats', required=True, type=Path)
     comp.add_argument('--shots', type=int, default=4)
     comp.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
+    comp.add_argument('--verbose', action='store_true',
+                      help='also print the compiled storyboard and the character guide (V2-63: off by default)')
     args = parser.parse_args(argv)
     if args.command == 'beats-guide':
         info = None
@@ -598,19 +600,28 @@ def beats_cli(argv):
     try:
         board = compile_beats(root, args.beats, identity, args.shots, config)
     except BeatsError as exc:
-        print(json.dumps({'status': 'invalid', 'errors': exc.errors, 'message': str(exc),
-                          'character_guide': guide}, ensure_ascii=False, indent=2))
+        # V2-63 (D96): the errors only; the guide is the same text beats-guide printed, so it is not repeated.
+        payload = {'status': 'invalid', 'errors': exc.errors, 'message': str(exc)}
+        if args.verbose:
+            payload['character_guide'] = guide
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 2
     except RESOURCE_ERRORS as exc:
         # The tag existence checks call Danbooru during compile; the same failure as above.
         print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
         return 1
     from storycg.display import compile_rewrites
+    from storycg.beats import prompt_preview
+    from storycg.tags import canonical_tag
     # V2-51 (D88): every rewrite of this compile, the automatic ones and the removed or replaced tags.
-    print(json.dumps({'status': 'valid',
-                      'storyboard': board, 'job_dir': str(root), 'character_guide': guide,
-                      'rewrites': compile_rewrites(root)},
-                     ensure_ascii=False, indent=2))
+    # V2-62 (D96): the final prompts, so the writer sees which tags are actually drawn.
+    payload = {'status': 'valid', 'job_dir': str(root), 'rewrites': compile_rewrites(root),
+               'summary': [row['summary'] for row in beat_summaries(board, {canonical_tag(t['tag']) for t in
+                                                                           identity.get('default_outfit_tags', [])})],
+               'prompt_preview': prompt_preview(board, identity, config)}
+    if args.verbose:  # V2-63 (D96): the full storyboard and guide only on request
+        payload.update(storyboard=board, character_guide=guide)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
 
