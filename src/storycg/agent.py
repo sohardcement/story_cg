@@ -146,7 +146,7 @@ def check_resources(config):
 def generate(root, config):
     check_resources(config)
     from storycg.cycle import settings
-    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()))
+    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()), config)
     try:
         state = run_story_job(root, config, client)
     finally:
@@ -236,7 +236,7 @@ def make_portrait(root, config, *, redo=False):
     """V2-24: produce (or with redo, one more) portrait and stop; no shot is submitted."""
     check_resources(config)
     from storycg.cycle import settings
-    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()))
+    client = GuardedComfy(ComfyClient(config['comfyui_url'], config['http_timeout_seconds']), Budget(root, settings()), config)
     try:
         state = run_story_job(root, config, client, stop_after_portrait=True, redo_portrait=redo)
     finally:
@@ -572,6 +572,16 @@ def _resource_failure(exc):
             'question': '关键资源不可用：' + str(exc) + '。请恢复后重试当前命令。', 'options': []}
 
 
+def resolve_config(args):
+    """P0.3: the config of a command: a registered --profile, or --config FILE, or the default (never both)."""
+    from storycg.config import load_profile
+    if getattr(args, 'profile', None):
+        if args.config is not None:
+            raise ValueError('--profile and --config cannot be used together')
+        return load_profile(args.profile)
+    return load_config(args.config or PROJECT/'config/default.json')
+
+
 def beats_cli(argv):
     """`beats-guide` prints the writing guide; `compile` checks a beats file without generating images."""
     parser = argparse.ArgumentParser(prog='storycg')
@@ -579,12 +589,14 @@ def beats_cli(argv):
     guide = sub.add_parser('beats-guide', help='print the story beats writing guide')
     guide.add_argument('--shots', type=int, default=4)
     guide.add_argument('--character', help='also print the standard outfit tags and the vocabulary for this character')
-    guide.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
+    guide.add_argument('--config', type=Path, default=None)
+    guide.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
     comp = sub.add_parser('compile', help='compile a beats file; reports every error; no image generation')
     comp.add_argument('--character', required=True)
     comp.add_argument('--beats', required=True, type=Path)
     comp.add_argument('--shots', type=int, default=4)
-    comp.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
+    comp.add_argument('--config', type=Path, default=None)
+    comp.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
     comp.add_argument('--verbose', action='store_true',
                       help='also print the compiled storyboard and the character guide (V2-63: off by default)')
     args = parser.parse_args(argv)
@@ -592,7 +604,7 @@ def beats_cli(argv):
         info = None
         if args.character:
             from storycg.identity import resolve_identity
-            config = load_config(args.config)
+            config = resolve_config(args)
             try:
                 identity = resolve_identity(args.character, PROJECT/'cache'/'danbooru')
             except RESOURCE_ERRORS as exc:
@@ -604,7 +616,7 @@ def beats_cli(argv):
                 return 2
         print(beats_guide(args.shots, info))
         return 0
-    config = load_config(args.config)
+    config = resolve_config(args)
     # Scratch job directory: the tier and planning code expect a job.json; nothing here generates images.
     root = PROJECT/'compile'/('cmp-'+uuid.uuid4().hex[:12])
     new_job(root, args.character, 'beats compile check', args.shots, generation_config=config)
@@ -676,7 +688,8 @@ def main(argv):
             command.add_argument('--shots', type=int, default=4)
             command.add_argument('--no-confirm', action='store_true',
                                  help='beats mode stops for confirmation by default; this runs straight through')
-            command.add_argument('--config', type=Path, default=PROJECT/'config/default.json')
+            command.add_argument('--config', type=Path, default=None)
+            command.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
             command.add_argument('--identity-control', choices=['none', 'ipadapter'])
             command.add_argument('--seed', type=int)
         if name in ('make','resume'):
@@ -703,7 +716,10 @@ def main(argv):
             if args.beats is None:
                 raise ValueError('make needs --beats: write the storyboard with beats-guide, check it with compile, then run make --beats FILE')
             options = {k: v for k, v in {'identity_control': args.identity_control, 'generation_seed': args.seed,'character_tag':args.tag,'work':args.work}.items() if v is not None}
-            config = apply_options(load_config(args.config), options)
+            config = apply_options(resolve_config(args), options)
+            from storycg.content_gate import request_mismatch
+            if mismatch:
+                raise ValueError(mismatch)
             if (root/'agent.json').exists():
                 raise ValueError('job already exists; use status/resume/approve')
             beats_src = args.beats.resolve()

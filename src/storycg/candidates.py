@@ -372,12 +372,14 @@ def _portrait_item_text(item):
     return f"{item['item']}（{item['status']}{source}）：{item['reason'].rstrip('.。')}（{kind}）"
 
 
-def _group_deviation_lines(root, group):
+def _group_deviation_lines(root, group, skipped=False):
     """V2-32 / V2-45: the group's unreliable categories, plus the raw portrait review's reliable failed items.
     No layer conclusions. The portrait line is written only when a reliable item did not pass."""
     from storycg.display import portrait_review
     names = list(dict.fromkeys(group))
     lines = [f"- 至少一镜未经可靠审核的类别：{'、'.join(names)}" if names else '- 至少一镜未经可靠审核的类别：无']
+    if skipped:  # P0.2: "无" would read as reviewed; the per-shot identity/outfit review did not run
+        lines = ['- 未进行逐镜身份服装终审（默认关闭）：身份、服装、配饰请看图确认；下面写“通过筛选”只表示人数和多余肢体检查通过。']
     portrait = portrait_review(root) or {}
     failed = [x for x in portrait.get('failed_items') or [] if x.get('reliable', True)]
     if failed:
@@ -532,7 +534,8 @@ def result_text(root, store=None):
     if failed_calls:  # V2-65: a service that was down must not read as "no deviations"
         lines.append(f'- **视觉审核有 {failed_calls}/{all_calls} 次调用失败**（服务不可用或超时）：失败的部分没有审核结果，'
                      '下面写“没有观察到偏差”的地方只表示没有记录，不表示审核通过。请看图确认。')
-    lines += _group_deviation_lines(root, group)
+    skipped = (cycle.get('final_review') or {}).get('per_shot_consistency') == 'skipped'
+    lines += _group_deviation_lines(root, group, skipped)
     lines.append('')
     # V2-34: the final review's narrative comparison is reported here; its per-shot items follow each shot.
     lines += ['### 终审发现', '']
@@ -549,7 +552,7 @@ def result_text(root, store=None):
         lines += _final_shot_lines(root, cycle, number, picks[number])
         lines.append('')
     if clean:
-        lines.append(f"- 第 {'、'.join(str(n) for n in clean)} 镜：通过筛选，没有观察到偏差。")
+        lines.append(f"- 第 {'、'.join(str(n) for n in clean)} 镜：通过筛选" + ('（未做逐镜身份服装终审）。' if skipped else '，没有观察到偏差。'))
         lines.append('')
     from storycg.display import flat
     # V2-36: all six blind items in this order; an item that is missing or empty is skipped.

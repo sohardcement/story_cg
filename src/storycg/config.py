@@ -47,6 +47,31 @@ def load_config(path: str | Path) -> dict:
     return config
 
 
+PROFILES_PATH = Path(__file__).resolve().parents[2] / "config" / "profiles.json"
+
+
+def _merge(base: dict, extra: dict) -> dict:
+    for key, value in extra.items():
+        base[key] = _merge(base[key], value) if isinstance(value, dict) and isinstance(base.get(key), dict) else value
+    return base
+
+
+def profile_names() -> list:
+    return sorted(json.loads(PROFILES_PATH.read_text(encoding="utf-8"))["profiles"])
+
+
+def load_profile(name: str) -> dict:
+    """P0.3 (D97): a registered profile = a config file plus optional overrides. Callers pick a name; they do not
+    edit config files. An unknown name lists the registered ones."""
+    profiles = json.loads(PROFILES_PATH.read_text(encoding="utf-8"))["profiles"]
+    if name not in profiles:
+        raise ValueError(f"unknown profile {name!r}; registered: {', '.join(sorted(profiles))}")
+    entry = profiles[name]
+    config = load_config(PROFILES_PATH.parent / entry["config"])
+    config["profile"] = name
+    return _merge(config, copy.deepcopy(entry.get("overrides") or {}))
+
+
 class RemovedMode(ValueError):
     """A job snapshot or config still asks for a delivery path that V2-28 removed."""
 

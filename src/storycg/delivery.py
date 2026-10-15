@@ -64,4 +64,4 @@ def deliver_completed(root, client):
     if cycle.get('phase') != 'complete':
         raise ValueError('candidate cycle.json is not complete: ' + str(cycle.get('phase')))
     config = load_state(root)['config']
-    return deliver(root, cycle, config, GuardedComfy(client, Budget(root, cycle['config'])))
+    return deliver(root, cycle, config, GuardedComfy(client, Budget(root, cycle['config']), config))

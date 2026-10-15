@@ -76,11 +76,14 @@ class CycleClient(review.VisionClient):
 
 
 class GuardedComfy:
-    def __init__(self,client,budget):self.client=client;self.budget=budget
+    def __init__(self,client,budget,config=None):self.client=client;self.budget=budget;self.config=config
     def __getattr__(self,name):return getattr(self.client,name)
     def submit_prompt(self,workflow,client_id):
         # Runner records post_count before this call; check the already reserved total.
         self.budget.check()
+        if self.config is not None:  # P0.4: the final positive prompt of every submission passes the content gate
+            from storycg.content_gate import check_workflow
+            check_workflow(workflow,self.config)
         return self.client.submit_prompt(workflow,client_id)
     def wait_for_history(self,prompt_id,interval_seconds,timeout_seconds):
         return self.client.wait_for_history(prompt_id,interval_seconds,timeout_seconds)

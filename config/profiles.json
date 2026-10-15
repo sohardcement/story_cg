@@ -1,0 +1,18 @@
+{
+  "rule": "P0.3（D97）：调用方用 --profile <名字> 选配置，不改配置文件。新增名字由用户登记。config 是 config/ 下的文件，overrides 按键深度合并。",
+  "profiles": {
+    "default": {
+      "config": "default.json",
+      "description": "SFW，akml v3 1.0（项目默认）"
+    },
+    "diagnostic": {
+      "config": "default.json",
+      "overrides": {
+        "final_review": {
+          "per_shot_consistency": true
+        }
+      },
+      "description": "默认配置加逐镜身份服装终审（约多 3 分钟）"
+    }
+  }
+}

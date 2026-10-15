@@ -40,4 +40,3 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 
 ## 运行环境
 
-配置在项目根目录的 `config/default.json`，`comfyui_url`、`model_service_url` 指向局域网内的两台机器；命令可用 `--config` 换配置。每次 `make` 在项目根目录的 `jobs/` 下新建任务目录。

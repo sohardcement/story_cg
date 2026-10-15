@@ -466,7 +466,12 @@ BLIND_SCHEMA['properties']['uncertainty'] = {
     'and alternative interpretations; if no inference is made, say so.'}
 
 
-def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
+def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600, per_shot_consistency=None):
+    """per_shot_consistency: P0.2 (D97) switch for the identity/outfit/scene review of each shot. None reads
+    config final_review.per_shot_consistency (True when absent: a direct review_job call keeps its old behaviour).
+    cycle.full_review passes the delivery default, which is off."""
+    if per_shot_consistency is None:
+        per_shot_consistency = (config.get('final_review') or {}).get('per_shot_consistency', True)
     job_dir = Path(job_dir).resolve()
     started = time.monotonic()
     manifest = json.loads((job_dir / 'manifest.json').read_text())
@@ -529,7 +534,8 @@ def review_job(job_dir, config, *, client=None, max_calls=30, max_seconds=3600):
             report['faces'].append(face)
             # A face-free back view is an observation, not an extra visual failure.
             statuses.append(face['status'])
-        for number, (path, entry, face) in enumerate(zip(paths, board['shots'], report['faces']), 1):
+        report['per_shot_consistency'] = 'run' if per_shot_consistency else 'skipped'
+        for number, (path, entry, face) in enumerate(zip(paths, board['shots'], report['faces']) if per_shot_consistency else (), 1):
             checklist = identity_checklist(identity, entry['outfit'])
             previous_scene = board['shots'][number - 2]['scene'] if number > 1 else None
             checks = {**checklist, **scene_checklist(entry['scene'], previous_scene),
