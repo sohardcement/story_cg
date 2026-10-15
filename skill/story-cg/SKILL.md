@@ -9,9 +9,9 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 
 ## 标准流程（beats）
 
-1. `scripts/storycg beats-guide --character '角色名' --shots 4`：读 schema、写作规则、标准服装 tag 和词汇表。没换衣服用标准服装 tag，换衣服的镜写新 tag；标准服装是场合服装（兔女郎装、泳装等）又不合剧情时，可以整组换成日常服装，规则见 beats-guide。
+1. `scripts/storycg beats-guide --character '角色名' --shots 4`：读例子、写作规则、标准服装 tag、词汇表和动作 tag（约 2k token）。没换衣服用标准服装 tag，换衣服的镜写新 tag；标准服装是场合服装（兔女郎装、泳装等）又不合剧情时，可以整组换成日常服装，规则见 beats-guide。
 2. 按说明写 beats 文件（一个 JSON 对象）。
-3. `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4`：只解析和编译，不出图。返回 invalid 时按错误的镜号和字段修改，直到 valid。
+3. `scripts/storycg compile --character '角色名' --beats '<beats 文件>' --shots 4`：只解析和编译，不出图。返回 invalid 时按错误的镜号和字段修改，直到 valid。valid 时看 `rewrites`（程序自动改了什么）和 `prompt_preview`（每镜最终的正向、负向提示词），确认要画的 tag 都在；默认不回显整份分镜，要看加 `--verbose`。
 4. `scripts/storycg make --character '角色名' --story '剧情' --beats '<beats 文件>' --shots 4`：默认在分镜和定妆图生成后停在 `awaiting_approval`，不出镜头图。每 15–30 秒 `scripts/storycg status '<job_dir>'` 轮询一次。
 5. `awaiting_approval`：展示 `storyboard`（每镜摘要）和 `confirmation` 里的 `portrait_image`、`portrait_face`、每镜候选数；转述 `story_note`、`compile_rewrites`、`portrait_review`（定妆图原始审核，只记录不拦截，未通过的项里哪些是不可靠项，要一并说明）。等用户确认。
 6. 确认：`scripts/storycg approve '<job_dir>'`，轮询到 `completed`。改分镜：写新 beats 文件，`scripts/storycg approve '<job_dir>' --beats '<新 beats 文件>'`，仍停在 `awaiting_approval`，展示新摘要（定妆图不重出）。定妆图不满意：`scripts/storycg approve '<job_dir>' --redo-portrait`，再出一张，仍停在 `awaiting_approval`。
@@ -19,6 +19,9 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 8. 交付后展示拼图和候选总图，读取 result.md。换某镜：`scripts/storycg pick '<job_dir>' --shot N --candidate K`，只换选择、重建拼图和 result.md，不出图、不重审。K 可以是被筛掉的候选，结果会注明。换完把新拼图再给用户。
 
 ## 其他命令
+
+- `cancel '<job_dir>'`：**停止任务的唯一方式**。不要自己 `kill` 进程，不要直接请求 ComfyUI 的队列接口，不要改配置文件。取消后可以 `resume`。
+- `prune [--days N] [--apply]`：清理已结束任务的中间图和旧的 compile 草稿。不带 `--apply` 只列出；只在用户要求时才加 `--apply`。
 
 - `resume`：中断或资源恢复后用，再轮询 status。未确认的分镜不会自动出图。
 - `deliver`：只重建交付文件，不出图、不审核。
@@ -34,7 +37,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 - 附结果摘要、已知问题，以及 `artifacts.images`、`artifacts.result`、`artifacts.manifest` 路径。
 - `stopped` 且没有交付物时不宣称成功。有 `error` 时原样说明；已有产物不等于审核通过。`interrupted` 时 resume。
 
-不改项目代码、配置或任务状态文件。遇到 `error`、`reason`、`question` 原样转告，不自行修代码或改状态来绕过。
+不改项目代码、配置或任务状态文件；用户说“试试”“升档”这类话时也不改配置，需要换配置就让用户来改。遇到 `error`、`reason`、`question` 原样转告，不自行修代码或改状态来绕过。
 
 ## 运行环境
 
