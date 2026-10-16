@@ -295,3 +295,4 @@ TASK.md §2 红线、监工模式（SUPERVISOR.md / AGENTS.md）、Hermes 安装
 - P0.1 beats v3（场景和服装命名引用，构图可省略）：已做。P0.5 本地 Qwen 写 v3 beats 的测量：已做，通过（`verify/v2/d97-p0/p05/`）。
 - P0.2 逐镜身份服装终审默认关闭（`final_review.per_shot_consistency`，profile diagnostic 打开），result.md 写明"未进行"：已做。
 - P0.6 死代码清点、P0.7 挑选方式离线比较：未做。P1（构图、LoRA、姿势控制实验）、P2（七组验收）：未开始。
+- P0.6 已做：删 9 个 V2-61 之后没人用的函数和它们的测试（216 行）。P0.7 已做：并排挑选默认改为单次（`pairwise_orders` 1，设 2 恢复双序），依据 `verify/v2/d97-p0/p07/RESULT.md`。

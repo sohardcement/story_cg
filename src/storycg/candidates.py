@@ -213,7 +213,8 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
             if chosen is not None and pairwise_enabled(config):
                 # V2-23 (D65): the side-by-side pick may replace the ranking result; it never fails the shot.
                 from storycg.pairwise import resolve
-                chosen, reason, slot['pairwise'] = resolve(root, number, entry, slot['candidates'], chosen, reason, vlm)
+                chosen, reason, slot['pairwise'] = resolve(root, number, entry, slot['candidates'], chosen, reason, vlm,
+                                                                orders=config.get('pairwise_orders', 1))
             slot['selected'] = chosen['candidate'] if chosen else None
             slot['reason'] = reason
             _save_store(root, store)

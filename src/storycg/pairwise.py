@@ -111,7 +111,7 @@ def _ask(vlm, root, number, entry, pool, order):
     return record
 
 
-def resolve(root, number, entry, records, top, top_reason, vlm, *, budget_remaining=None):
+def resolve(root, number, entry, records, top, top_reason, vlm, *, budget_remaining=None, orders=2):
     """Return (chosen record, reason, pairwise record) for one shot.
 
     `top` and `top_reason` are the ranking result. The pairwise record is stored in candidates.json.
@@ -126,19 +126,24 @@ def resolve(root, number, entry, records, top, top_reason, vlm, *, budget_remain
     budget = budget_remaining
     if budget is None:
         budget = vlm.max_calls - vlm.calls
-    if budget < CALLS_PER_SHOT:
-        record.update(decision='reverted', reason=f'视觉调用预算不够（需要 {CALLS_PER_SHOT} 次，剩余 {budget} 次），按原排序')
+    if budget < orders:
+        record.update(decision='reverted', reason=f'视觉调用预算不够（需要 {orders} 次，剩余 {budget} 次），按原排序')
         return top, f'{top_reason}；并排挑选未调用：视觉调用预算不够，按原排序', record
     results = {}
-    for order in ('forward', 'reverse'):
+    for order in (('forward', 'reverse') if orders >= 2 else ('forward',)):
         results[order] = _ask(vlm, root, number, entry, pool, order)
         record['orders'][order] = results[order]
         if results[order]['status'] != 'pass':
             kind = '返回格式错误' if _classify(results[order]['error']) == 'format' else '调用失败'
             record.update(decision='reverted', reason=f'并排挑选{kind}（{order}：{results[order]["error"]}），按原排序')
             return top, f'{top_reason}；并排挑选{kind}，按原排序', record
-    fwd, rev = results['forward']['best_candidate'], results['reverse']['best_candidate']
     by_candidate = {r['candidate']: r for r in pool}
+    if orders < 2:  # P0.7 (D97): one order; the offline comparison found no gain from the second
+        fwd = results['forward']['best_candidate']
+        reason = f"并排挑选（单次）：候选 {fwd}。模型理由：{results['forward']['reason']}"
+        record.update(decision='adopted', reason=reason, chosen=fwd, orders_used=1)
+        return by_candidate[fwd], reason, record
+    fwd, rev = results['forward']['best_candidate'], results['reverse']['best_candidate']
     if fwd == rev:
         chosen = by_candidate[fwd]
         reason = f"并排挑选，正序倒序一致：候选 {fwd}。模型理由：{results['forward']['reason']}"
