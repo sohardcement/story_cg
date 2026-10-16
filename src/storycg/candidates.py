@@ -169,6 +169,59 @@ def _run_round(root, store, entry, board, identity, config, client, vlm, budget,
         _save_store(root, store)
 
 
+class ReviewPause(Exception):
+    """D101: in review_mode human the job stops after each shot until the user picks a candidate."""
+
+    def __init__(self, shot):
+        self.shot = shot
+        super().__init__(f'shot {shot} waits for the user to pick a candidate')
+
+
+def human_review(config):
+    return (config or {}).get('review_mode', 'auto') == 'human'
+
+
+def pending_shot(store):
+    """The first shot that has candidates but no confirmed pick (human review), else None."""
+    for key, slot in sorted(store.items(), key=lambda kv: int(kv[0])):
+        if slot.get('candidates') and not slot.get('confirmed'):
+            return int(key)
+    return None
+
+
+def write_pending_sheet(root, store, number):
+    """The candidates of one shot only, for the user's look (pending_sheet.jpg)."""
+    one = {str(number): store[str(number)]}
+    sheet = write_candidate_sheet(root, one)  # writes candidate_sheet.jpg of the one shot ...
+    target = root / 'pending_sheet.jpg'
+    target.write_bytes(sheet.read_bytes())
+    write_candidate_sheet(root, store)  # ... then the all-shots sheet is written again
+    return target
+
+
+def pick_pending(root, number, candidate, *, more=False):
+    """D101: the user's pick (or a request for more candidates) for the shot a human-review job waits on."""
+    root = Path(root)
+    store = _load_store(root)
+    slot = store.get(str(number))
+    if slot is None or not slot.get('candidates'):
+        raise ValueError(f'shot {number} has no candidates yet')
+    if slot.get('confirmed'):
+        raise ValueError(f'shot {number} is already confirmed; use pick after delivery to change it')
+    if more:
+        slot['more'] = slot.get('more', 0) + 1
+        _save_store(root, store)
+        return {'shot': int(number), 'more': slot['more']}
+    record = next((r for r in slot['candidates'] if r['candidate'] == candidate), None)
+    if record is None or record['status'] != 'completed' or not record.get('image'):
+        raise ValueError(f'shot {number} has no completed candidate {candidate}')
+    auto = slot.get('selected')
+    slot.update(selected=candidate, confirmed=True, user_pick=candidate, auto_selected=auto, auto_reason=slot.get('reason'),
+                reason=f'由用户选择候选{candidate}' + ('' if auto == candidate else f'（默认候选{auto}）'))
+    _save_store(root, store)
+    return {'shot': int(number), 'candidate': candidate, 'auto_selected': auto, 'screened': bool(record['screen'])}
+
+
 def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *, budget=None):
     """Generate, screen and select candidates for every shot, then deliver. Returns the job state."""
     from storycg.assembly import assemble_prompt, full_negative_prompt
@@ -188,6 +241,8 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
             number = entry['number']
             key = str(number)
             slot = store.setdefault(key, {'candidates': [], 'selected': None, 'reason': None, 'rounds': 1})
+            if slot.get('confirmed'):
+                continue  # D101: the user already picked this shot; a resume never regenerates or re-picks it
             parts = assemble_prompt(identity, entry, config=config,
                                     **({'props': board['props']} if board.get('props') else {}))
             shot_config = copy.deepcopy(config)
@@ -209,8 +264,18 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
                     _run_round(*args, range(per + 1, 2 * per + 1), 2, face_ref)
                 else:
                     slot['second_round_skipped'] = {'reason': 'budget', 'remaining': remaining, 'needed': needed}
+            while human_review(config) and slot.get('more', 0) > slot.get('more_done', 0):
+                # D101: the user asked for another batch of this shot: new candidate numbers, new seeds
+                start = max(r['candidate'] for r in slot['candidates']) + 1
+                if remaining_images(budget, load_state(root)) < per:
+                    slot['more'] = slot.get('more_done', 0)
+                    slot['more_refused'] = '出图额度不够，没有再出'
+                    break
+                slot['more_done'] = slot.get('more_done', 0) + 1
+                _save_store(root, store)
+                _run_round(*args, range(start, start + per), 2 + slot['more_done'], face_ref)
             chosen, reason = pick(slot['candidates'])
-            if chosen is not None and pairwise_enabled(config):
+            if chosen is not None and pairwise_enabled(config) and not human_review(config):
                 # V2-23 (D65): the side-by-side pick may replace the ranking result; it never fails the shot.
                 from storycg.pairwise import resolve
                 chosen, reason, slot['pairwise'] = resolve(root, number, entry, slot['candidates'], chosen, reason, vlm,
@@ -218,6 +283,9 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
             slot['selected'] = chosen['candidate'] if chosen else None
             slot['reason'] = reason
             _save_store(root, store)
+            if human_review(config):
+                write_pending_sheet(root, store, number)
+                raise ReviewPause(number)
     finally:
         vlm.close()
     return _finish(root, config, client, identity, board, store, cycle_cfg)
@@ -243,7 +311,11 @@ def _finish(root, config, client, identity, board, store, cycle_cfg):
     fingerprint = hashlib.sha256(json.dumps([(n, s['selected']) for n, s in sorted(store.items())],
                                             sort_keys=True).encode()).hexdigest()[:16]
     final_path = root / 'cycle_artifacts' / f'final_review_candidates_{fingerprint}.json'
-    if final_path.exists():
+    if human_review(config):
+        # D101: the user looked at every shot; there is no vision-model review and no narrative retelling.
+        report = {'mode': 'human', 'per_shot_consistency': 'skipped', 'consistency': [], 'faces': [],
+                  'narrative_blind': {}, 'narrative_compare': {}}
+    elif final_path.exists():
         report = json.loads(final_path.read_text(encoding='utf-8'))
     else:
         report = frozen.full_review(root, config, Budget(root, cycle_cfg))
@@ -530,38 +602,48 @@ def result_text(root, store=None):
         picks[number] = None if slot is None else next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
     group = list(dict.fromkeys(k for number, selected in picks.items()
                                for k in _unreliable_keys(root, selected, cycle, number)))
-    lines += ['## 已观察到的偏差', '']
+    human = (cycle.get('final_review') or {}).get('mode') == 'human'
     failed_calls, all_calls = vision_failures(root)
-    if failed_calls:  # V2-65: a service that was down must not read as "no deviations"
-        lines.append(f'- **视觉审核有 {failed_calls}/{all_calls} 次调用失败**（服务不可用或超时）：失败的部分没有审核结果，'
-                     '下面写“没有观察到偏差”的地方只表示没有记录，不表示审核通过。请看图确认。')
-    skipped = (cycle.get('final_review') or {}).get('per_shot_consistency') == 'skipped'
-    lines += _group_deviation_lines(root, group, skipped)
-    lines.append('')
-    # V2-34: the final review's narrative comparison is reported here; its per-shot items follow each shot.
-    lines += ['### 终审发现', '']
-    lines += _final_narrative_lines(cycle)
-    lines.append('')
-    # V2-45: a shot with nothing to list gets no subsection; the clean shots are summed up in one line at the end.
-    clean = []
-    for number in numbers:
-        if not failed_calls and _shot_is_clean(root, cycle, number, picks[number]):
-            clean.append(number)
-            continue
-        lines.append(f'### 第 {number} 镜')
-        lines += _audit_deviation_lines(root, picks[number])
-        lines += _final_shot_lines(root, cycle, number, picks[number])
+    if human:
+        # D101: every shot was looked at and picked by the user; there is no model review to report.
+        lines += ['## 审核', '', '- 这一组由用户逐镜看图选择候选，没有视觉模型审核，也没有看图复述。身份、服装、动作以你看到的为准。']
+        for number in numbers:
+            selected = picks[number]
+            if selected is not None and selected['screen']:
+                lines.append(f"- 第 {number} 镜选中的候选 {selected['candidate']} 被本机检测标出：{'；'.join(selected['screen'])}（用户指定保留）。")
         lines.append('')
-    if clean:
-        lines.append(f"- 第 {'、'.join(str(n) for n in clean)} 镜：通过筛选" + ('（未做逐镜身份服装终审）。' if skipped else '，没有观察到偏差。'))
+    else:
+        lines += ['## 已观察到的偏差', '']
+        if failed_calls:  # V2-65: a service that was down must not read as "no deviations"
+            lines.append(f'- **视觉审核有 {failed_calls}/{all_calls} 次调用失败**（服务不可用或超时）：失败的部分没有审核结果，'
+                         '下面写“没有观察到偏差”的地方只表示没有记录，不表示审核通过。请看图确认。')
+        skipped = (cycle.get('final_review') or {}).get('per_shot_consistency') == 'skipped'
+        lines += _group_deviation_lines(root, group, skipped)
         lines.append('')
-    from storycg.display import flat
-    # V2-36: all six blind items in this order; an item that is missing or empty is skipped.
-    blind = (cycle.get('final_review') or {}).get('narrative_blind', {}).get('data', {})
-    blind_lines = [f"- {key}：{flat(blind[key])}" for key in BLIND_ITEMS if blind.get(key)]
-    lines += ['## 看图复述', '', '以下是终审的盲审模型只看图写的，不是剧情原文：', '']
-    lines += blind_lines or ['- 终审没有给出看图复述。']
-    lines.append('')
+        # V2-34: the final review's narrative comparison is reported here; its per-shot items follow each shot.
+        lines += ['### 终审发现', '']
+        lines += _final_narrative_lines(cycle)
+        lines.append('')
+        # V2-45: a shot with nothing to list gets no subsection; the clean shots are summed up in one line at the end.
+        clean = []
+        for number in numbers:
+            if not failed_calls and _shot_is_clean(root, cycle, number, picks[number]):
+                clean.append(number)
+                continue
+            lines.append(f'### 第 {number} 镜')
+            lines += _audit_deviation_lines(root, picks[number])
+            lines += _final_shot_lines(root, cycle, number, picks[number])
+            lines.append('')
+        if clean:
+            lines.append(f"- 第 {'、'.join(str(n) for n in clean)} 镜：通过筛选" + ('（未做逐镜身份服装终审）。' if skipped else '，没有观察到偏差。'))
+            lines.append('')
+        from storycg.display import flat
+        # V2-36: all six blind items in this order; an item that is missing or empty is skipped.
+        blind = (cycle.get('final_review') or {}).get('narrative_blind', {}).get('data', {})
+        blind_lines = [f"- {key}：{flat(blind[key])}" for key in BLIND_ITEMS if blind.get(key)]
+        lines += ['## 看图复述', '', '以下是终审的盲审模型只看图写的，不是剧情原文：', '']
+        lines += blind_lines or ['- 终审没有给出看图复述。']
+        lines.append('')
     issues = []
     if (board.get('props') or any(e['shot'].get('key_props') or e['shot'].get('prop_tags') for e in board.get('shots', []))):
         issues.append('道具未经审核，只作陪衬，数量、归属、状态不保证。')
@@ -580,7 +662,10 @@ def result_text(root, store=None):
     if failed_calls:
         issues.append(f'视觉审核有 {failed_calls}/{all_calls} 次调用失败：多余肢体检查、并排挑选、整组终审里失败的部分没有结果，'
                       '挑选可能退回按候选号，看图复述可能缺失，请人工看图。')
-    issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
+    if human:
+        issues.append('本机只做人数检测，没有多余肢体检查，请你看图确认手和腿。')
+    else:
+        issues.append('多余肢体检查只筛掉明确阳性的候选，可能漏检，请看图复核手和腿。')
     if board.get('story_note'):
         issues.append('分镜改写提醒（story_note）：' + board['story_note'])
     if 'Budget' in str(agent.get('error') or '') or 'budget' in str(agent.get('error') or ''):

@@ -89,6 +89,9 @@ def audit_portrait(root, image, identity, config, vlm, attempt):
         'body':'correct natural anatomy','hands':'correct visible hands',
         'composition':config['portrait']['tags']}.items()})
     paths=[image]+([root/face['path']] if face else [])
+    if config.get('review_mode') == 'human':  # D101: the user looks at the portrait; no vision-model call
+        return {'status':'pass' if face else 'fail','conclusion':'未审核（用户看图）','bbox':bbox,'audit':{'status':'skipped','data':{}},
+                'checklist':checks,'face':face,'detection_items':detection_items}
     audit=vlm.call(f'portrait_audit_{attempt}',messages(
         OBSERVABILITY_PROMPT + 'Audit this character setting portrait against ONLY the sourced checklist. '
         'Image 1 is full portrait; image 2 if present is its face crop. '

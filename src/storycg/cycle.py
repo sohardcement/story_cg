@@ -73,7 +73,7 @@ def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):
     portrait=read(root/'portrait.json')
     detection_items=audit_detection(source,identity,entry,reference_path=root/portrait['image']['path'],review_config=config)
     extra=(extra_part.check(vlm,source,identity,label+'_extra_body_part')
-           if extra_part.should_check(detection_items) else None)  # V2-16: skipped on a reliable duplicate count
+           if extra_part.should_check(detection_items) and config.get('review_mode')!='human' else None)  # D101: human review makes no vision call  # V2-16: skipped on a reliable duplicate count
     result={'version':2,'image':image,'detection':detected,'face':face,'detection_items':detection_items,
             'extra_body_part':extra}
     save_json_atomic(path,result);return result

@@ -3,16 +3,27 @@
   "profiles": {
     "default": {
       "config": "default.json",
-      "description": "SFW，akml v3 1.0（项目默认）"
+      "overrides": {
+        "review_mode": "human"
+      },
+      "description": "SFW，akml v3 1.0，用户逐镜看图选择（D101），不调用视觉模型"
     },
     "diagnostic": {
       "config": "default.json",
       "overrides": {
+        "review_mode": "auto",
         "final_review": {
           "per_shot_consistency": true
         }
       },
-      "description": "默认配置加逐镜身份服装终审（约多 3 分钟）"
+      "description": "auto 加逐镜身份服装终审（约多 3 分钟）"
+    },
+    "auto": {
+      "config": "default.json",
+      "overrides": {
+        "review_mode": "auto"
+      },
+      "description": "视觉模型自动审核和挑选（D101 之前的流程），用户最后换候选"
     }
   }
 }

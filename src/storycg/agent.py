@@ -20,6 +20,7 @@ from storycg.config import check_removed_switches, load_config
 from storycg.controls import apply_options
 from storycg.net_errors import RESOURCE_FAILURES, json_body
 from storycg.pipeline import new_job, resolve_job, run_story_job, make_contact_sheet
+from storycg.candidates import ReviewPause, pick_pending
 from storycg.beats import BeatsError, beats_guide, character_guide, compile_beats
 from storycg.state import save_json_atomic
 
@@ -39,7 +40,7 @@ def read(root, name, default=None):
 def update(root, **fields):
     record = read(root, 'agent.json')
     prior_phase = record.get('phase')
-    if fields.get('phase') in ('stopped','needs_user','completed','awaiting_approval'):
+    if fields.get('phase') in ('stopped','needs_user','completed','awaiting_approval','awaiting_pick'):
         fields.setdefault('finished_at',datetime.now(timezone.utc).isoformat())
     record.update(fields)
     save_json_atomic(root/'agent.json', record)
@@ -56,7 +57,7 @@ def question(root, reason, message, options=None):
 def end_wait(root):
     record = read(root, 'agent.json')
     stopped=record.get('finished_at')
-    if 'finished_at' not in record and record.get('phase') in ('stopped','needs_user','completed','awaiting_approval'):
+    if 'finished_at' not in record and record.get('phase') in ('stopped','needs_user','completed','awaiting_approval','awaiting_pick'):
         stopped=record.get('waiting_since') or datetime.fromtimestamp((root/'agent.json').stat().st_mtime,timezone.utc).isoformat()
     if stopped and not record.get('waiting_since'):
         duration=max(0,(datetime.now(timezone.utc)-datetime.fromisoformat(stopped)).total_seconds())
@@ -74,7 +75,7 @@ def install_exit_record(root):
 
     def on_signal(signum, frame):
         record = read(root, 'agent.json')
-        if record.get('phase') not in ('completed', 'stopped', 'cancelled', 'needs_user', 'awaiting_approval'):
+        if record.get('phase') not in ('completed', 'stopped', 'cancelled', 'needs_user', 'awaiting_approval', 'awaiting_pick'):
             update(root, phase='cancelled' if signum == signal.SIGTERM and record.get('cancel_requested') else 'stopped',
                    needs_user=False, error=f'worker 收到信号 {signal.Signals(signum).name} 后退出；可以运行 resume 接着跑')
         os._exit(1)
@@ -318,6 +319,10 @@ def execute(root):
             return
         update(root, phase='generating_and_repairing')
         generate(root, config)
+    except ReviewPause as exc:
+        # D101: human review: the shot's candidates are made; the job waits for the user's pick
+        update(root, phase='awaiting_pick', needs_user=False, pending_shot=exc.shot,
+               waiting_since=datetime.now(timezone.utc).isoformat())
     except RESOURCE_ERRORS as exc:
         question(root, 'resource_unavailable', '关键资源不可用：'+str(exc)+'。请恢复资源后运行 resume，或调整资源配置后新建任务。')
     except Exception as exc:
@@ -470,6 +475,8 @@ def status(root):
               'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
               'artifacts': paths,
               'confirmation': _confirmation(root) if phase == 'awaiting_approval' else None}
+    if phase == 'awaiting_pick':
+        result['pending_pick'] = _pending_pick(root, record.get('pending_shot'))
     if phase == 'awaiting_approval':
         # V2-41: the storyboard summary is shown to the user only at awaiting_approval.
         result['storyboard'] = _summary_for_status(root, record, phase)
@@ -480,6 +487,18 @@ def status(root):
         result['next_step'] = (f"身份已锁定为 {identity.get('character_tag')}（作品 {identity.get('work_tag')}）："
                                '运行 resume 继续定档与出图。')
     return result
+
+
+def _pending_pick(root, shot):
+    """D101: what the user looks at when a human-review job waits: the shot's candidates and the sheet."""
+    slot = read(root, 'candidates.json').get(str(shot), {})
+    return {'shot': shot, 'sheet': str(root/'pending_sheet.jpg') if (root/'pending_sheet.jpg').exists() else None,
+            'default_candidate': slot.get('selected'),
+            'candidates': [{'candidate': r['candidate'], 'round': r['round'], 'seed': r['seed'], 'screen': r['screen'],
+                            'image': str(root/r['image']['path']) if r.get('image') else None, 'status': r['status']}
+                           for r in slot.get('candidates', [])],
+            'more_refused': slot.get('more_refused'),
+            'next': f"pick '{root}' --shot {shot} --candidate K，或 --more 再出一批"}
 
 
 def _summary_for_status(root, record, phase):
@@ -579,7 +598,9 @@ def resolve_config(args):
         if args.config is not None:
             raise ValueError('--profile and --config cannot be used together')
         return load_profile(args.profile)
-    return load_config(args.config or PROJECT/'config/default.json')
+    if args.config is None:
+        return load_profile('default')  # D101: the default profile is human review
+    return load_config(args.config)
 
 
 def beats_cli(argv):
@@ -704,6 +725,7 @@ def main(argv):
         if name == 'pick':
             command.add_argument('--shot', type=int)
             command.add_argument('--candidate', type=int)
+            command.add_argument('--more', action='store_true', help='human review: make another batch of this shot')
     args = parser.parse_args(argv)
     root = (args.job_dir or PROJECT/'jobs'/('cg-'+uuid.uuid4().hex[:12])).resolve()
     code = 0
@@ -775,6 +797,16 @@ def main(argv):
                         save_json_atomic(root/'identity.json',old)
                 if args.command == 'deliver':
                     deliver(root)
+                elif args.command == 'pick' and read(root, 'agent.json').get('phase') == 'awaiting_pick':
+                    # D101: the user's pick (or --more) for the shot the job waits on; the job then goes on by itself
+                    if args.shot is None or (args.candidate is None and not args.more):
+                        raise ValueError('pick needs --shot and --candidate (or --more)')
+                    if args.shot != read(root, 'agent.json').get('pending_shot'):
+                        raise ValueError(f"the job waits on shot {read(root, 'agent.json').get('pending_shot')}, not shot {args.shot}")
+                    picked = pick_pending(root, args.shot, args.candidate, more=args.more)
+                    end_wait(root)
+                    update(root, phase='queued', pending_shot=None)
+                    launch(root)
                 elif args.command == 'pick':
                     if args.shot is None or args.candidate is None:
                         raise ValueError('pick needs --shot and --candidate')
@@ -812,8 +844,8 @@ def main(argv):
                             execute(root)
                     else:
                         launch(root)
-                elif args.command == 'resume' and read(root, 'agent.json').get('phase') in ('awaiting_approval', 'completed'):
-                    pass
+                elif args.command == 'resume' and read(root, 'agent.json').get('phase') in ('awaiting_approval', 'completed', 'awaiting_pick'):
+                    pass  # nothing to resume: waiting for the user (approve or pick)
                 elif args.command == '_worker' or getattr(args, 'foreground', False):
                     if args.command == '_worker':
                         install_exit_record(root)
