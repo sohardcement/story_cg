@@ -119,7 +119,8 @@ def expand(parsed, identity, vocab_items, add_error):
                           f'自己写 {" 和 ".join(missing)}' + (f'，从 {_combo_text(stable)} 里选' if stable else ''))
             else:
                 prev_shot = (previous or {}).get('shot') or {}
-                fits.sort(key=lambda i: (i['framing'] == prev_shot.get('framing'),
+                # D104 (user): a filled framing is cowboy shot (medium) before wide; wide only when the writer writes it.
+                fits.sort(key=lambda i: (i['framing'] == 'wide', i['framing'] == prev_shot.get('framing'),
                                          i['camera_angle'] == prev_shot.get('camera_angle'), i['id']))
                 chosen = fits[0]
                 for k in missing:

@@ -861,6 +861,92 @@
      "seed": 2757975457
     }
    ]
+  },
+  {
+   "id": 21,
+   "probe_item": 21,
+   "requirement": "中景（cowboy shot）·侧面，行走（D104：用户在 P1.1 盲判中 4 镜全选 cowboy 臂，含两个侧面行走镜头）",
+   "framing": "medium",
+   "camera_angle": "side",
+   "framing_tags": [
+    "cowboy_shot"
+   ],
+   "camera_tags": [
+    "from_side"
+   ],
+   "action_tags": [
+    "walking"
+   ],
+   "expression_tags": [
+    "expressionless"
+   ],
+   "other_shot_tags": [],
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "d97-p1/s3_fern_snow_c1_C",
+     "image": "verify/v2/d97-p1/composition/images/s3_fern_snow_c1_C.png",
+     "order": "D97-P1.1",
+     "seed": 2481519162978283747
+    },
+    {
+     "run_key": "d97-p1/s3_fern_snow_c2_C",
+     "image": "verify/v2/d97-p1/composition/images/s3_fern_snow_c2_C.png",
+     "order": "D97-P1.1",
+     "seed": 636573276822662827
+    },
+    {
+     "run_key": "d97-p1/s4_rem_kitchen_c1_C",
+     "image": "verify/v2/d97-p1/composition/images/s4_rem_kitchen_c1_C.png",
+     "order": "D97-P1.1",
+     "seed": 7561475574890891356
+    },
+    {
+     "run_key": "d97-p1/s4_rem_kitchen_c2_C",
+     "image": "verify/v2/d97-p1/composition/images/s4_rem_kitchen_c2_C.png",
+     "order": "D97-P1.1",
+     "seed": 4736796402021114233
+    }
+   ]
+  },
+  {
+   "id": 22,
+   "probe_item": 22,
+   "requirement": "中景（cowboy shot）·正面，奔跑，着急（D104：用户在 P1.1 盲判中选 cowboy 臂）",
+   "framing": "medium",
+   "camera_angle": "front",
+   "framing_tags": [
+    "cowboy_shot"
+   ],
+   "camera_tags": [],
+   "action_tags": [
+    "running"
+   ],
+   "expression_tags": [
+    "worried"
+   ],
+   "other_shot_tags": [],
+   "grade": "stable",
+   "usable": null,
+   "total": null,
+   "replacement": null,
+   "evidence": [
+    {
+     "run_key": "d97-p1/s2_frieren_run_c1_C",
+     "image": "verify/v2/d97-p1/composition/images/s2_frieren_run_c1_C.png",
+     "order": "D97-P1.1",
+     "seed": 3897105013641853107
+    },
+    {
+     "run_key": "d97-p1/s2_frieren_run_c2_C",
+     "image": "verify/v2/d97-p1/composition/images/s2_frieren_run_c2_C.png",
+     "order": "D97-P1.1",
+     "seed": 913814904722687000
+    }
+   ]
   }
  ]
 }

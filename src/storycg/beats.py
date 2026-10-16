@@ -162,7 +162,8 @@ def rewrite_board(board, config):
                  [_pose_key(a) for a in item['action_tags']]
                  and grade_of(item) == 'stable']
         return sorted(found, key=lambda item: (item['framing'] != shot['framing'],
-                                               item['camera_angle'] != shot['camera_angle'], item['id']))
+                                               item['camera_angle'] != shot['camera_angle'],
+                                               item['framing'] == 'wide', item['id']))  # D104: wide last
 
     shots = board['shots']
     # D98 (user): the first shot is not forced to wide or establishing any more; it is planned like every other shot.
@@ -612,7 +613,8 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '- 一镜只画一个瞬间。先后两个动作拆成两镜。',
         '',
         '## 3. 字段',
-        '- framing：wide 远景、full 全身、medium 中景、closeup 近景。camera_angle：front、side、above、below、behind、dutch。',
+        '- framing：wide 远景、full 全身、medium 中景（cowboy shot，大腿以上）、closeup 近景。camera_angle：front、side、above、below、behind、dutch。'
+        '默认用 medium：人物占画面够大、脸画得清。wide 只在场景本身是这一镜的主体、人物小也说得通时才自己写；省略 framing 时程序不会补 wide。',
         '- pose：剧情里的动作有对应的 Danbooru tag 就直接用，词汇表里没有也可以，不要换成意思相近的别的动作。'
         '第 5 节词汇表只说明哪些组合画得稳：表里有的，省略 framing 和 camera_angle 时程序能补；表外的要自己写。',
         '- 剧情点名的物件和它的颜色，要写进 scene.tags 或 prop_tags，别省略。',
