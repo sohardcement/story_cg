@@ -299,3 +299,4 @@ TASK.md §2 红线、监工模式（SUPERVISOR.md / AGENTS.md）、Hermes 安装
 - P1.1 构图实验已出图（24 张，`verify/v2/d97-p1/composition/`，条件冻结提交在先，诊断阶段不加面部精修），等用户在判定页盲判；判之前不改任何构图规则。
 - P1.1 判定（用户，2026-10-16，盲判）：4 个镜头全部选"只写 cowboy shot"那一臂（`verify/v2/d97-p1/composition/verdict.json`）。"可用/不可用"没填。构图规则还没改。
 - P1.2 判定（用户，2026-10-17，盲判，8 张）：4 个镜头全选 P 列。按隐藏对应关系，P 在两个镜头是有 LoRA、两个镜头是无 LoRA，所以这个选择不能说明偏好哪一边（`verify/v2/d97-p1/lora/verdict.json`）。LoRA 默认配置还没改。
+- P1.3 姿势控制实验已出图（16 张新图，加上构图实验里原来的 A、C 两种作对照，`verify/v2/d97-p1/pose/`；相机规则：人物占画面 90% 高度；ControlNet OpenPoseXL2 强度 0.5/0.8，结束 0.8；带 akml 1.0 和参考脸），等用户盲判。
