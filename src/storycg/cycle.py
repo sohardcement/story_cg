@@ -7,7 +7,6 @@ deliver moved to storycg.delivery.
 import json
 from pathlib import Path
 from storycg import review
-from storycg.closed_eyes import drop_eye_colour_check, mark_eye_colour_not_applicable
 from storycg.state import save_json_atomic
 from storycg.reference import digest
 from storycg.budget import CycleClient, count_usage
@@ -49,14 +48,6 @@ def issues(results):
                 items.append({'key':key,**item})
     return items
 
-
-def consistency_review(vlm,paths,identity,entry,config,purpose):
-    """Identity/outfit consistency review. V2-14 (D58): a closed-eye shot has no eye colour to judge."""
-    checks=review.identity_checklist(identity,entry['outfit'])
-    eyes_not_applicable=drop_eye_colour_check(checks,entry['shot'],config)
-    consistency=review.audit_consistency(vlm,paths,checks,config,purpose)
-    if eyes_not_applicable:mark_eye_colour_not_applicable(consistency)
-    return consistency
 
 
 def audit_candidate(root,number,image,entry,board,identity,config,vlm,label):

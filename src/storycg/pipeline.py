@@ -279,9 +279,3 @@ def run_story_job(job_dir: str | Path, config: dict, client,
     from storycg.candidates import run_candidate_delivery
     return run_candidate_delivery(job_dir, config, client, identity, board, face_ref)
 
-
-def resolve_and_validate_job(job_dir,config):
-    from storycg.tier_gate import ensure_wai_identity
-    identity=resolve_job(job_dir)
-    if identity.get('status')!='locked':return identity
-    return ensure_wai_identity(job_dir,identity,config)

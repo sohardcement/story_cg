@@ -328,13 +328,6 @@ def visibility_summary(results):
                 for r in results))}
 
 
-def framing_grade(expected, observed, config, *, pose=None):
-    from storycg.framing import allowed_parts
-    allowed = allowed_parts(config, expected, pose)
-    return {'status': 'pass' if allowed and observed['lowest_visible'] in allowed else 'fail',
-            'reason': f"expected={expected}; allowed={allowed}; observed={observed['lowest_visible']}; "
-                      + observed['reason']}
-
 
 def reliability_key(key):
     if key in ('extra_protagonist', 'outfit_detail_vs_portrait', 'accessories_zoom', 'hair_ornaments_zoom'):
@@ -378,24 +371,6 @@ def reliability_note_lines(report=None, config=None):
             if isinstance(item.get('note'), str) and item['note'].strip()]
 
 
-def audit_single(vlm, path, entry, props, config, purpose):
-    schema = grading_schema(SINGLE_KEYS, visibility=True)
-    if entry['shot'].get('framing'):
-        schema['properties']['framing_observation'] = FRAMING_OBSERVATION
-        schema['required'].append('framing_observation')
-    result = vlm.call(purpose, messages(VISIBILITY_PROMPT + SINGLE_PROMPT +
-        'Expected shot: ' + json.dumps({k:v for k,v in entry['shot'].items()
-            if k not in ('key_props','prop_tags')}, ensure_ascii=False), [path]), schema, [path])
-    enforce_visibility(result)
-    if result['status'] == 'pass' and 'framing_observation' in result['data']:
-        observed = result['data'].pop('framing_observation')
-        result['framing_observation'] = observed
-        shot = entry['shot']
-        pose = shot.get('pose') if 'pose' in shot else shot.get('tags', [])
-        if shot.get('pose_tag_omitted'): pose = None
-        result['data']['framing'] = framing_grade(shot['framing'], observed, config, pose=pose)
-    return annotate_reliability(result, load_reliability(config))
-
 
 def audit_consistency(vlm, paths, checks, config, purpose, reference_note='参考=已审核定妆图'):
     result = vlm.call(purpose, messages(OBSERVABILITY_PROMPT + CONSISTENCY_PROMPT + reference_note + '. ' +
@@ -413,21 +388,6 @@ def scene_checklist(current, previous):
         'expected': {'current': current.get(field), 'previous': previous.get(field)},
         'source': f'storyboard.json:scene.{field}'} for field in fields}
 
-
-def crop_face(source, bbox, output):
-    if (len(bbox) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, float))
-                             or not math.isfinite(v) or not 0 <= v <= 1 for v in bbox)
-            or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):
-        raise ValueError('invalid normalized face bbox')
-    with Image.open(source) as image:
-        w, h = image.size
-        pixels = [math.floor(bbox[0] * w), math.floor(bbox[1] * h),
-                  math.ceil(bbox[2] * w), math.ceil(bbox[3] * h)]
-        crop = image.convert('RGB').crop(pixels)
-        Path(output).parent.mkdir(parents=True, exist_ok=True)
-        crop.save(output)
-    return {'normalized_bbox': bbox, 'pixel_bbox': pixels,
-            'path': str(output), 'sha256': hashlib.sha256(Path(output).read_bytes()).hexdigest()}
 
 
 def face_pair(reference, target, output):

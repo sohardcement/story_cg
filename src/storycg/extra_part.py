@@ -49,16 +49,6 @@ def check(vlm, path, identity, purpose):
     return {'status': 'pass', 'data': wrapper['data']}
 
 
-def merge_into(consistency, extra):
-    """Add the check to a consistency result, the same way the supplementary review is merged."""
-    consistency['extra_body_part'] = extra
-    if extra['status'] != 'pass':
-        consistency['status'] = 'fail'
-        consistency['error'] = extra.get('error', 'extra body part audit failed')
-    else:
-        consistency.setdefault('data', {}).update(extra['data'])
-    return consistency
-
 
 def item_of(audit):
     """The check's data item: the screen's top-level extra_body_part (V2-61), or the consistency item of an older audit."""
@@ -74,11 +64,6 @@ def is_positive(audit):
     return item_of(audit).get('status') == 'fail'
 
 
-def adopt(before_positive, after_positive):
-    """Candidate adoption (V2-16 item 4): a negative candidate needs the improvement check (done by the
-    caller); a still-positive candidate is adopted only over a positive source and only if it improves."""
-    return (not after_positive) or before_positive
-
 
 def strip(results):
     """Remove the check from repair findings once a seed re-roll for it has been tried."""
@@ -88,7 +73,3 @@ def strip(results):
         stripped.append({**result, 'data': data})
     return stripped
 
-
-def known_issue(number, audit):
-    item = item_of(audit)
-    return (f'- 第 {number} 镜疑似有多余身体局部（{item.get("location", "unknown")}：{item.get("reason", "")}），待人工复看')
