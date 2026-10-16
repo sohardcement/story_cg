@@ -592,7 +592,8 @@ def result_text(root, store=None):
                 skipped = slot['second_round_skipped']
                 lines.append(f"- 第二轮没有补：出图额度不够（剩 {skipped['remaining']} 张，需要 {skipped['needed']} 张）")
         auto = slot.get('auto_selected', slot['selected'])
-        if slot.get('user_pick') is not None and slot['user_pick'] != auto:
+        if slot.get('user_pick') is not None and slot['user_pick'] != auto \
+                and (cycle.get('final_review') or {}).get('mode') != 'human':  # D101: in human review every shot is the user's pick
             lines.append(f"- 由用户换过：第 {number} 镜由用户换成候选 {slot['selected']}；看图复述是换之前那组图的。"
                          f"（审核器原选候选 {auto}）")
         lines.append('')
