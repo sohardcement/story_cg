@@ -20,7 +20,7 @@ from storycg.config import check_removed_switches, load_config
 from storycg.controls import apply_options
 from storycg.net_errors import RESOURCE_FAILURES, json_body
 from storycg.pipeline import new_job, resolve_job, run_story_job, make_contact_sheet
-from storycg.candidates import ReviewPause, pick_pending
+from storycg.candidates import ReviewPause, pick_pending, reshoot
 from storycg.beats import BeatsError, beats_guide, character_guide, compile_beats
 from storycg.state import save_json_atomic
 
@@ -697,7 +697,7 @@ def main(argv):
     sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
     sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
     sub.add_parser('prune', help='remove finished jobs\' intermediate PNGs and old compile scratch folders (--days N; --apply deletes)')
-    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', 'cancel', '_worker'):
+    for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', 'cancel', 'reshoot', '_worker'):
         command = sub.add_parser(name)
         command.add_argument('job_dir', nargs='?' if name == 'make' else None, type=Path)
         if name in ('make', 'approve', 'resume'):
@@ -722,6 +722,10 @@ def main(argv):
         if name == 'approve':
             command.add_argument('--beats', type=Path, help='recompile with a new beats file; stays awaiting_approval')
             command.add_argument('--redo-portrait', action='store_true', help='one more portrait; stays awaiting_approval')
+        if name == 'reshoot':
+            command.add_argument('--shot', type=int, required=True)
+            command.add_argument('--framing', choices=['wide', 'full', 'medium', 'closeup'], help='medium = cowboy shot')
+            command.add_argument('--angle', choices=['front', 'above', 'below', 'side', 'behind', 'dutch'])
         if name == 'pick':
             command.add_argument('--shot', type=int)
             command.add_argument('--candidate', type=int)
@@ -797,6 +801,15 @@ def main(argv):
                         save_json_atomic(root/'identity.json',old)
                 if args.command == 'deliver':
                     deliver(root)
+                elif args.command == 'reshoot':
+                    # D102: another framing/angle for one confirmed shot of a human-review job; it waits for the pick again
+                    if read(root, 'agent.json').get('phase') != 'completed':
+                        raise ValueError('reshoot is for a completed job')
+                    change = reshoot(root, args.shot, args.framing, args.angle)
+                    end_wait(root)
+                    update(root, phase='queued', pending_shot=None)
+                    launch(root)
+                    picked = change
                 elif args.command == 'pick' and read(root, 'agent.json').get('phase') == 'awaiting_pick':
                     # D101: the user's pick (or --more) for the shot the job waits on; the job then goes on by itself
                     if args.shot is None or (args.candidate is None and not args.more):

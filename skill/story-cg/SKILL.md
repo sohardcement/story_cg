@@ -16,6 +16,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 5. 确认：`scripts/storycg approve '<job_dir>'`。每镜出完停在 `awaiting_pick`：给用户看 `pending_pick` 里的 `sheet` 和候选编号，问选哪张。
 6. 用户选定：`scripts/storycg pick '<job_dir>' --shot N --candidate K`，任务自动出下一镜。要再出一批：`pick '<job_dir>' --shot N --more`。全部选完到 `completed`。
 7. 交付后看拼图和候选总图，读 result.md，把路径给用户。事后换某镜：同样 `pick`，只重建拼图和说明。
+8. 某一镜的构图不满意：`reshoot '<job_dir>' --shot N --framing medium`（medium 是 cowboy shot，也可 --angle），这一镜重出一批，等用户选，其他镜的选择不变。
 
 ## 其他命令
 

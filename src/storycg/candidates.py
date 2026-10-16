@@ -222,6 +222,46 @@ def pick_pending(root, number, candidate, *, more=False):
     return {'shot': int(number), 'candidate': candidate, 'auto_selected': auto, 'screened': bool(record['screen'])}
 
 
+FRAMINGS = ('wide', 'full', 'medium', 'closeup')
+ANGLES = ('front', 'above', 'below', 'side', 'behind', 'dutch')
+
+
+def reshoot(root, number, framing=None, angle=None):
+    """D102: make one shot of a finished human-review job again with another framing and/or camera angle.
+
+    The shot's compiled entry is edited (the pose, expression, scene and outfit stay), a note goes into the story note,
+    the shot is unconfirmed and gets a new batch of candidates (new numbers, new seeds) on the next run; the old candidates
+    stay and can still be picked. The finished cycle.json is kept aside so the next run generates instead of only
+    delivering again. The other shots keep their picks.
+    """
+    root = Path(root)
+    if not framing and not angle:
+        raise ValueError('reshoot needs --framing and/or --angle')
+    if framing and framing not in FRAMINGS or angle and angle not in ANGLES:
+        raise ValueError(f'framing is one of {FRAMINGS}, angle one of {ANGLES}')
+    store = _load_store(root)
+    slot = store.get(str(number))
+    if slot is None or not slot.get('confirmed'):
+        raise ValueError(f'shot {number} is not a confirmed shot of this job')
+    board = json.loads((root / 'storyboard.json').read_text(encoding='utf-8'))
+    entry = next(e for e in board['shots'] if e['number'] == number)
+    before = f"{entry['shot']['framing']}/{entry['shot']['camera_angle']}"
+    if framing:
+        entry['shot']['framing'] = framing
+    if angle:
+        entry['shot']['camera_angle'] = angle
+    after = f"{entry['shot']['framing']}/{entry['shot']['camera_angle']}"
+    note = f'第 {number} 镜由用户改为 {after} 重出（原 {before}）。'
+    board['story_note'] = (board.get('story_note', '') + ' ' + note).strip()
+    save_json_atomic(root / 'storyboard.json', board)
+    slot.pop('confirmed', None)
+    slot['more'] = slot.get('more', 0) + 1
+    _save_store(root, store)
+    if (root / 'cycle.json').exists():
+        (root / 'cycle.json').replace(root / f'cycle_before_reshoot_{number}.json')
+    return {'shot': int(number), 'from': before, 'to': after}
+
+
 def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *, budget=None):
     """Generate, screen and select candidates for every shot, then deliver. Returns the job state."""
     from storycg.assembly import assemble_prompt, full_negative_prompt

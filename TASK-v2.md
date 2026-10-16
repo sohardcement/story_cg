@@ -301,3 +301,4 @@ TASK.md §2 红线、监工模式（SUPERVISOR.md / AGENTS.md）、Hermes 安装
 - P1.2 判定（用户，2026-10-17，盲判，8 张）：4 个镜头全选 P 列。按隐藏对应关系，P 在两个镜头是有 LoRA、两个镜头是无 LoRA，所以这个选择不能说明偏好哪一边（`verify/v2/d97-p1/lora/verdict.json`）。LoRA 默认配置还没改。
 - P1.3 姿势控制实验已出图（16 张新图，加上构图实验里原来的 A、C 两种作对照，`verify/v2/d97-p1/pose/`；相机规则：人物占画面 90% 高度；ControlNet OpenPoseXL2 强度 0.5/0.8，结束 0.8；带 akml 1.0 和参考脸），等用户盲判。
 - P1.3 判定（用户，2026-10-17，盲判）：最好的一列——芙莉莲坐着：骨架 0.5；芙莉莲奔跑：骨架 0.5；菲伦走路：cowboy shot；雷姆走路：cowboy shot。备注：骨架 0.8 两个 seed 动作完全一样；cowboy shot 在不同 seed 有不同分镜、显得自然；雷姆那组除 cowboy shot 外人物都太小。骨架 0.5、cowboy 各 2 比 2。原始记录 `verify/v2/d97-p1/pose/verdict.json`。构图规则和默认配置还没改。
+- D102（用户，2026-10-17）：Saber 一版里第 3 镜（远景侧面，人物小、漂移）要改成 cowboy shot 看看。新增 `reshoot '<job>' --shot N --framing X --angle Y`：改这一镜的构图、新出一批候选、等用户选，其他镜的选择不变；说明里记一句。cowboy shot 不是唯一解，只是现在叙事上比远景强。
