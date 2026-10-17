@@ -1,25 +1,98 @@
 {
   "source": "监工 D87 实验，2026-10-12；verify/v2/action-ab/、verify/v2/action-cat/；基础模型 WAI v170，无 LoRA，IPAdapter start_at 0.3",
   "actions": {
-    "stretching": {"drawn": 6, "total": 6},
-    "tying_hair": {"drawn": 6, "total": 6, "note": "可能改变发型", "compile": "不接受：碰头发的动作会改变发型，头发按外貌处理"},
-    "drinking": {"drawn": 6, "total": 6},
-    "holding_phone": {"drawn": 6, "total": 6},
-    "pillow_hug": {"drawn": 6, "total": 6},
-    "waving": {"drawn": 6, "total": 6},
-    "holding_umbrella": {"drawn": 6, "total": 6},
-    "reading": {"drawn": 6, "total": 6},
-    "writing": {"drawn": 6, "total": 6},
-    "playing_guitar": {"drawn": 6, "total": 6},
-    "curtain_grab": {"drawn": 3, "total": 3},
-    "pouring_onto_self": {"drawn": 3, "total": 3},
-    "brushing_hair": {"drawn": 5, "total": 6, "note": "可能改变发型；1 张多出别人的手", "compile": "不接受：碰头发的动作会改变发型，头发按外貌处理"},
-    "cooking": {"drawn": 5, "total": 6},
-    "eating": {"drawn": 5, "total": 6},
-    "yawning": {"drawn": 4, "total": 6},
-    "under_covers": {"drawn": 2, "total": 3},
-    "splashing": {"drawn": 2, "total": 3},
-    "putting_on_jacket": {"drawn": 2, "total": 6, "note": "角色本身穿外套时读成整理衣服，不建议用"},
-    "dressing": {"drawn": 0, "total": 3, "note": "不建议用"}
+    "stretching": {
+      "drawn": 6,
+      "total": 6
+    },
+    "tying_hair": {
+      "drawn": 6,
+      "total": 6,
+      "note": "可能改变发型",
+      "compile": "不接受：碰头发的动作会改变发型，头发按外貌处理"
+    },
+    "drinking": {
+      "drawn": 6,
+      "total": 6
+    },
+    "holding_phone": {
+      "drawn": 6,
+      "total": 6,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "pillow_hug": {
+      "drawn": 6,
+      "total": 6,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "waving": {
+      "drawn": 6,
+      "total": 6
+    },
+    "holding_umbrella": {
+      "drawn": 6,
+      "total": 6,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "reading": {
+      "drawn": 6,
+      "total": 6
+    },
+    "writing": {
+      "drawn": 6,
+      "total": 6
+    },
+    "playing_guitar": {
+      "drawn": 6,
+      "total": 6,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "curtain_grab": {
+      "drawn": 3,
+      "total": 3,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "pouring_onto_self": {
+      "drawn": 3,
+      "total": 3,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "brushing_hair": {
+      "drawn": 5,
+      "total": 6,
+      "note": "可能改变发型；1 张多出别人的手",
+      "compile": "不接受：碰头发的动作会改变发型，头发按外貌处理"
+    },
+    "cooking": {
+      "drawn": 5,
+      "total": 6
+    },
+    "eating": {
+      "drawn": 5,
+      "total": 6
+    },
+    "yawning": {
+      "drawn": 4,
+      "total": 6
+    },
+    "under_covers": {
+      "drawn": 2,
+      "total": 3,
+      "note": "名字里带具体物件，写错会把它画进图；D113-d 起不在写作者可选的词里"
+    },
+    "splashing": {
+      "drawn": 2,
+      "total": 3
+    },
+    "putting_on_jacket": {
+      "drawn": 2,
+      "total": 6,
+      "note": "角色本身穿外套时读成整理衣服，不建议用"
+    },
+    "dressing": {
+      "drawn": 0,
+      "total": 3,
+      "note": "不建议用"
+    }
   }
 }

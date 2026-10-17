@@ -605,9 +605,9 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '不要把第 4 节标准服装的 tag 抄进去（compile --strict 会给 warning）。',
         '- 每镜必须有 scene、pose、expression、framing、camera_angle、fit。framing 和 camera_angle 从第 5 节词汇表里这个 pose 的'
         '稳定组合里选；pose 在表外也要自己写。',
-        '- fit：exact 或 approx。pose（和 action_tag）恰好就是这一拍写 exact；是拿一个相近的词凑的写 approx。'
-        'approx 时程序丢掉 action_tag，pose 退回上一镜的 pose（第 1 镜退回 standing），意图只留在 action_note。'
-        '凑一个不对的 tag 会画出剧情里没有的东西（比如拿 holding_phone 表示捧杯会画出手机），比不写更糟，所以拿不准就写 approx。',
+        '- fit：只管 action_tag，pose 不受影响。action_tag 恰好就是这一拍的动作写 exact；是拿一个相近的词凑的写 approx，'
+        '没有 action_tag 时写 exact。approx 时程序丢掉 action_tag，意图只留在 action_note。action_note 里写了“近似”的，程序也按 approx 处理。'
+        '凑一个不对的 tag 会把剧情里没有的东西画进图（比如拿 holding_phone 表示捧杯会画出手机），比不写更糟，所以拿不准就写 approx。',
         '- 可选：action_tag、action_note、prop_tags、顶层 story_note。不要写 spatial_relation，程序会补。'
         '相邻镜头景别角度相同、表情 pose 相同的说明，程序会补。',
         '',

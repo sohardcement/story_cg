@@ -18,7 +18,8 @@ returns an error that names the missing field and the combinations that exist.
 import copy
 
 STANDARD = 'standard'
-FIT_FALLBACK_POSE = 'standing'
+import re as _re
+APPROX_NOTE = _re.compile(r'近似|类似|凑|approximat|approx\\b|similar to|stand[- ]?in|workaround', _re.I)
 EXCLUSIVE_TAGS = (('indoors', 'outdoors'), ('day', 'night'), ('sunny', 'rain'))
 TOP_KEYS = {'schema_version', 'scenes', 'outfits', 'shots', 'story_note'}
 SCENE_KEYS = {'tags', 'negative_tags', 'location', 'time', 'weather', 'lighting'}
@@ -81,14 +82,17 @@ def expand(parsed, identity, vocab_items, add_error):
             continue
         shot = copy.deepcopy(raw)
         shot.pop('action_note', None)  # D113-b: a note for people (wanted action outside the measured list); not compiled
-        fit = shot.pop('fit', 'exact')  # D113-c: the writer says whether pose and action_tag really are the story beat
+        fit = shot.pop('fit', 'exact')  # D113-d: fit only judges the action_tag; pose is never replaced
+        if fit != 'approx' and shot.get('action_tag') and APPROX_NOTE.search(str(raw.get('action_note') or '')):
+            fit = 'approx'  # the writer's own note says "approximately": treat the tag as approx whatever fit says
+            notes.append({'shot': index + 1, 'rule': 'fit_approx_note', 'field': 'shot.action_tag', 'from': str(shot.get('action_tag')), 'to': None,
+                          'reason': 'action_note 里写了近似', 'text': f"第 {index + 1} 镜：action_note 自己写了“近似”，action_tag {shot.get('action_tag')} 按 approx 丢弃"})
+        elif fit == 'approx' and shot.get('action_tag'):
+            notes.append({'shot': index + 1, 'rule': 'fit_approx', 'field': 'shot.action_tag', 'from': str(shot.get('action_tag')), 'to': None,
+                          'reason': '作者标了 approx：action_tag 只是相近的凑词',
+                          'text': f"第 {index + 1} 镜：作者标 approx，action_tag {shot.get('action_tag')} 丢弃（意图只留在 action_note）"})
         if fit == 'approx':
-            was_pose, was_tag = shot.get('pose'), shot.pop('action_tag', None)
-            shot['pose'] = ((previous or {}).get('shot') or {}).get('pose') or FIT_FALLBACK_POSE
-            notes.append({'shot': index + 1, 'rule': 'fit_approx', 'field': 'shot.pose', 'from': str(was_pose), 'to': shot['pose'],
-                          'reason': '作者标了 approx：pose 和 action_tag 只是相近的凑词',
-                          'text': f"第 {index + 1} 镜：作者标 approx，pose {was_pose} → {shot['pose']}"
-                                  + (f"，action_tag {was_tag} 丢弃" if was_tag else '') + '（意图只留在 action_note）'})
+            shot.pop('action_tag', None)
         scene_name = shot.pop('scene', None)
         if scene_name not in scenes:
             add_error(number, 'scene', f'场景 {scene_name!r} 没有在 scenes 里定义', f'可用：{", ".join(scenes) or "（无）"}')
