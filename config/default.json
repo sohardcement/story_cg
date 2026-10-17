@@ -258,10 +258,10 @@
     "clip_vision": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
   },
   "identity_control": {
-    "mechanism": "ipadapter",
+    "mechanism": "none",
     "ipadapter_strength": 0.4,
     "ipadapter_start_at": 0.3,
-    "selection_status": "supervisor selected P3-01: plus-face SDXL 0.4"
+    "selection_status": "D108 (2026-10-17): default off; IPAdapter plus-face SDXL 0.4/0.3 kept for --identity-control ipadapter. Strong-tag characters drifted 1 (off) vs 6 (0.25, 0.0-0.5), see TASK-v2 D107/D108"
   },
   "framing": {
     "wide": {

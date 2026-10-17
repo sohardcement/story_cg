@@ -128,7 +128,7 @@
     "wiki_policy": "lock whole selected ensemble from wiki sentences, independently of identity appearance conflicts"
   },
   "generation_identity_control": {
-    "mechanism": "ipadapter",
+    "mechanism": "none",
     "ipadapter_strength": 0.4,
     "ipadapter_start_at": 0.3
   }
