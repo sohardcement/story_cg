@@ -587,7 +587,8 @@ def result_text(root, store=None):
     shot_images = sum(1 for slot in store.values() for r in slot['candidates'] if r['status'] == 'completed')
     refined = sum(1 for slot in store.values() for r in slot['candidates']
                   if (r.get('face_refine') or {}).get('status') == 'refined')
-    seconds = usage.get('wall_elapsed_seconds', usage.get('elapsed_seconds'))
+    # D105: working time without the waits for the user (a human-review job can sit at awaiting_pick for hours).
+    seconds = usage.get('elapsed_seconds', usage.get('wall_elapsed_seconds'))
     delivery_files = sorted(p.name for p in (root / 'delivery').glob('*.jpg') if p.name != 'candidate_sheet.jpg') \
         if (root / 'delivery').is_dir() else []
     lines = ['# 结果说明', '', '## 概况', '',
@@ -597,7 +598,7 @@ def result_text(root, store=None):
              (f"- 本组出图：{shot_images + refined + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，面部精修 {refined} 张，定妆图 {len(portrait_attempts)} 张）"
               if refined else
               f"- 本组出图：{shot_images + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，定妆图 {len(portrait_attempts)} 张）"),
-             f"- 用时：{round(seconds / 60, 1)} 分钟" if seconds is not None else '- 用时：未记录',
+             f"- 用时：{round(seconds / 60, 1)} 分钟（不含等你看图和确认的时间）" if seconds is not None else '- 用时：未记录',
              '', '## 文件', '']
     lines.append('- 拼图：' + (f"delivery/{delivery_files[0]}" if delivery_files else 'contact_sheet.jpg'))
     lines.append('- 候选总图：candidate_sheet.jpg（delivery/candidate_sheet.jpg 同图）')
