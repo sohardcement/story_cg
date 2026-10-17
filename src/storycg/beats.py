@@ -602,7 +602,7 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '- scenes：每个场景写一次 tags（地点、时间、天气、光线）。场景变了就用另一个名字。同一个场景里不要同时写互斥的 tag：'
         'indoors 和 outdoors、day 和 night、sunny 和 rain。',
         '- outfits：只在换衣服时写，每套写带颜色的 tag。镜里不写 outfit，就是角色的标准服装。换装要整套换：新服装只写新衣服自己的 tag，'
-        '不要把第 4 节标准服装的 tag 抄进去（compile --strict 会给 warning）。',
+        '不要把第 4 节标准服装的 tag 抄进去；新服装要写全：一件连衣裙，或一件上衣加一件下装，只写围裙这类配件会画成只穿配件（compile --strict 会给 warning）。',
         '- 每镜必须有 scene、pose、expression、framing、camera_angle、fit。framing 和 camera_angle 从第 5 节词汇表里这个 pose 的'
         '稳定组合里选；pose 在表外也要自己写。',
         '- fit：只管 action_tag，pose 不受影响。action_tag 恰好就是这一拍的动作写 exact；是拿一个相近的词凑的写 approx，'
@@ -621,6 +621,7 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '- framing：wide 远景、full 全身、medium 中景（cowboy shot，大腿以上）、closeup 近景。camera_angle：front、side、above、below、behind、dutch。'
         '默认用 medium：人物占画面够大、脸画得清。wide 只在场景本身是这一镜的主体、人物小也说得通时才自己写。',
         '- pose：剧情里的动作有对应的 Danbooru tag 就直接用，词汇表里没有也可以，不要换成意思相近的别的动作。'
+        '不要用会把外物或整个场景变化画进图的 pose：animal_hug、on_back、on_stomach，以及 holding_phone、holding_umbrella、pouring_onto_self 这类带具体物件的词（compile --strict 拒绝）。'
         '第 5 节词汇表只说明哪些组合画得稳：表里有的组合优先用；表外的组合也要自己写 framing 和 camera_angle。',
         '- 剧情点名的物件和它的颜色，要写进 scene.tags 或 prop_tags，别省略。',
         '- action_tag：pose 之外还要画的一个动作，只能取第 6 节「画得出」里的词，比如 drinking、reading、waving。想要的动作不在'

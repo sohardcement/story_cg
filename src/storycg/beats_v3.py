@@ -20,7 +20,14 @@ import copy
 STANDARD = 'standard'
 import re as _re
 APPROX_NOTE = _re.compile(r'近似|类似|凑|approximat|approx\\b|similar to|stand[- ]?in|workaround', _re.I)
-EXCLUSIVE_TAGS = (('indoors', 'outdoors'), ('day', 'night'), ('sunny', 'rain'))
+EXCLUSIVE_TAGS = (('indoors', 'outdoors'), ('day', 'night'), ('sunny', 'rain'), ('indoors', 'veranda'), ('indoors', 'engawa'))
+# D113-e: poses that put something into the picture the story does not have (an object, an animal) or change the whole scene
+# (lying on the floor); `compile --strict` refuses them as `pose`. Same line as the object-implying action tags.
+POSE_BLOCK = frozenset({'animal_hug', 'on_back', 'on_stomach', 'holding_phone', 'holding_umbrella', 'pouring_onto_self',
+                        'pillow_hug', 'playing_guitar', 'curtain_grab', 'under_covers'})
+_TOP = _re.compile(r'shirt|blouse|sweater|jacket|coat|top|hoodie|cardigan|uniform|kimono|robe|vest|bodysuit|leotard|swimsuit|bikini|armor|cape|tunic')
+_BOTTOM = _re.compile(r'skirt|pants|shorts|jeans|trousers|leggings|hakama|bloomers|buruma')
+_DRESS = _re.compile(r'dress|gown|jumpsuit|overalls|kimono|yukata|school_uniform|sailor|maid|swimsuit|leotard|bodysuit|bikini|robe')
 TOP_KEYS = {'schema_version', 'scenes', 'outfits', 'shots', 'story_note'}
 SCENE_KEYS = {'tags', 'negative_tags', 'location', 'time', 'weather', 'lighting'}
 OUTFIT_KEYS = {'tags', 'clothing_state'}
@@ -218,6 +225,10 @@ def strict_errors(path, shot_count=4):
         shot = path_[1] + 1 if len(path_) > 1 and path_[0] == 'shots' and isinstance(path_[1], int) else None
         rows.append({'shot': shot, 'field': '.'.join(str(x) for x in path_) or 'file',
                      'problem': f'schema: {err.message[:160]}', 'fix': '按写作说明里的字段和取值修正'})
+    for n, shot in enumerate(doc.get('shots') or [] if isinstance(doc, dict) and isinstance(doc.get('shots'), list) else [], 1):
+        if isinstance(shot, dict) and shot.get('pose') in POSE_BLOCK:
+            rows.append({'shot': n, 'field': 'shot.pose', 'problem': f"pose {shot['pose']} 会把剧情里没有的东西（物件、动物）或整个场景的变化画进图",
+                         'fix': '换成不带外物的 pose（standing、sitting、sleeping、looking_down 等），想要的意图写进 action_note'})
     scenes = doc.get('scenes') if isinstance(doc, dict) else None
     for name, scene in (scenes.items() if isinstance(scenes, dict) else []):
         tags = {str(t) for t in (scene.get('tags') or [])} if isinstance(scene, dict) else set()
@@ -251,4 +262,10 @@ def strict_warnings(path, standard_tags=()):
         if copied:
             out.append({'shot': None, 'field': f'outfits.{name}.tags',
                         'problem': f'新服装里抄进了标准服装的 tag：{", ".join(copied)}', 'fix': '换装要整套换，只写新衣服自己的 tag'})
+    for name, outfit in (outfits.items() if isinstance(outfits, dict) else []):
+        tags = [str(t) for t in (outfit.get('tags') or [])] if isinstance(outfit, dict) else []
+        if tags and not (any(_DRESS.search(t) for t in tags) or (any(_TOP.search(t) for t in tags) and any(_BOTTOM.search(t) for t in tags))):
+            out.append({'shot': None, 'field': f'outfits.{name}.tags',
+                        'problem': f'新服装没有底衣：{", ".join(tags)}（只有配件时模型容易画成只穿配件）',
+                        'fix': '写全：一件连衣裙，或者一件上衣加一件下装，都带颜色'})
     return out
