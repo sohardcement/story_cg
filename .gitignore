@@ -18,3 +18,11 @@ compile/
 /jobs/
 /logs/
 cache/tags/
+
+# D103: experiment images (invalid batches made while ComfyUI was out of VRAM, and the judged pages' sources); kept on disk, not tracked.
+/verify/v2/d103-continuity/images/
+/verify/v2/d103-continuity/hostbad/
+/verify/v2/d103-continuity/prerelaunch12/
+/verify/v2/d103-continuity/linear_nofree/
+/verify/v2/d103-continuity/page/index.html
+/verify/v2/d103-continuity/page_linear/index.html
