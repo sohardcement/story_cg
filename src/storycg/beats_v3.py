@@ -78,6 +78,7 @@ def expand(parsed, identity, vocab_items, add_error):
             add_error(number, 'shots', '每一镜必须是对象', '照例子写')
             continue
         shot = copy.deepcopy(raw)
+        shot.pop('action_note', None)  # D113-b: a note for people (wanted action outside the measured list); not compiled
         scene_name = shot.pop('scene', None)
         if scene_name not in scenes:
             add_error(number, 'scene', f'场景 {scene_name!r} 没有在 scenes 里定义', f'可用：{", ".join(scenes) or "（无）"}')
@@ -158,11 +159,14 @@ def expand(parsed, identity, vocab_items, add_error):
 
 
 def beats_v3_schema(shot_count=4):
-    """D113: the structural JSON schema of a v3 beats file (what `response_format: json_schema` constrains).
+    """D113 / D113-b: the structural JSON schema of a v3 beats file (what `response_format: json_schema` constrains).
 
     Structure only: tag existence, vocabulary stability and story rules stay with `compile`. `expression` is the closed
-    list of the planner schema; `framing` and `camera_angle` are the closed lists the compiler accepts.
+    list of the planner schema; `framing` and `camera_angle` are required and closed; `action_tag` is one of the measured
+    ones (the guide's 画得出 list) and `action_note` is free text for a wanted action outside it (not compiled, not drawn);
+    `spatial_relation` is not a writer field (the compiler derives it).
     """
+    from storycg.beats import measured_action_tags
     from storycg.shot_contract import EXPRESSION_TAGS
     tags = {'type': 'array', 'items': {'type': 'string'}}
     scene = {'type': 'object', 'additionalProperties': False, 'required': ['tags'], 'properties': {
@@ -170,14 +174,33 @@ def beats_v3_schema(shot_count=4):
         'time': {'type': 'string'}, 'weather': {'type': 'string'}, 'lighting': {'type': 'string'}}}
     outfit = {'type': 'object', 'additionalProperties': False, 'required': ['tags'], 'properties': {
         'tags': {**tags, 'minItems': 1}, 'clothing_state': {'type': 'string'}}}
-    shot = {'type': 'object', 'additionalProperties': False, 'required': ['scene', 'pose', 'expression'], 'properties': {
+    shot = {'type': 'object', 'additionalProperties': False,
+            'required': ['scene', 'pose', 'expression', 'framing', 'camera_angle'], 'properties': {
         'scene': {'type': 'string'}, 'outfit': {'type': 'string'}, 'pose': {'type': 'string'},
         'expression': {'enum': list(EXPRESSION_TAGS)},
         'framing': {'enum': ['wide', 'full', 'medium', 'closeup']},
         'camera_angle': {'enum': ['front', 'side', 'above', 'below', 'behind', 'dutch']},
-        'action_tag': {'type': 'string'}, 'prop_tags': {**tags, 'maxItems': 1}, 'spatial_relation': {'type': 'string'}}}
+        'action_tag': {'enum': measured_action_tags()}, 'action_note': {'type': 'string'},
+        'prop_tags': {**tags, 'maxItems': 1}}}
     return {'type': 'object', 'additionalProperties': False, 'required': ['schema_version', 'scenes', 'shots'], 'properties': {
         'schema_version': {'enum': [3]}, 'story_note': {'type': 'string'},
         'scenes': {'type': 'object', 'minProperties': 1, 'additionalProperties': scene},
         'outfits': {'type': 'object', 'additionalProperties': outfit},
         'shots': {'type': 'array', 'minItems': shot_count, 'maxItems': shot_count, 'items': shot}}}
+
+
+def strict_errors(path, shot_count=4):
+    """`compile --strict`: schema problems of a beats file as compile-style error records ([] when it passes)."""
+    import json
+    from jsonschema import Draft202012Validator
+    try:
+        doc = json.loads(open(path, encoding='utf-8').read())
+    except (OSError, ValueError) as exc:
+        return [{'shot': None, 'field': 'file', 'problem': f'不是合法的 JSON：{str(exc)[:80]}', 'fix': '输出一个 JSON 对象'}]
+    rows = []
+    for err in sorted(Draft202012Validator(beats_v3_schema(shot_count)).iter_errors(doc), key=lambda e: list(e.path)):
+        path_ = list(err.path)
+        shot = path_[1] + 1 if len(path_) > 1 and path_[0] == 'shots' and isinstance(path_[1], int) else None
+        rows.append({'shot': shot, 'field': '.'.join(str(x) for x in path_) or 'file',
+                     'problem': f'schema: {err.message[:160]}', 'fix': '按写作说明里的字段和取值修正'})
+    return rows

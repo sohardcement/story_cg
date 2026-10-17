@@ -618,6 +618,8 @@ def beats_cli(argv):
     comp.add_argument('--shots', type=int, default=4)
     comp.add_argument('--config', type=Path, default=None)
     comp.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
+    comp.add_argument('--strict', action='store_true',
+                      help='D113-b: check the file against the v3 beats JSON schema first (framing and camera_angle required, closed action_tag list, no spatial_relation)')
     comp.add_argument('--verbose', action='store_true',
                       help='also print the compiled storyboard and the character guide (V2-63: off by default)')
     wb = sub.add_parser('write-beats', help='D113: have a model write the beats file; prints one JSON line (the call record)')
@@ -628,6 +630,8 @@ def beats_cli(argv):
     wb.add_argument('--storyboard-llm', choices=['subagent', 'openai_compat'], default='subagent')
     wb.add_argument('--thinking', choices=['on', 'off'], default=None, help='override llm.enable_thinking')
     wb.add_argument('--no-schema', action='store_true', help='do not send response_format json_schema')
+    wb.add_argument('--previous', type=Path, default=None, help='D113-b repair turn: the earlier draft file')
+    wb.add_argument('--errors', type=Path, default=None, help='D113-b repair turn: JSON list of compile error records for --previous')
     wb.add_argument('--config', type=Path, default=None)
     wb.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
     args = parser.parse_args(argv)
@@ -650,6 +654,12 @@ def beats_cli(argv):
         print(beats_guide(args.shots, info))
         return 0
     config = resolve_config(args)
+    if args.strict:
+        from storycg.beats_v3 import strict_errors
+        problems = strict_errors(args.beats, args.shots)
+        if problems:
+            print(json.dumps({'status': 'invalid', 'errors': problems, 'message': 'schema'}, ensure_ascii=False, indent=2))
+            return 2
     # Scratch job directory: the tier and planning code expect a job.json; nothing here generates images.
     root = PROJECT/'compile'/('cmp-'+uuid.uuid4().hex[:12])
     new_job(root, args.character, 'beats compile check', args.shots, generation_config=config)
@@ -718,7 +728,9 @@ def _write_beats_command(args):
     thinking = None if args.thinking is None else args.thinking == 'on'
     try:
         text, record = llm.write_beats(config, beats_guide(args.shots, info), args.character, args.story, args.shots,
-                                       use_schema=not args.no_schema, thinking=thinking)
+                                       use_schema=not args.no_schema, thinking=thinking,
+                                       previous=args.previous.read_text(encoding='utf-8') if args.previous else None,
+                                       errors=json.loads(args.errors.read_text(encoding='utf-8')) if args.errors else None)
     except llm.LlmError as exc:
         print(json.dumps({'status': 'error', 'kind': exc.kind, 'message': str(exc)}, ensure_ascii=False))
         return 1

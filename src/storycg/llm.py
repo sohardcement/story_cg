@@ -48,9 +48,18 @@ def strip_reasoning(text):
     return re.sub(r'<think>.*?</think>', '', text or '', flags=re.S).strip()
 
 
-def build_messages(guide, character, story, shot_count):
-    return [{'role': 'system', 'content': WRITER_TASK + '\n\n' + guide},
-            {'role': 'user', 'content': f'角色：{character}\n剧情：{story}\n镜数：{shot_count}'}]
+def build_messages(guide, character, story, shot_count, previous=None, errors=None):
+    """System = task + guide, user = the story. With `previous` (the draft) and `errors` (compile-style records) the
+    repair turn is appended: the draft as the assistant's reply, then the compiler's complaints."""
+    messages = [{'role': 'system', 'content': WRITER_TASK + '\n\n' + guide},
+                {'role': 'user', 'content': f'角色：{character}\n剧情：{story}\n镜数：{shot_count}'}]
+    if previous is not None:
+        lines = [f"- {'全局' if e.get('shot') is None else '第 %s 镜' % e['shot']} {e.get('field')}：{e.get('problem')}"
+                 + (f"（{e['fix']}）" if e.get('fix') else '') for e in errors or []]
+        messages += [{'role': 'assistant', 'content': previous},
+                     {'role': 'user', 'content': '上一份分镜没有通过检查，错误如下：\n' + '\n'.join(lines)
+                      + '\n请在不改变剧情的前提下修正，输出完整的 JSON 对象，不要解释。'}]
+    return messages
 
 
 def chat(cfg, messages, *, schema=None, thinking=None, max_tokens=None, retries=1, client=None):
@@ -88,10 +97,10 @@ def chat(cfg, messages, *, schema=None, thinking=None, max_tokens=None, retries=
     return strip_reasoning(raw), record
 
 
-def write_beats(config, guide, character, story, shot_count, *, use_schema=True, thinking=None):
+def write_beats(config, guide, character, story, shot_count, *, use_schema=True, thinking=None, previous=None, errors=None):
     from storycg.beats_v3 import beats_v3_schema
     cfg = settings(config)
     check_health(cfg)
-    text, record = chat(cfg, build_messages(guide, character, story, shot_count),
+    text, record = chat(cfg, build_messages(guide, character, story, shot_count, previous, errors),
                         schema=beats_v3_schema(shot_count) if use_schema else None, thinking=thinking)
     return text, record

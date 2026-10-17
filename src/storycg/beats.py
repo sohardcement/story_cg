@@ -601,9 +601,9 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '```json', GUIDE_EXAMPLE, '```',
         '- scenes：每个场景写一次 tags（地点、时间、天气、光线）。场景变了就用另一个名字。',
         '- outfits：只在换衣服时写，每套写带颜色的 tag。镜里不写 outfit，就是角色的标准服装。',
-        '- 每镜必须有 scene、pose、expression。其余都可以省略：framing 和 camera_angle 省略时，程序按词汇表里这个 pose 的'
-        '稳定组合补上，并在 rewrites 里告诉你补了什么；找不到稳定组合时报错，那时自己写。',
-        '- 可选：framing、camera_angle、action_tag、prop_tags、spatial_relation（给人看的一句英文）、顶层 story_note。'
+        '- 每镜必须有 scene、pose、expression、framing、camera_angle。framing 和 camera_angle 从第 5 节词汇表里这个 pose 的'
+        '稳定组合里选；pose 在表外也要自己写。',
+        '- 可选：action_tag、action_note、prop_tags、顶层 story_note。不要写 spatial_relation，程序会补。'
         '相邻镜头景别角度相同、表情 pose 相同的说明，程序会补。',
         '',
         '## 2. 只有 tag 会画进图',
@@ -614,11 +614,12 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '',
         '## 3. 字段',
         '- framing：wide 远景、full 全身、medium 中景（cowboy shot，大腿以上）、closeup 近景。camera_angle：front、side、above、below、behind、dutch。'
-        '默认用 medium：人物占画面够大、脸画得清。wide 只在场景本身是这一镜的主体、人物小也说得通时才自己写；省略 framing 时程序不会补 wide。',
+        '默认用 medium：人物占画面够大、脸画得清。wide 只在场景本身是这一镜的主体、人物小也说得通时才自己写。',
         '- pose：剧情里的动作有对应的 Danbooru tag 就直接用，词汇表里没有也可以，不要换成意思相近的别的动作。'
-        '第 5 节词汇表只说明哪些组合画得稳：表里有的，省略 framing 和 camera_angle 时程序能补；表外的要自己写。',
+        '第 5 节词汇表只说明哪些组合画得稳：表里有的组合优先用；表外的组合也要自己写 framing 和 camera_angle。',
         '- 剧情点名的物件和它的颜色，要写进 scene.tags 或 prop_tags，别省略。',
-        '- action_tag：pose 之外还要画的一个动作，比如 drinking、reading、waving。借用意思不同的 tag，'
+        '- action_tag：pose 之外还要画的一个动作，只能取第 6 节「画得出」里的词，比如 drinking、reading、waving。想要的动作不在'
+        '表里，就不写 action_tag，把意图写进 action_note（一句话，不会画进图）。借用意思不同的 tag，'
         '就会画成那个 tag 本来的意思。',
         '- expression 只能取：' + '、'.join(EXPRESSION_TAGS) + '。睡着、闭眼、哭这类状态写在这里。',
         '- prop_tags：这一镜要画出来的物件或动物，最多 1 个。只写在说明文字里的东西画不出来。',
@@ -658,12 +659,18 @@ def _character_section(info):
     return lines + [''] + _action_tag_lines() + ['']
 
 
+def measured_action_tags():
+    """D113-b: the action tags the guide lists as 画得出 (measured, no note, no compile refusal, drawn over half); also the schema enum."""
+    from storycg.shot_contract import load_action_tags
+    return [tag for tag, item in load_action_tags().items()
+            if not item.get('compile') and not item.get('note') and item['drawn'] * 2 > item['total']]
+
+
 def _action_tag_lines():
     """V2-49: the action tags measured on the base model (config/action_tags.json), compact (V2-63)."""
     from storycg.shot_contract import load_action_tags
     table = load_action_tags()
-    good = [f"{tag} {item['drawn']}/{item['total']}" for tag, item in table.items()
-            if not item.get('compile') and not item.get('note') and item['drawn'] * 2 > item['total']]
+    good = [f"{tag} {item['drawn']}/{item['total']}" for tag in measured_action_tags() for item in [table[tag]]]
     weak = [f"{tag} {item['drawn']}/{item['total']}" + (f"（{item['note']}）" if item.get('note') else '')
             for tag, item in table.items() if not item.get('compile') and (item.get('note') or item['drawn'] * 2 <= item['total'])]
     refused = [f"{tag}（{item['compile']}）" for tag, item in table.items() if item.get('compile')]
@@ -673,7 +680,7 @@ def _action_tag_lines():
         lines.append('- 不建议：' + '、'.join(weak))
     if refused:
         lines.append('- compile 不接受：' + '、'.join(refused))
-    lines.append('- 表外的 tag 也可以用，只要 Danbooru 上存在；没测过，画不画得出不保证。')
+    lines.append('- action_tag 只能取「画得出」里的词；表外的动作意图写进 shot.action_note，不会画进图。')
     return lines
 
 
