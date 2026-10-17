@@ -710,6 +710,24 @@ def beats_cli(argv):
     return 0
 
 
+def _verify_llm_cli(argv):
+    """`verify-llm`: the model acceptance suite (see storycg.verify_llm). Exit 0 when every automatic line passes, 3 otherwise."""
+    parser = argparse.ArgumentParser(prog='storycg verify-llm')
+    parser.add_argument('--base-url', default=None, help='default: llm.base_url of the config')
+    parser.add_argument('--model', default=None, help='default: llm.model of the config')
+    parser.add_argument('--inputs', default='verify/v2/d113-storyboard/inputs.json')
+    parser.add_argument('--runs', type=int, default=2)
+    parser.add_argument('--date', default=None)
+    parser.add_argument('--out', default=None, help='default: verify/llm-acceptance/<model>/<date>')
+    args = parser.parse_args(argv)
+    from storycg import llm, verify_llm
+    try:
+        return verify_llm.run(args)
+    except llm.LlmError as exc:
+        print(json.dumps({'status': 'error', 'kind': exc.kind, 'message': str(exc)}, ensure_ascii=False))
+        return 1
+
+
 def _write_beats_command(args):
     """D113: `write-beats`. subagent (default, as before): the calling agent writes the file itself from beats-guide."""
     if args.storyboard_llm == 'subagent':
@@ -748,6 +766,8 @@ def main(argv):
         return prune_cli(argv[1:])
     if argv and argv[0] in ('beats-guide', 'compile', 'write-beats'):
         return beats_cli(argv)
+    if argv and argv[0] == 'verify-llm':
+        return _verify_llm_cli(argv[1:])
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
     # Help-only entries: beats-guide, compile and prune are dispatched before this parser runs.
