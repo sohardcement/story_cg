@@ -26,3 +26,7 @@ cache/tags/
 /verify/v2/d103-continuity/linear_nofree/
 /verify/v2/d103-continuity/page/index.html
 /verify/v2/d103-continuity/page_linear/index.html
+
+# D107: experiment images (kept on disk)
+/verify/v2/d107-ipa-face/images/
+/verify/v2/d107-ipa-face/page/index.html
