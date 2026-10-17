@@ -3,8 +3,8 @@
   "style_loras": [
     {
       "name": "akml_style_v3.safetensors",
-      "strength_model": 1.0,
-      "strength_clip": 1.0
+      "strength_model": 0.7,
+      "strength_clip": 0.7
     }
   ],
   "sampler": {
@@ -34,7 +34,7 @@
   },
   "positive_prefix": "akml, masterpiece, best quality, general, safe, sfw",
   "negative_prompt": "nsfw, nude, naked, explicit, sexual, sex, nipples, genitals, exposed breasts, underwear, lingerie, suggestive pose, low quality, worst quality, bad anatomy, extra fingers",
-  "selection_status": "D95 (2026-10-14): user adopted akml_style_v3 at strength 1.0 with trigger akml, replacing the P2-01 no-LoRA style; evidence verify/v2/akml-grid/sheet.jpg, verify/v2/style-d93/page/index.html",
+  "selection_status": "D112 (2026-10-17): akml_style_v3 strength 1.0 -> 0.7 by the pre-registered rule (0.7 and 0.5 tied, 0.7 taken), see TASK-v2 D112; D95 (2026-10-14): user adopted akml_style_v3 at strength 1.0 with trigger akml, replacing the P2-01 no-LoRA style; evidence verify/v2/akml-grid/sheet.jpg, verify/v2/style-d93/page/index.html",
   "model_hashes": {
     "waiIllustriousSDXL_v170.safetensors": {
       "sha256": "unavailable",
