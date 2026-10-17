@@ -18,6 +18,8 @@ returns an error that names the missing field and the combinations that exist.
 import copy
 
 STANDARD = 'standard'
+FIT_FALLBACK_POSE = 'standing'
+EXCLUSIVE_TAGS = (('indoors', 'outdoors'), ('day', 'night'), ('sunny', 'rain'))
 TOP_KEYS = {'schema_version', 'scenes', 'outfits', 'shots', 'story_note'}
 SCENE_KEYS = {'tags', 'negative_tags', 'location', 'time', 'weather', 'lighting'}
 OUTFIT_KEYS = {'tags', 'clothing_state'}
@@ -79,6 +81,14 @@ def expand(parsed, identity, vocab_items, add_error):
             continue
         shot = copy.deepcopy(raw)
         shot.pop('action_note', None)  # D113-b: a note for people (wanted action outside the measured list); not compiled
+        fit = shot.pop('fit', 'exact')  # D113-c: the writer says whether pose and action_tag really are the story beat
+        if fit == 'approx':
+            was_pose, was_tag = shot.get('pose'), shot.pop('action_tag', None)
+            shot['pose'] = ((previous or {}).get('shot') or {}).get('pose') or FIT_FALLBACK_POSE
+            notes.append({'shot': index + 1, 'rule': 'fit_approx', 'field': 'shot.pose', 'from': str(was_pose), 'to': shot['pose'],
+                          'reason': '作者标了 approx：pose 和 action_tag 只是相近的凑词',
+                          'text': f"第 {index + 1} 镜：作者标 approx，pose {was_pose} → {shot['pose']}"
+                                  + (f"，action_tag {was_tag} 丢弃" if was_tag else '') + '（意图只留在 action_note）'})
         scene_name = shot.pop('scene', None)
         if scene_name not in scenes:
             add_error(number, 'scene', f'场景 {scene_name!r} 没有在 scenes 里定义', f'可用：{", ".join(scenes) or "（无）"}')
@@ -175,11 +185,12 @@ def beats_v3_schema(shot_count=4):
     outfit = {'type': 'object', 'additionalProperties': False, 'required': ['tags'], 'properties': {
         'tags': {**tags, 'minItems': 1}, 'clothing_state': {'type': 'string'}}}
     shot = {'type': 'object', 'additionalProperties': False,
-            'required': ['scene', 'pose', 'expression', 'framing', 'camera_angle'], 'properties': {
+            'required': ['scene', 'pose', 'expression', 'framing', 'camera_angle', 'fit'], 'properties': {
         'scene': {'type': 'string'}, 'outfit': {'type': 'string'}, 'pose': {'type': 'string'},
         'expression': {'enum': list(EXPRESSION_TAGS)},
         'framing': {'enum': ['wide', 'full', 'medium', 'closeup']},
         'camera_angle': {'enum': ['front', 'side', 'above', 'below', 'behind', 'dutch']},
+        'fit': {'enum': ['exact', 'approx']},
         'action_tag': {'enum': measured_action_tags()}, 'action_note': {'type': 'string'},
         'prop_tags': {**tags, 'maxItems': 1}}}
     return {'type': 'object', 'additionalProperties': False, 'required': ['schema_version', 'scenes', 'shots'], 'properties': {
@@ -203,4 +214,37 @@ def strict_errors(path, shot_count=4):
         shot = path_[1] + 1 if len(path_) > 1 and path_[0] == 'shots' and isinstance(path_[1], int) else None
         rows.append({'shot': shot, 'field': '.'.join(str(x) for x in path_) or 'file',
                      'problem': f'schema: {err.message[:160]}', 'fix': '按写作说明里的字段和取值修正'})
+    scenes = doc.get('scenes') if isinstance(doc, dict) else None
+    for name, scene in (scenes.items() if isinstance(scenes, dict) else []):
+        tags = {str(t) for t in (scene.get('tags') or [])} if isinstance(scene, dict) else set()
+        for a, b in EXCLUSIVE_TAGS:
+            if a in tags and b in tags:
+                rows.append({'shot': None, 'field': f'scenes.{name}.tags', 'problem': f'互斥的场景 tag 同时出现：{a} 和 {b}',
+                             'fix': '只留一个，或拆成两个场景'})
     return rows
+
+
+def strict_warnings(path, standard_tags=()):
+    """`compile --strict` warnings (they do not make the file invalid): a prop missing from a shot that sits between two shots
+    that both have it; a custom outfit that copies a tag of the character's standard outfit (a new outfit replaces the standard
+    one, it is not layered on it)."""
+    import json
+    try:
+        doc = json.loads(open(path, encoding='utf-8').read())
+        shots = doc['shots']
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    out = []
+    props = [set(x.get('prop_tags') or []) if isinstance(x, dict) else set() for x in shots]
+    for n in range(1, len(props) - 1):
+        for prop in sorted((props[n - 1] & props[n + 1]) - props[n]):
+            out.append({'shot': n + 1, 'field': 'shot.prop_tags', 'problem': f'前后两镜都有 {prop}，这一镜没有',
+                        'fix': '这一镜里它还在画面里就补上，真的不在就不用管'})
+    standard = {str(t) for t in standard_tags}
+    outfits = doc.get('outfits')
+    for name, outfit in (outfits.items() if isinstance(outfits, dict) else []):
+        copied = sorted(standard & {str(t) for t in (outfit.get('tags') or [])}) if isinstance(outfit, dict) else []
+        if copied:
+            out.append({'shot': None, 'field': f'outfits.{name}.tags',
+                        'problem': f'新服装里抄进了标准服装的 tag：{", ".join(copied)}', 'fix': '换装要整套换，只写新衣服自己的 tag'})
+    return out

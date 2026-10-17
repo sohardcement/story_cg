@@ -599,10 +599,15 @@ def beats_guide(shot_count: int = 4, character_guide_info=None) -> str:
         '',
         '## 1. 例子',
         '```json', GUIDE_EXAMPLE, '```',
-        '- scenes：每个场景写一次 tags（地点、时间、天气、光线）。场景变了就用另一个名字。',
-        '- outfits：只在换衣服时写，每套写带颜色的 tag。镜里不写 outfit，就是角色的标准服装。',
-        '- 每镜必须有 scene、pose、expression、framing、camera_angle。framing 和 camera_angle 从第 5 节词汇表里这个 pose 的'
+        '- scenes：每个场景写一次 tags（地点、时间、天气、光线）。场景变了就用另一个名字。同一个场景里不要同时写互斥的 tag：'
+        'indoors 和 outdoors、day 和 night、sunny 和 rain。',
+        '- outfits：只在换衣服时写，每套写带颜色的 tag。镜里不写 outfit，就是角色的标准服装。换装要整套换：新服装只写新衣服自己的 tag，'
+        '不要把第 4 节标准服装的 tag 抄进去（compile --strict 会给 warning）。',
+        '- 每镜必须有 scene、pose、expression、framing、camera_angle、fit。framing 和 camera_angle 从第 5 节词汇表里这个 pose 的'
         '稳定组合里选；pose 在表外也要自己写。',
+        '- fit：exact 或 approx。pose（和 action_tag）恰好就是这一拍写 exact；是拿一个相近的词凑的写 approx。'
+        'approx 时程序丢掉 action_tag，pose 退回上一镜的 pose（第 1 镜退回 standing），意图只留在 action_note。'
+        '凑一个不对的 tag 会画出剧情里没有的东西（比如拿 holding_phone 表示捧杯会画出手机），比不写更糟，所以拿不准就写 approx。',
         '- 可选：action_tag、action_note、prop_tags、顶层 story_note。不要写 spatial_relation，程序会补。'
         '相邻镜头景别角度相同、表情 pose 相同的说明，程序会补。',
         '',
