@@ -155,3 +155,29 @@ def expand(parsed, identity, vocab_items, add_error):
     expanded = {'schema_version': 2, 'scope_version': 2, 'story_note': parsed.get('story_note', ''),
                 'shots': out_shots}
     return expanded, notes
+
+
+def beats_v3_schema(shot_count=4):
+    """D113: the structural JSON schema of a v3 beats file (what `response_format: json_schema` constrains).
+
+    Structure only: tag existence, vocabulary stability and story rules stay with `compile`. `expression` is the closed
+    list of the planner schema; `framing` and `camera_angle` are the closed lists the compiler accepts.
+    """
+    from storycg.shot_contract import EXPRESSION_TAGS
+    tags = {'type': 'array', 'items': {'type': 'string'}}
+    scene = {'type': 'object', 'additionalProperties': False, 'required': ['tags'], 'properties': {
+        'tags': {**tags, 'minItems': 1}, 'negative_tags': tags, 'location': {'type': 'string'},
+        'time': {'type': 'string'}, 'weather': {'type': 'string'}, 'lighting': {'type': 'string'}}}
+    outfit = {'type': 'object', 'additionalProperties': False, 'required': ['tags'], 'properties': {
+        'tags': {**tags, 'minItems': 1}, 'clothing_state': {'type': 'string'}}}
+    shot = {'type': 'object', 'additionalProperties': False, 'required': ['scene', 'pose', 'expression'], 'properties': {
+        'scene': {'type': 'string'}, 'outfit': {'type': 'string'}, 'pose': {'type': 'string'},
+        'expression': {'enum': list(EXPRESSION_TAGS)},
+        'framing': {'enum': ['wide', 'full', 'medium', 'closeup']},
+        'camera_angle': {'enum': ['front', 'side', 'above', 'below', 'behind', 'dutch']},
+        'action_tag': {'type': 'string'}, 'prop_tags': {**tags, 'maxItems': 1}, 'spatial_relation': {'type': 'string'}}}
+    return {'type': 'object', 'additionalProperties': False, 'required': ['schema_version', 'scenes', 'shots'], 'properties': {
+        'schema_version': {'enum': [3]}, 'story_note': {'type': 'string'},
+        'scenes': {'type': 'object', 'minProperties': 1, 'additionalProperties': scene},
+        'outfits': {'type': 'object', 'additionalProperties': outfit},
+        'shots': {'type': 'array', 'minItems': shot_count, 'maxItems': shot_count, 'items': shot}}}

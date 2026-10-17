@@ -620,7 +620,19 @@ def beats_cli(argv):
     comp.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
     comp.add_argument('--verbose', action='store_true',
                       help='also print the compiled storyboard and the character guide (V2-63: off by default)')
+    wb = sub.add_parser('write-beats', help='D113: have a model write the beats file; prints one JSON line (the call record)')
+    wb.add_argument('--character', required=True)
+    wb.add_argument('--story', required=True)
+    wb.add_argument('--shots', type=int, default=4)
+    wb.add_argument('--out', required=True, type=Path)
+    wb.add_argument('--storyboard-llm', choices=['subagent', 'openai_compat'], default='subagent')
+    wb.add_argument('--thinking', choices=['on', 'off'], default=None, help='override llm.enable_thinking')
+    wb.add_argument('--no-schema', action='store_true', help='do not send response_format json_schema')
+    wb.add_argument('--config', type=Path, default=None)
+    wb.add_argument('--profile', help='registered profile name (config/profiles.json); instead of --config')
     args = parser.parse_args(argv)
+    if args.command == 'write-beats':
+        return _write_beats_command(args)
     if args.command == 'beats-guide':
         info = None
         if args.character:
@@ -685,17 +697,48 @@ def beats_cli(argv):
     return 0
 
 
+def _write_beats_command(args):
+    """D113: `write-beats`. subagent (default, as before): the calling agent writes the file itself from beats-guide."""
+    if args.storyboard_llm == 'subagent':
+        print(json.dumps({'status': 'subagent', 'message': 'write the beats file yourself: run beats-guide, write the JSON, then compile'},
+                         ensure_ascii=False))
+        return 0
+    from storycg import llm
+    from storycg.identity import resolve_identity
+    config = resolve_config(args)
+    try:
+        identity = resolve_identity(args.character, PROJECT/'cache'/'danbooru')
+    except RESOURCE_ERRORS as exc:
+        print(json.dumps(_resource_failure(exc), ensure_ascii=False, indent=2))
+        return 1
+    info = character_guide(identity, config)
+    if info['unsupported']:
+        print(info['unsupported'])
+        return 2
+    thinking = None if args.thinking is None else args.thinking == 'on'
+    try:
+        text, record = llm.write_beats(config, beats_guide(args.shots, info), args.character, args.story, args.shots,
+                                       use_schema=not args.no_schema, thinking=thinking)
+    except llm.LlmError as exc:
+        print(json.dumps({'status': 'error', 'kind': exc.kind, 'message': str(exc)}, ensure_ascii=False))
+        return 1
+    args.out.write_text(text, encoding='utf-8')
+    print(json.dumps({'status': 'written', 'out': str(args.out), **record}, ensure_ascii=False))
+    return 0
+
+
 def main(argv):
     if argv and argv[0] == 'prune':
         from storycg.prune import prune_cli
         return prune_cli(argv[1:])
-    if argv and argv[0] in ('beats-guide', 'compile'):
+    if argv and argv[0] in ('beats-guide', 'compile', 'write-beats'):
         return beats_cli(argv)
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
     # Help-only entries: beats-guide, compile and prune are dispatched before this parser runs.
     sub.add_parser('beats-guide', help='print the story beats writing guide (--character adds outfit tags and vocabulary)')
     sub.add_parser('compile', help='check a beats file without generating images (--character --beats FILE)')
+    sub.add_parser('write-beats', help='D113: have a model write the beats file (--storyboard-llm openai_compat; subagent = the agent writes it itself)')
     sub.add_parser('prune', help='remove finished jobs\' intermediate PNGs and old compile scratch folders (--days N; --apply deletes)')
     for name in ('make', 'approve', 'status', 'resume', 'deliver', 'pick', 'resolve', 'cancel', 'reshoot', '_worker'):
         command = sub.add_parser(name)
