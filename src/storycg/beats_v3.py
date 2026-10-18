@@ -18,6 +18,7 @@ returns an error that names the missing field and the combinations that exist.
 import copy
 
 STANDARD = 'standard'
+RESERVED_OUTFIT_NAMES = ('standard', 'default')
 import re as _re
 APPROX_NOTE = _re.compile(r'近似|类似|凑|approximat|approx\\b|similar to|stand[- ]?in|workaround', _re.I)
 EXCLUSIVE_TAGS = (('indoors', 'outdoors'), ('day', 'night'), ('sunny', 'rain'), ('indoors', 'veranda'), ('indoors', 'engawa'))
@@ -179,7 +180,7 @@ def expand(parsed, identity, vocab_items, add_error):
     return expanded, notes
 
 
-def beats_v3_schema(shot_count=4):
+def beats_v3_schema(shot_count=4, *, decoder=False):
     """D113 / D113-b: the structural JSON schema of a v3 beats file (what `response_format: json_schema` constrains).
 
     Structure only: tag existence, vocabulary stability and story rules stay with `compile`. `expression` is the closed
@@ -207,7 +208,10 @@ def beats_v3_schema(shot_count=4):
     return {'type': 'object', 'additionalProperties': False, 'required': ['schema_version', 'scenes', 'shots'], 'properties': {
         'schema_version': {'enum': [3]}, 'story_note': {'type': 'string'},
         'scenes': {'type': 'object', 'minProperties': 1, 'additionalProperties': scene},
-        'outfits': {'type': 'object', 'additionalProperties': outfit},
+        'outfits': {'type': 'object', 'additionalProperties': outfit,
+                    # Loop round 1 (2026-10-18): `standard` is the program's name for the character's own outfit; a writer may not define it.
+                    # Left out of the decoder schema: mlx-serve ignores propertyNames, and with it one probe of two broke other constraints.
+                    **({} if decoder else {'propertyNames': {'not': {'enum': list(RESERVED_OUTFIT_NAMES)}}})},
         'shots': {'type': 'array', 'minItems': shot_count, 'maxItems': shot_count, 'items': shot}}}
 
 

@@ -102,5 +102,5 @@ def write_beats(config, guide, character, story, shot_count, *, use_schema=True,
     cfg = settings(config)
     check_health(cfg)
     text, record = chat(cfg, build_messages(guide, character, story, shot_count, previous, errors),
-                        schema=beats_v3_schema(shot_count) if use_schema else None, thinking=thinking)
+                        schema=beats_v3_schema(shot_count, decoder=True) if use_schema else None, thinking=thinking)
     return text, record
