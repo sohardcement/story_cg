@@ -349,13 +349,34 @@ def _action_tag_errors(errors, number, entry, tag_registry):
              '换成 general 类的动作 tag，比如 drinking、reading；或删除 shot.action_tag')
 
 
+CHARACTER_CATEGORY = 4  # Danbooru tag category "character"
+
+
+def _character_tag_errors(errors, number, entry, identity, tag_registry):
+    """Loop B (2026-10-18): a second named character written as a prop goes into the prompt and may be drawn (s03 put
+    marisa_kirisame in prop_tags). Only prop_tags: Danbooru also files the weather word `cloudy` as a character tag (0 posts,
+    like marisa_kirisame), and 10 of 561 existing storyboards have it in their scene tags. The protagonist's own name is
+    left to the identity-term check below."""
+    from storycg.tags import canonical_tag
+    own = canonical_tag((identity or {}).get('character_tag') or '')
+    for tag in dict.fromkeys(entry['shot'].get('prop_tags', [])):
+        if canonical_tag(tag) == own:
+            continue
+        found = tag_registry.lookup(tag)
+        if found and found.get('category') == CHARACTER_CATEGORY:
+            _add(errors, number, 'shot.prop_tags',
+                 f'{tag} 是 Danbooru 的角色 tag：只支持一个具名主角，第二个角色写进道具会被画进画面或混进主角',
+                 '删掉这个道具；这一镜只画主角，对方的动作或台词写进 action_note（不进图）')
+
+
 def _collect_errors(board, shot_count, identity, config, tag_registry=None):
     """List every failing check on a materialized board. Never mutates the board.
 
     Mirrors validate_storyboard, validate_contract, validate_story_rules and
     validate_shot_vocab. Each check is listed for each shot it applies to; the
     real validators run afterwards on the success path, so this list is for
-    reporting only. tag_registry is needed only when a shot has an action_tag (V2-49).
+    reporting only. tag_registry is needed only when a shot has an action_tag (V2-49); the character-tag check
+    runs only with a registry (compile_beats always passes one).
     """
     from storycg.identity_enrichment import category_for, load_rules
     from storycg.planning import (appearance_forbidden, body_action_verbs, body_part_words, body_target_violation,
@@ -402,6 +423,8 @@ def _collect_errors(board, shot_count, identity, config, tag_registry=None):
                  '只保留画面里的那一刻；前一个动作也要画出来的话，拆成两镜')
         if any(canonical_tag(tag) in EXPRESSION_TAGS for tag in shot.get('prop_tags', [])):
             _add(errors, number, 'shot.prop_tags', '背景道具 tag 不能承担表情', '表情只放在 shot.expression')
+        if tag_registry is not None:
+            _character_tag_errors(errors, number, entry, identity, tag_registry)
         if shot.get('action_tag'):
             if tag_registry is None:
                 raise ValueError('collecting shot.action_tag errors needs a tag registry')
