@@ -46,6 +46,11 @@
     "max_images_per_job": 60,
     "image_wait_minutes": 60
   },
+  "host_probe": {
+    "timeout_seconds": 10,
+    "slow_image_seconds": 45,
+    "queue_wait_seconds": 120
+  },
   "camera_tags": {
     "front": [],
     "above": [

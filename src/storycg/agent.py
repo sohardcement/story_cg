@@ -25,6 +25,10 @@ from storycg.beats import BeatsError, beats_guide, character_guide, compile_beat
 from storycg.state import save_json_atomic
 
 PROJECT = Path(__file__).resolve().parents[2]
+# Loop B (2026-10-18): each beats-guide call makes drafts/cg-<id>/ and names drafts/cg-<id>/beats.json as the file to write. Hermes's
+# write_file will not overwrite a same-name file it has not read and then reads the old one and uses it, so a fixed name can carry the
+# last story into this one; a new folder per call cannot collide. make takes the folder's id as the job id.
+DRAFTS = PROJECT/'drafts'
 V1_RELIABILITY_NOTE = ('层级判定与身份审核的可靠依据只有发色等标为 reliable 的项目。'
                     '瞳色、配饰、整体角色：该项未经可靠审核，建议用户看图确认。')
 RELIABILITY_NOTE = ('发色、视觉瞳色等身份审核以逐项 reliability 配置为准。检测项仅 reliable 的可否决；'
@@ -142,6 +146,30 @@ def check_resources(config):
         available = nodes[node].get('input', {}).get('required', {}).get(field, [[]])[0]
         if filename not in available:
             raise ResourceUnavailable(f'所需模型或节点缺失：{node}/{filename}')
+
+
+def host_start_warning(config, shots):
+    """make: None, or a line saying the ComfyUI host looks too slow for this job (storycg.host_probe); portrait plus the candidates."""
+    from storycg.config import candidates_per_shot
+    from storycg.host_probe import start_warning
+    return start_warning(config, 1 + shots * candidates_per_shot(config))
+
+
+def _host_warning(root, record, state, phase, active):
+    """status: the newest image is slow (while the worker runs), else make's start warning until the first image is done."""
+    from storycg.config import candidates_per_shot
+    from storycg.host_probe import run_warning
+    if phase in ('completed', 'stopped'):
+        return None
+    job = read(root, 'job.json')
+    config = job.get('generation_config') or {}
+    attempts = state.get('attempts', [])
+    done = sum(1 for a in attempts if a.get('candidate') is not None and a.get('completed_at'))
+    remaining = max(0, job.get('shot_count', 0) * candidates_per_shot(config) - done) if 'candidates_per_shot' in config else 0
+    warning = run_warning(attempts, config, remaining) if active else None
+    if warning or any(a.get('completed_at') for a in attempts):
+        return warning
+    return record.get('host_warning')
 
 
 def generate(root, config):
@@ -475,6 +503,7 @@ def status(root):
               'needs_user': record.get('needs_user', False), 'reason': record.get('reason'),
               'question': record.get('question'), 'options': record.get('options', []),
               'notices': record.get('notices', []),
+              'host_warning': _host_warning(root, record, state, phase, active),
               'error': record.get('error'), 'progress': _progress(root, total, cycle),
               'usage': count_usage(root),
               'stage': cycle.get('phase') if phase == 'generating_and_repairing' else phase,
@@ -608,8 +637,33 @@ def resolve_config(args):
     return load_config(args.config)
 
 
+def new_draft(drafts=None):
+    """A new empty drafts/cg-<id>/ folder; returns the beats file path inside it (not created)."""
+    folder = (drafts or DRAFTS)/('cg-'+uuid.uuid4().hex[:12])
+    folder.mkdir(parents=True)
+    return folder/'beats.json'
+
+
+def draft_section(path):
+    return (f'\n## 分镜文件写到这里\n\n{path}\n\n'
+            f'这个目录是这次 beats-guide 新建的，里面是空的。分镜只写到这个路径，compile 和 make 的 `--beats` 都用它；'
+            f'不要用以前的分镜文件，也不要自己另起文件名：已有的同名旧文件会被沿用，画出来就是上一次的剧情。'
+            f'换一个剧情就重新运行 beats-guide，拿新的路径。make 会用同一个 id（{path.parent.name}）作任务目录名。')
+
+
+def make_job_dir(beats, drafts=None, jobs=None):
+    """make without a job dir: a beats file at drafts/<id>/beats.json gives its id to the job (jobs/<id>) unless that job exists."""
+    drafts, jobs = (drafts or DRAFTS).resolve(), jobs or PROJECT/'jobs'
+    if beats is not None:
+        beats = beats.resolve()
+        if beats.name == 'beats.json' and beats.parent.parent == drafts and beats.parent.name.startswith('cg-') \
+                and not (jobs/beats.parent.name).exists():
+            return jobs/beats.parent.name
+    return jobs/('cg-'+uuid.uuid4().hex[:12])
+
+
 def beats_cli(argv):
-    """`beats-guide` prints the writing guide; `compile` checks a beats file without generating images."""
+    """`beats-guide` prints the writing guide and a new storyboard path; `compile` checks a beats file without generating images."""
     parser = argparse.ArgumentParser(prog='storycg')
     sub = parser.add_subparsers(dest='command', required=True)
     guide = sub.add_parser('beats-guide', help='print the story beats writing guide')
@@ -656,7 +710,7 @@ def beats_cli(argv):
             if info['unsupported']:
                 print(info['unsupported'])
                 return 2
-        print(beats_guide(args.shots, info))
+        print(beats_guide(args.shots, info) + draft_section(new_draft()))
         return 0
     config = resolve_config(args)
     if args.strict:
@@ -818,7 +872,7 @@ def main(argv):
             command.add_argument('--by', choices=['user', 'agent'], default='user',
                                  help='who picked: user (default), or agent when the user said they are away and the agent looked at the images')
     args = parser.parse_args(argv)
-    root = (args.job_dir or PROJECT/'jobs'/('cg-'+uuid.uuid4().hex[:12])).resolve()
+    root = (args.job_dir or make_job_dir(args.beats)).resolve()
     code = 0
     picked = None
     resolved = None
@@ -844,6 +898,9 @@ def main(argv):
             # V2-24: beats mode confirms by default; --no-confirm runs straight through.
             confirm = not args.no_confirm
             update(root, phase='queued', needs_user=False, storyboard_first=confirm, approved=False, **beats_fields)
+            warning = host_start_warning(config, args.shots)
+            if warning:
+                update(root, host_warning=warning)
         elif not (root/'job.json').exists():
             raise ValueError('story job not found')
         if args.command == 'cancel':

@@ -17,6 +17,10 @@ compile/
 # D81: runtime output; files already tracked stay tracked. Anchored so nested jobs/ in reports/assets or tests/fixtures are unaffected.
 /jobs/
 /logs/
+# Loop B: one empty folder per beats-guide call for the storyboard file
+/drafts/
+# Loop B judge page (collages embedded; rebuilt by verify/loop-b/make_page.py)
+/verify/loop-b/page/index.html
 cache/tags/
 
 # D103: experiment images (invalid batches made while ComfyUI was out of VRAM, and the judged pages' sources); kept on disk, not tracked.

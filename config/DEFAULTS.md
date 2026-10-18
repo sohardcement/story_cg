@@ -29,6 +29,9 @@
 | 每镜候选数 | `candidates_per_shot` | `3` | D61 |
 | 选图方式 | `review_mode` | `"human"` | D101；无人值守时调用方看图选、`pick --by agent`（loop B） |
 | 每个任务出图上限 | `budget.max_images_per_job` | `60` | — |
+| 主机探测：队列查询超时（秒） | `host_probe.timeout_seconds` | `10` | loop B 之后（只报警，不影响出图） |
+| 主机探测：每张图超过多少秒算慢 | `host_probe.slow_image_seconds` | `45` | loop B 正常每张 8–24 秒，第 4 次变慢时 78–428 秒 |
+| 主机探测：别人排队要先等多少秒算慢 | `host_probe.queue_wait_seconds` | `120` | loop B 之后 |
 | 写分镜的模型 | `llm.model` | `"Qwen3.8-Flash-Next-Uncensored-MLX-Serve-4bit"` | D113 |
 | 写分镜温度 | `llm.temperature` | `0.7` | D113 |
 | 写分镜思考模式 | `llm.enable_thinking` | `false` | D113 |
