@@ -461,7 +461,12 @@ def status(root):
     if not active and phase in ('resolving_identity', 'checking_identity', 'determining_tier', 'checking_requirements',
                                 'planning', 'preparing_portrait', 'generating_and_repairing'):
         phase = 'interrupted'
-    paths = {'preview': str(root/'contact_sheet.jpg') if (root/'contact_sheet.jpg').exists() else None,
+    # Loop B (2026-10-18): the delivered collage and candidate sheet by name; `preview` alone was read as the candidate sheet.
+    character = read(root, 'job.json').get('character')
+    collage = sorted((root/'delivery').glob(f'{character}-*.jpg')) if character and (root/'delivery').exists() else []
+    paths = {'collage': str(collage[0]) if collage else None,
+             'candidate_sheet': str(root/'delivery'/'candidate_sheet.jpg') if (root/'delivery'/'candidate_sheet.jpg').exists() else None,
+             'preview': str(root/'contact_sheet.jpg') if (root/'contact_sheet.jpg').exists() else None,
              'images': [str(root/x['path']) for x in manifest.get('images', [])],
              'result': str(root/'result.md') if (root/'result.md').exists() else None,
              'manifest': str(root/'manifest.json') if manifest else None}
