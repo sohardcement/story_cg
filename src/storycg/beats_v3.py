@@ -269,3 +269,18 @@ def strict_warnings(path, standard_tags=()):
                         'problem': f'新服装没有底衣：{", ".join(tags)}（只有配件时模型容易画成只穿配件）',
                         'fix': '写全：一件连衣裙，或者一件上衣加一件下装，都带颜色'})
     return out
+
+
+def leg_tag_warnings(preview, framings):
+    """D116 `compile --strict` warning: the final positive prompt of a closeup or medium shot still has a footwear or legwear tag (the outfit
+    block drops them, so it comes from a scene, prop or action tag). `preview` is compile's prompt_preview, `framings` the framing of each shot."""
+    from storycg.leg_tags import applies_to, is_leg_tag
+    out = []
+    for row, framing in zip(preview, framings):
+        if not applies_to(framing) or 'positive' not in row:
+            continue
+        found = sorted({t.strip() for t in row['positive'].split(',') if t.strip() and is_leg_tag(t)})
+        if found:
+            out.append({'shot': row['shot'], 'field': 'prompt', 'problem': f'{framing} 镜头的最终提示词里有腿脚类 tag：{", ".join(found)}（会把脚拉进画面，画成全身）',
+                        'fix': '这个 tag 来自场景、道具或动作；不需要就去掉，或者把景别改成 full'})
+    return out

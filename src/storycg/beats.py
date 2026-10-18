@@ -704,7 +704,8 @@ def prompt_preview(board, identity, config):
             continue
         rows.append({'shot': entry['number'], 'positive': f"{config['positive_prefix']}, {parts['positive_tags']}",
                      'negative': full_negative_prompt(config, parts),
-                     'dropped_scene_tags': list(parts.get('dropped_scene_tags') or [])})
+                     'dropped_scene_tags': list(parts.get('dropped_scene_tags') or []),
+                     'dropped_leg_tags': list(parts.get('dropped_leg_tags') or [])})
     return rows
 
 

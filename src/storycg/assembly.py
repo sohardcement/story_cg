@@ -27,7 +27,12 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
     if 'pose' in shot:
         from storycg.shot_contract import moment
         moment(shot, '$.shot')
-    outfit_block = ', '.join(spaces(t) for t in outfit['tags'])
+    # D116: footwear and legwear tags pull the feet into the frame; with config `drop_leg_tags` a closeup or medium shot leaves them out (full and wide keep them).
+    # The switch is off by default until D116 passes.
+    from storycg.leg_tags import applies_to, is_leg_tag
+    dropped_legs = [t for t in outfit['tags'] if is_leg_tag(t)] if config.get('drop_leg_tags') and applies_to(shot['framing']) else []
+    outfit_tags = [t for t in outfit['tags'] if t not in dropped_legs]
+    outfit_block = ', '.join(spaces(t) for t in outfit_tags)
     if config.get('scene_rules'):
         kept_scene, dropped_scene = filter_scene_tags(shot['framing'], scene['tags'],
                                                       shot.get('prop_tags', []), config)
@@ -38,7 +43,7 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
                    *config['camera_tags'][shot['camera_angle']]]
     # Keep the identity block intact; avoid repeated clothing, scene and framing tags.
     supplied = {spaces(t).strip() for t in identity['identity_block'].split(',')}
-    supplied.update(spaces(t) for t in [*outfit['tags'], *kept_scene, *composition])
+    supplied.update(spaces(t) for t in [*outfit_tags, *kept_scene, *composition])
     action_tags = []
     for tag in shot['tags']:
         tag = spaces(tag)
@@ -70,5 +75,5 @@ def assemble_prompt(identity: dict, entry: dict, *, props=None, config=None) -> 
             'scene_block': scene_block, 'shot_block': shot_block,
             'positive_tags': positive_tags, 'closeup_positive_tags': closeup_positive_tags,
             'negative_tags': ', '.join(spaces(t) for t in negative_tags),
-            'dropped_scene_tags': dropped_scene, 'framing': shot['framing'],
+            'dropped_scene_tags': dropped_scene, 'dropped_leg_tags': dropped_legs, 'framing': shot['framing'],
             'indoor_precipitation_negative': indoor_negative}

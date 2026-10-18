@@ -1,0 +1,6 @@
+{
+  "source": "D116 (2026-10-18): D115 showed every Reimu prompt (all with `white socks, black shoes`) drawn full body in all three arms; Saber and Yuu prompts have no footwear tag. Tags naming footwear or legwear are dropped from the outfit block of closeup and medium shots.",
+  "framings": ["closeup", "medium"],
+  "tokens": ["socks", "shoes", "boots", "footwear", "thighhighs", "kneehighs", "pantyhose", "legwear", "stockings", "tights", "leggings", "sandals", "sneakers", "loafers", "barefoot"],
+  "tags": ["mary_janes", "high_heels", "zettai_ryouiki", "knee_socks", "over-kneehighs"]
+}

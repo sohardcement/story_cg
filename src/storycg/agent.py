@@ -703,7 +703,9 @@ def beats_cli(argv):
                'prompt_preview': prompt_preview(board, identity, config)}
     if args.strict:  # D113-c: warnings never make a file invalid
         from storycg.beats_v3 import strict_warnings
-        payload['warnings'] = strict_warnings(args.beats, [t['tag'] for t in identity.get('default_outfit_tags', [])])
+        from storycg.beats_v3 import leg_tag_warnings
+        payload['warnings'] = strict_warnings(args.beats, [t['tag'] for t in identity.get('default_outfit_tags', [])]) + (
+            leg_tag_warnings(payload['prompt_preview'], [e['shot']['framing'] for e in board['shots']]) if config.get('drop_leg_tags') else [])
     if args.verbose:  # V2-63 (D96): the full storyboard and guide only on request
         payload.update(storyboard=board, character_guide=guide)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
