@@ -687,7 +687,20 @@ def _action_tag_lines():
     if refused:
         lines.append('- compile 不接受：' + '、'.join(refused))
     lines.append('- action_tag 只能取「画得出」里的词；表外的动作意图写进 shot.action_note，不会画进图。')
+    lines += _intent_hint_lines()
     return lines
+
+
+def _intent_hint_lines():
+    """D117 (2026-10-18, verify/v2/d117-actions/): how the common intents were drawn, 4 seeds per wording. Pose wordings go in `pose`."""
+    return ['- 这些意图实测的写法（每种写法 4 张）：',
+            '  - 挥剑：pose holding_sword + action_tag slashing 或 attack（4/4），或 pose fighting_stance + 道具 sword（4/4）。',
+            '  - 单膝跪：pose on_one_knee（4/4）；kneeling 只有 2/4，不要单独用，要用就和 on_one_knee 一起写（4/4）。',
+            '  - 跳跃：pose midair（3/4）；jumping 只有 2/4，不稳。',
+            '  - 尝味：道具 spoon + action_tag eating（4/4）或 tasting（3/4）；pose holding_spoon 只有 2/4。',
+            '  - 深呼吸：action_tag inhaling（4/4），或 pose hand_on_own_chest + 表情 closed_eyes（4/4，是代理写法）。',
+            '  - 握拳：没有稳定写法：raised_fist 会画成举拳过头的另一个动作，clenched_hand 只有 2/4，clenched_hands 0/4。意图写进 action_note。',
+            '  - 投掷、躲避：当前模型画不出（实测 0/4）：throwing 会多出东西，dodging 会画成挥剑。意图写进 action_note，用道具（比如空中的符札、弹幕）和表情去表现。']
 
 
 def prompt_preview(board, identity, config):

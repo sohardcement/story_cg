@@ -1,5 +1,5 @@
 {
-  "source": "监工 D87 实验，2026-10-12；verify/v2/action-ab/、verify/v2/action-cat/；基础模型 WAI v170，无 LoRA，IPAdapter start_at 0.3",
+  "source": "监工 D87 实验，2026-10-12；verify/v2/action-ab/、verify/v2/action-cat/；基础模型 WAI v170，无 LoRA，IPAdapter start_at 0.3；slashing、attack、inhaling、tasting 来自 D117（2026-10-18，verify/v2/d117-actions/，每个 4 个 seed，slashing 和 attack 要配 holding_sword，tasting 要配道具 spoon）",
   "actions": {
     "stretching": {
       "drawn": 6,
@@ -93,6 +93,22 @@
       "drawn": 0,
       "total": 3,
       "note": "不建议用"
+    },
+    "slashing": {
+      "drawn": 4,
+      "total": 4
+    },
+    "attack": {
+      "drawn": 4,
+      "total": 4
+    },
+    "inhaling": {
+      "drawn": 4,
+      "total": 4
+    },
+    "tasting": {
+      "drawn": 3,
+      "total": 4
     }
   }
 }
