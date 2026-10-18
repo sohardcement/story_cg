@@ -351,7 +351,7 @@ def _delivery_images(root, board, state, cycle):
     return images, drop_lines
 
 
-def pick_delivery(root, number, candidate):
+def pick_delivery(root, number, candidate, *, by='user'):
     """V2-24 (TASK-v2 §10.3 换候选): swap one shot's candidate and rebuild the delivery files. No model call,
     no image, no final review: cycle.json, the contact sheet, manifest and result.md are re-derived."""
     root = Path(root)
@@ -360,7 +360,7 @@ def pick_delivery(root, number, candidate):
     if read(root, 'agent.json').get('phase') != 'completed':
         raise ValueError('pick requires a completed job')
     from storycg.candidates import pick_candidate, publish_candidates
-    change = pick_candidate(root, number, candidate)
+    change = pick_candidate(root, number, candidate, by=by)
     cycle = read(root, 'cycle.json')
     slot = cycle['shots'][str(number)]
     slot['best_attempt'] = change['attempt_number']
@@ -810,6 +810,8 @@ def main(argv):
             command.add_argument('--shot', type=int)
             command.add_argument('--candidate', type=int)
             command.add_argument('--more', action='store_true', help='human review: make another batch of this shot')
+            command.add_argument('--by', choices=['user', 'agent'], default='user',
+                                 help='who picked: user (default), or agent when the user said they are away and the agent looked at the images')
     args = parser.parse_args(argv)
     root = (args.job_dir or PROJECT/'jobs'/('cg-'+uuid.uuid4().hex[:12])).resolve()
     code = 0
@@ -896,14 +898,14 @@ def main(argv):
                         raise ValueError('pick needs --shot and --candidate (or --more)')
                     if args.shot != read(root, 'agent.json').get('pending_shot'):
                         raise ValueError(f"the job waits on shot {read(root, 'agent.json').get('pending_shot')}, not shot {args.shot}")
-                    picked = pick_pending(root, args.shot, args.candidate, more=args.more)
+                    picked = pick_pending(root, args.shot, args.candidate, more=args.more, by=args.by)
                     end_wait(root)
                     update(root, phase='queued', pending_shot=None)
                     launch(root)
                 elif args.command == 'pick':
                     if args.shot is None or args.candidate is None:
                         raise ValueError('pick needs --shot and --candidate')
-                    picked = pick_delivery(root, args.shot, args.candidate)
+                    picked = pick_delivery(root, args.shot, args.candidate, by=args.by)
                 elif args.command == 'resolve':
                     # Identity choice (V2-29: kept for the SKILL's ambiguity step); a locked result is required before resume.
                     resolved = resolve_job(root, work=args.work, character_tag=args.tag)

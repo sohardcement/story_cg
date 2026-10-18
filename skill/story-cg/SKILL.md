@@ -14,7 +14,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 3. `scripts/storycg make --character '角色名' --story '剧情' --beats '<文件>' --shots 4`：定妆图生成后停在 `awaiting_approval`。每 15–30 秒 `scripts/storycg status '<job_dir>'` 轮询。`make` 加 `--no-confirm` 可跳过这次确认，每镜仍会等用户选。
 4. `awaiting_approval`：给用户看 `storyboard`、`confirmation` 里的 `portrait_image`，转述 `story_note`、`compile_rewrites`。等用户确认。改分镜：`approve '<job_dir>' --beats '<新文件>'`；定妆图不满意：`approve '<job_dir>' --redo-portrait`。
 5. 确认：`scripts/storycg approve '<job_dir>'`。每镜出完停在 `awaiting_pick`：给用户看 `pending_pick` 里的 `sheet` 和候选编号，问选哪张。
-6. 用户选定：`scripts/storycg pick '<job_dir>' --shot N --candidate K`，任务自动出下一镜。要再出一批：`pick '<job_dir>' --shot N --more`。全部选完到 `completed`。
+6. 用户选定：`scripts/storycg pick '<job_dir>' --shot N --candidate K`，任务自动出下一镜。要再出一批：`pick '<job_dir>' --shot N --more`。全部选完到 `completed`。用户说了不在、不用问他选图时，你自己看 `sheet` 选，`pick` 加 `--by agent`（结果说明会写成由调用方看图选择），最后告诉用户每镜是你选的、为什么选。
 7. 交付后看拼图和候选总图，读 result.md，把路径给用户。事后换某镜：同样 `pick`，只重建拼图和说明。
 8. 某一镜的构图不满意：`reshoot '<job_dir>' --shot N --framing medium`（medium 是 cowboy shot，也可 --angle），这一镜重出一批，等用户选，其他镜的选择不变。
 

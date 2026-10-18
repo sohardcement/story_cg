@@ -199,8 +199,13 @@ def write_pending_sheet(root, store, number):
     return target
 
 
-def pick_pending(root, number, candidate, *, more=False):
-    """D101: the user's pick (or a request for more candidates) for the shot a human-review job waits on."""
+# Loop B (2026-10-18): who made a pick. `agent` = the calling agent looked at the candidates itself because the user said they were away.
+PICKERS = {'user': '用户', 'agent': '调用方看图'}
+
+
+def pick_pending(root, number, candidate, *, more=False, by='user'):
+    """D101: the user's pick (or a request for more candidates) for the shot a human-review job waits on.
+    `by` says who picked (PICKERS); result.md repeats it, so an agent's pick is never written as the user's."""
     root = Path(root)
     store = _load_store(root)
     slot = store.get(str(number))
@@ -215,9 +220,11 @@ def pick_pending(root, number, candidate, *, more=False):
     record = next((r for r in slot['candidates'] if r['candidate'] == candidate), None)
     if record is None or record['status'] != 'completed' or not record.get('image'):
         raise ValueError(f'shot {number} has no completed candidate {candidate}')
+    if by not in PICKERS:
+        raise ValueError(f'by is one of {tuple(PICKERS)}')
     auto = slot.get('selected')
-    slot.update(selected=candidate, confirmed=True, user_pick=candidate, auto_selected=auto, auto_reason=slot.get('reason'),
-                reason=f'由用户选择候选{candidate}' + ('' if auto == candidate else f'（默认候选{auto}）'))
+    slot.update(selected=candidate, confirmed=True, user_pick=candidate, picked_by=by, auto_selected=auto, auto_reason=slot.get('reason'),
+                reason=f'由{PICKERS[by]}选择候选{candidate}' + ('' if auto == candidate else f'（默认候选{auto}）'))
     _save_store(root, store)
     return {'shot': int(number), 'candidate': candidate, 'auto_selected': auto, 'screened': bool(record['screen'])}
 
@@ -635,7 +642,8 @@ def result_text(root, store=None):
         auto = slot.get('auto_selected', slot['selected'])
         if slot.get('user_pick') is not None and slot['user_pick'] != auto \
                 and (cycle.get('final_review') or {}).get('mode') != 'human':  # D101: in human review every shot is the user's pick
-            lines.append(f"- 由用户换过：第 {number} 镜由用户换成候选 {slot['selected']}；看图复述是换之前那组图的。"
+            who = PICKERS.get(slot.get('picked_by', 'user'), '用户')
+            lines.append(f"- 由{who}换过：第 {number} 镜由{who}换成候选 {slot['selected']}；看图复述是换之前那组图的。"
                          f"（审核器原选候选 {auto}）")
         lines.append('')
     picks = {}
@@ -748,7 +756,7 @@ def publish_candidates(root):
     return sheet
 
 
-def pick_candidate(root, number, candidate):
+def pick_candidate(root, number, candidate, *, by='user'):
     """V2-24: the user swaps the selected candidate of one shot. Only candidates.json changes here; the caller
     rebuilds the delivery. The first swap remembers the reviewer's choice so repeated calls stay identical."""
     root = Path(root)
@@ -761,14 +769,17 @@ def pick_candidate(root, number, candidate):
         raise ValueError(f'shot {number} has no candidate {candidate}')
     if record['status'] != 'completed' or not record.get('image'):
         raise ValueError(f'candidate {candidate} of shot {number} is not a completed image')
+    if by not in PICKERS:
+        raise ValueError(f'by is one of {tuple(PICKERS)}')
     if 'auto_selected' not in slot:
         slot['auto_selected'] = slot['selected']
         slot['auto_reason'] = slot['reason']
     auto = slot['auto_selected']
     slot['selected'] = candidate
     slot['user_pick'] = candidate
+    slot['picked_by'] = by
     slot['reason'] = (slot['auto_reason'] if candidate == auto
-                      else f'由用户换成候选{candidate}（审核器原选候选{auto}）')
+                      else f'由{PICKERS[by]}换成候选{candidate}（审核器原选候选{auto}）')
     _save_store(root, store)
     return {'shot': int(number), 'candidate': candidate, 'auto_selected': auto,
             'screened': bool(record['screen']), 'audit_label': record['audit_label'],
