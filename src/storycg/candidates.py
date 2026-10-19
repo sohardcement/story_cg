@@ -201,6 +201,12 @@ def write_pending_sheet(root, store, number):
 
 # Loop B (2026-10-18): who made a pick. `agent` = the calling agent looked at the candidates itself because the user said they were away.
 PICKERS = {'user': '用户', 'agent': '调用方看图'}
+WHO = {'user': '用户', 'agent': '调用方'}
+
+
+def _who(slot):
+    """Codex run (2026-10-19): who picked this shot, for result.md; a slot picked before `picked_by` existed was the user's."""
+    return WHO.get((slot or {}).get('picked_by') or 'user', '用户')
 
 
 def pick_pending(root, number, candidate, *, more=False, by='user'):
@@ -320,7 +326,9 @@ def run_candidate_delivery(job_dir, config, client, identity, board, face_ref, *
                     break
                 slot['more_done'] = slot.get('more_done', 0) + 1
                 _save_store(root, store)
-                _run_round(*args, range(start, start + per), 2 + slot['more_done'], face_ref)
+                # Codex run (2026-10-19): the next round number after the ones this shot has (it was 2 + more_done, which
+                # skipped 2 when the automatic second round had not run)
+                _run_round(*args, range(start, start + per), max(r['round'] for r in slot['candidates']) + 1, face_ref)
             chosen, reason = pick(slot['candidates'])
             if chosen is not None and pairwise_enabled(config) and not human_review(config):
                 # V2-23 (D65): the side-by-side pick may replace the ranking result; it never fails the shot.
@@ -451,14 +459,26 @@ def _audit_deviation_items(root, selected):
     return deviations
 
 
-def _audit_deviation_lines(root, selected):
+def _human_review_line(store, numbers):
+    """The 审核 line of a human-review job: who looked at the candidates and picked each shot (D101; `pick --by`)."""
+    tail = '没有视觉模型审核，也没有看图复述。'
+    by = {n: _who(store.get(str(n))) for n in numbers}
+    if set(by.values()) == {'用户'}:
+        return f'- 这一组由用户逐镜看图选择候选，{tail}身份、服装、动作以你看到的为准。'
+    if set(by.values()) == {'调用方'}:
+        return f'- 这一组由调用方（调用本 skill 的 agent）逐镜看图选择候选，用户没有看过候选，{tail}身份、服装、动作请你看图确认。'
+    parts = [f"第 {'、'.join(str(n) for n in numbers if by[n] == who)} 镜由{who}看图选择" for who in ('用户', '调用方')]
+    return f"- {'，'.join(parts)}；{tail}身份、服装、动作请你看图确认。"
+
+
+def _audit_deviation_lines(root, selected, who='用户'):
     """V2-32: the selected candidate's own audit, shaped into result.md lines. Only fail/minor items are reported
-    as deviations; the verdicts are the stored ones, not recomputed here."""
+    as deviations; the verdicts are the stored ones, not recomputed here. `who` picked a screened candidate (_who)."""
     if selected is None:
         return ['- 没有选中候选，无审核记录。']
     from storycg.display import flat
     head = ('- 通过了筛选：人数检查、多余肢体检查' if not selected['screen']
-            else '- 通过了筛选：否（' + '；'.join(selected['screen']) + '，用户指定保留）')
+            else '- 通过了筛选：否（' + '；'.join(selected['screen']) + f'，{who}指定保留）')
     audit_path = _audit_path(root, selected)
     if not audit_path.exists():
         return [head, f"- 审核记录缺失：cycle_artifacts/{selected['audit_label']}.json"]
@@ -605,7 +625,7 @@ def result_text(root, store=None):
              (f"- 本组出图：{shot_images + refined + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，面部精修 {refined} 张，定妆图 {len(portrait_attempts)} 张）"
               if refined else
               f"- 本组出图：{shot_images + len(portrait_attempts)} 张（镜头候选 {shot_images} 张，定妆图 {len(portrait_attempts)} 张）"),
-             f"- 用时：{round(seconds / 60, 1)} 分钟（不含等你看图和确认的时间）" if seconds is not None else '- 用时：未记录',
+             f"- 用时：{round(seconds / 60, 1)} 分钟（不含等待看图选图和确认的时间）" if seconds is not None else '- 用时：未记录',
              '', '## 文件', '']
     lines.append('- 拼图：' + (f"delivery/{delivery_files[0]}" if delivery_files else 'contact_sheet.jpg'))
     lines.append('- 候选总图：candidate_sheet.jpg（delivery/candidate_sheet.jpg 同图）')
@@ -619,7 +639,8 @@ def result_text(root, store=None):
             continue
         lines.append(f'### 第 {number} 镜')
         selected = next((r for r in slot['candidates'] if r['candidate'] == slot['selected']), None)
-        lines.append(f"- 选中：候选 {slot['selected']}（第 {slot['rounds']} 轮生成）" if selected else '- 选中：无')
+        # Codex run (2026-10-19): the selected candidate's own round; slot['rounds'] counts only the automatic rounds
+        lines.append(f"- 选中：候选 {slot['selected']}（第 {selected['round']} 轮生成）" if selected else '- 选中：无')
         lines.append(f"- 挑选理由：{slot['reason']}")
         face = (selected or {}).get('face_refine') or {}
         if face.get('status') == 'refined':
@@ -627,7 +648,7 @@ def result_text(root, store=None):
         elif face.get('status') in FACE_REASONS:
             lines.append(f"- 面部精修：脸长边 {round(face['face_long_side'])} 像素，没有精修（{FACE_REASONS[face['status']]}）")
         if selected is not None and selected['screen'] and _passed(slot):
-            lines.append(f"- 提示：选中的候选 {slot['selected']} 没有通过筛选（{'；'.join(selected['screen'])}），是用户指定的。")
+            lines.append(f"- 提示：选中的候选 {slot['selected']} 没有通过筛选（{'；'.join(selected['screen'])}），是{_who(slot)}指定的。")
         screened = [r for r in slot['candidates'] if r['status'] == 'completed' and r['screen']]
         failed = [r for r in slot['candidates'] if r['status'] != 'completed']
         for r in screened:
@@ -655,12 +676,14 @@ def result_text(root, store=None):
     human = (cycle.get('final_review') or {}).get('mode') == 'human'
     failed_calls, all_calls = vision_failures(root)
     if human:
-        # D101: every shot was looked at and picked by the user; there is no model review to report.
-        lines += ['## 审核', '', '- 这一组由用户逐镜看图选择候选，没有视觉模型审核，也没有看图复述。身份、服装、动作以你看到的为准。']
+        # D101: every shot was looked at and picked by a person or the calling agent; there is no model review to report.
+        # Codex run (2026-10-19): the sentence names who picked; it said "由用户" even when every pick was `--by agent`.
+        lines += ['## 审核', '', _human_review_line(store, numbers)]
         for number in numbers:
             selected = picks[number]
             if selected is not None and selected['screen']:
-                lines.append(f"- 第 {number} 镜选中的候选 {selected['candidate']} 被本机检测标出：{'；'.join(selected['screen'])}（用户指定保留）。")
+                lines.append(f"- 第 {number} 镜选中的候选 {selected['candidate']} 被本机检测标出：{'；'.join(selected['screen'])}"
+                             f"（{_who(store.get(str(number)))}指定保留）。")
         lines.append('')
     else:
         lines += ['## 已观察到的偏差', '']
@@ -681,7 +704,7 @@ def result_text(root, store=None):
                 clean.append(number)
                 continue
             lines.append(f'### 第 {number} 镜')
-            lines += _audit_deviation_lines(root, picks[number])
+            lines += _audit_deviation_lines(root, picks[number], _who(store.get(str(number))))
             lines += _final_shot_lines(root, cycle, number, picks[number])
             lines.append('')
         if clean:

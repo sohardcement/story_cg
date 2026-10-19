@@ -2,10 +2,10 @@
 
 ## v2 验收结论（用户，2026-10-18）
 
-**v2 验收通过，到此冻结；之后的新问题开 v3 的 TASK。** Hermes 可以给真用户用了。
+**v2 验收通过，到此冻结；之后的新问题开 v3 的 TASK。** Hermes 可以给真用户用了。冻结之后的修复和新问题记在 `TASK-v3.md`。
 
 - **当前默认**：见 `config/DEFAULTS.md`（`tests/test_defaults_doc.py` 逐行核对配置和代码词表）。要点：IPAdapter 关（D109）、akml v3 0.7（D112）、`drop_leg_tags` 开（D116）、hires 关（D111）、action_tag 13 词（D113-d、D117）、`review_mode: human`（D101；无人值守时调用方看图、`pick --by agent`）、每镜 3 个候选；ComfyUI 主机慢时 `make` / `status` 给 `host_warning`。
-- **端到端**：真实的 Hermes 入口，无人工干预，loop B 第 5–9 次连续 5 条剧情通过（s02–s06），墙钟 626、525、511、671、614 秒（线 700 秒）；汇总 `verify/loop-b/SUMMARY.md`。
+- **端到端**：真实的 Hermes 入口，无人工干预，loop B 第 5–9 次连续 5 条剧情通过（s02–s06），墙钟 626、525、511、671、614 秒（线 700 秒）；汇总 `verify/loop-b/SUMMARY.md`。**更正（2026-10-19）**：这 5 条的 result.md「审核」一节都写着“这一组由用户逐镜看图选择候选”，实际四镜都是 Hermes 用 `--by agent` 选的；当时的检查只查“由用户选择”，没拦住，按修正后的检查这一项 5 条都不过。原因在 result.md 模板，不在 Hermes，已修（`TASK-v3.md`）。
 - **交付物四项**（用户按 D114 四项粗判这 5 张拼图，20 格；`verify/loop-b/verdict.json`）：动作 20/20 符合；表情 18/20（2 格部分）；道具 11 符合、1 部分、0 不符、8 不适用；构图 19/20（1 格部分）。
 - **新类型问题 1 个**：s03 第 2、3 镜 Hermes 把第二个具名角色 `marisa_kirisame` 写进了 `prop_tags`，提示词里就有了它；这次没画出第二个人，是运气。和 D113 的“spatial_relation 写角色名”是同一个问题换了字段。
 - **已知问题，不是新类型**：宥的标准服装没写颜色，毛衣、围巾每镜颜色不同（D114 已记）；closeup 被画大（D114 分开重判 closeup 1/4）；wide 下脸和表情看不清（wide 的本性，不算错）；s06 第 4 镜“符札在空中炸开”没有写成 explosion 道具，是分镜层的表达缺口。
