@@ -885,6 +885,7 @@ def main(argv):
             options = {k: v for k, v in {'identity_control': args.identity_control, 'generation_seed': args.seed,'character_tag':args.tag,'work':args.work}.items() if v is not None}
             config = apply_options(resolve_config(args), options)
             from storycg.content_gate import request_mismatch
+            mismatch = request_mismatch(args.story, config)  # P0.4: explicit story text is refused
             if mismatch:
                 raise ValueError(mismatch)
             if (root/'agent.json').exists():
