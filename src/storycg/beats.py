@@ -552,8 +552,6 @@ def character_guide(identity, config=None):
     if tag and not wai_list.tier_row(tag, wai_list.settings_from(config)):
         # V2-38: only characters on the WAI list are supported; the guide says so instead of failing.
         unsupported = '不支持：' + wai_list.refusal_question(wai_list.settings_from(config))
-    if tag and unsupported is None:
-        unsupported = '不支持：' + question if question else None
     return {'character': identity.get('character_tag') or identity.get('input_name'),
             'locked': identity.get('status') == 'locked',
             'unsupported': unsupported,

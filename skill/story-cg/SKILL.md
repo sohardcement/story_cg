@@ -6,6 +6,7 @@ description: 把一个具名单主角和一段剧情做成 4–6 镜连续剧情
 单主角剧情 CG（单人日常，道具只作陪衬）。不支持两个具名角色同框，道具归属、状态和远处小人物不擅长，剧情依赖道具时照常出图并提醒用户。入口是本 skill 目录下的 `scripts/storycg`，用绝对路径在终端执行。默认流程由用户逐镜看图选择，不调用视觉模型。
 
 - 角色：只支持 WAI 清单里的角色。清单外时 `compile`、`make` 返回 `needs_user`，`reason` 为 `character_not_in_wai_list`。原样转告用户，不重试、不换 seed。
+- 配置只用 `--profile 名字`（default、auto），不改 `config/` 下任何文件。
 
 ## 标准流程
 

@@ -1,18 +1,16 @@
 """P0.4 (D97): the content gate on what is actually submitted, not only on the config and the character.
 
-Two checks, both on the final positive prompt of every submission (portrait, candidates, face refinement, a
-recovered submission: they all go through GuardedComfy.submit_prompt):
+One check on the final positive prompt of every submission (portrait, candidates, face refinement, a
+recovered submission: they all go through GuardedComfy.submit_prompt): a prompt that carries an explicit tag
+is refused. The negative prompt never counts: those tags there are a request to avoid them.
 The story text is checked once, when the job is made (request_mismatch).
 """
-import re
-
 from storycg.tags import canonical_tag
 
+EXPLICIT_TAGS = frozenset({'nsfw', 'nude', 'naked', 'completely_nude', 'topless', 'bottomless', 'nipples', 'pussy',
                            'penis', 'sex', 'vaginal', 'anal', 'cum', 'fellatio', 'uncensored', 'explicit',
                            'sex_act', 'cunnilingus', 'paizuri', 'masturbation'})
-CHILD_TAGS = frozenset({'loli', 'shota', 'child', 'female_child', 'male_child', 'toddler', 'infant', 'baby',
-                        'aged_down', 'young_child', 'little_girl', 'little_boy', 'kindergarten_uniform',
-                        'elementary_school_student', 'randoseru'})
+EXPLICIT_WORDS = ('裸体', '全裸', '半裸', '裸露', '赤裸', '色情', '情色', '性爱', '做爱', '性交')
 
 
 class ContentGateError(ValueError):
@@ -24,13 +22,9 @@ def prompt_tags(text):
 
 
 def check_prompt(positive, config):
-    tags = prompt_tags(positive)
-        found = sorted(tags & CHILD_TAGS)
-        if found:
-        return
-    found = sorted(tags & EXPLICIT_TAGS)
+    found = sorted(prompt_tags(positive) & EXPLICIT_TAGS)
     if found:
-                               '（受角色闸门约束），否则删掉这些 tag。')
+        raise ContentGateError(f'提示词里有不允许的 tag（{", ".join(found)}），不提交。删掉这些 tag。')
 
 
 def check_workflow(workflow, config):
@@ -42,10 +36,9 @@ def check_workflow(workflow, config):
 
 
 def request_mismatch(story, config):
-    """A message when the story text asks for explicit content under the SFW config; otherwise None."""
-        return None
+    """A message when the story text asks for content this project does not draw; otherwise None."""
     text = str(story or '').lower()
     found = [w for w in EXPLICIT_WORDS if w in text]
     if found:
-                '（受角色闸门约束），否则改写剧情。')
+        return f'剧情里有不处理的内容字眼（{"、".join(found)}），请改写剧情。'
     return None
